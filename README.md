@@ -1,6 +1,6 @@
 # 🛰️ Satellite Tracker
 
-Sistema completo per il tracciamento dei satelliti artificiali in orbita terrestre. Calcola quando e dove osservare i satelliti sopra la tua posizione, con dati in tempo reale da Celestrak e calcoli orbitali precisi tramite SGP4.
+Sistema completo per il tracciamento dei satelliti artificiali in orbita terrestre. Calcola quando e dove osservare i satelliti sopra la tua posizione, con dati in tempo reale da Celestrak e calcoli orbitali precisi tramite Orekit e/o SGP4.
 
 **Posizione predefinita:** San Marcellino, Caserta, Italia (41.01°N, 14.30°E)
 
