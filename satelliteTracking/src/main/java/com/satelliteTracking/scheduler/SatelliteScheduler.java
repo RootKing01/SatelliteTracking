@@ -96,26 +96,28 @@ public class SatelliteScheduler {
                     );
                     
                     LocalDateTime now = LocalDateTime.now();
-                    LocalDateTime inSixHours = now.plusHours(6);
-                    LocalDateTime inTwentyFourHours = now.plusHours(24);
                     
+                    // Invia notifica per il primo passaggio trovato (se non è stato già notificato di recente)
                     for (SatellitePassDTO pass : passes) {
-                        if (pass.riseTime().isAfter(inSixHours) && pass.riseTime().isBefore(inTwentyFourHours)) {
-                            long hoursSinceLastNotification = java.time.temporal.ChronoUnit.HOURS
-                                .between(sub.getLastNotificationSent(), now);
+                        long minutesSinceLastNotification = java.time.temporal.ChronoUnit.MINUTES
+                            .between(sub.getLastNotificationSent(), now);
+                        
+                        // Evita notifiche duplicate (almeno 30 minuti tra notifiche)
+                        if (minutesSinceLastNotification >= 30) {
+                            boolean sent = telegramNotificationService.sendNotificationToUser(
+                                sub,
+                                pass.satelliteName(),
+                                pass.riseTime(),
+                                pass.maxElevation(),
+                                pass.estimatedMagnitude()
+                            );
                             
-                            if (hoursSinceLastNotification >= 12) {
-                                boolean sent = telegramNotificationService.sendNotificationToUser(
-                                    sub,
-                                    pass.satelliteName(),
-                                    pass.riseTime(),
-                                    pass.maxElevation(),
-                                    pass.estimatedMagnitude()
-                                );
-                                
-                                if (sent) {
-                                    break; // Una notifica per ora per utente
-                                }
+                            if (sent) {
+                                System.out.println("✅ Notifica inviata per " + pass.satelliteName() + 
+                                                 " che passerà tra " + 
+                                                 java.time.temporal.ChronoUnit.MINUTES.between(now, pass.riseTime()) + 
+                                                 " minuti");
+                                break; // Una notifica per utente per esecuzione
                             }
                         }
                     }

@@ -7,9 +7,11 @@ import com.satelliteTracking.dto.SatelliteWithHistoryDTO;
 import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
+import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.SatellitePassService;
+import com.satelliteTracking.service.TelegramNotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,13 +28,16 @@ public class SatelliteController {
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
     private final SatellitePassService satellitePassService;
+    private final TelegramNotificationService telegramNotificationService;
 
     public SatelliteController(SatelliteRepository satelliteRepository, 
                                OrbitalParametersRepository orbitalParametersRepository,
-                               SatellitePassService satellitePassService) {
+                               SatellitePassService satellitePassService,
+                               TelegramNotificationService telegramNotificationService) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
         this.satellitePassService = satellitePassService;
+        this.telegramNotificationService = telegramNotificationService;
     }
 
     /**
@@ -246,6 +251,7 @@ public class SatelliteController {
     /**
      * Trova tutti i satelliti visibili nelle prossime ore che passano vicino
      * Usa posizione predefinita (San Marcellino) ed elevazione minima 30°
+     * BONUS: Invia notifiche Telegram agli utenti registrati se trova passaggi
      * 
      * @param hours ore da controllare (default 6)
      * @return lista di pass ordinati per tempo
@@ -253,6 +259,36 @@ public class SatelliteController {
     @GetMapping("/upcoming-passes")
     public ResponseEntity<List<SatellitePassDTO>> getUpcomingPasses(@RequestParam(defaultValue = "6") int hours) {
         List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, 30.0);
+        
+        // Se trova passaggi, invia notifiche Telegram agli utenti registrati
+        if (!passes.isEmpty()) {
+            try {
+                List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
+                LocalDateTime now = LocalDateTime.now();
+                
+                for (TelegramSubscription sub : subscriptions) {
+                    if (!sub.getNotificationsEnabled()) continue;
+                    
+                    // Invia notifica per il primo passaggio (evita spam)
+                    SatellitePassDTO firstPass = passes.get(0);
+                    long minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES
+                        .between(sub.getLastNotificationSent(), now);
+                    
+                    if (minutesSinceLast >= 30) {
+                        telegramNotificationService.sendNotificationToUser(
+                            sub,
+                            firstPass.satelliteName(),
+                            firstPass.riseTime(),
+                            firstPass.maxElevation(),
+                            firstPass.estimatedMagnitude()
+                        );
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
+            }
+        }
+        
         return ResponseEntity.ok(passes);
     }
 
@@ -283,6 +319,7 @@ public class SatelliteController {
     /**
      * Trova satelliti visibili con filtri avanzati: condizione osservazione + magnitudine
      * Usa posizione predefinita (San Marcellino)
+     * BONUS: Invia notifiche Telegram agli utenti registrati se trova passaggi
      * 
      * @param hours ore da controllare (default 6)
      * @param minElevation elevazione minima in gradi (default 30)
@@ -299,6 +336,36 @@ public class SatelliteController {
         
         List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, minElevation, 
                                                                                        observingCondition, maxMagnitude);
+        
+        // Se trova passaggi, invia notifiche Telegram agli utenti registrati
+        if (!passes.isEmpty()) {
+            try {
+                List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
+                LocalDateTime now = LocalDateTime.now();
+                
+                for (TelegramSubscription sub : subscriptions) {
+                    if (!sub.getNotificationsEnabled()) continue;
+                    
+                    // Invia notifica per il primo passaggio (evita spam)
+                    SatellitePassDTO firstPass = passes.get(0);
+                    long minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES
+                        .between(sub.getLastNotificationSent(), now);
+                    
+                    if (minutesSinceLast >= 30) {
+                        telegramNotificationService.sendNotificationToUser(
+                            sub,
+                            firstPass.satelliteName(),
+                            firstPass.riseTime(),
+                            firstPass.maxElevation(),
+                            firstPass.estimatedMagnitude()
+                        );
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
+            }
+        }
+        
         return ResponseEntity.ok(passes);
     }
 

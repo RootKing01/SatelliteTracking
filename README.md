@@ -15,6 +15,7 @@ Sistema completo per il tracciamento dei satelliti artificiali in orbita terrest
 - [Come Funzionano i Calcoli](#come-funzionano-i-calcoli)
 - [Interpretare i Risultati](#interpretare-i-risultati)
 - [Esempi Pratici](#esempi-pratici)
+- [Gestione Cache e Utilità](#gestione-cache-e-utilità)
 - [Configurazione Avanzata](#configurazione-avanzata)
 - [Troubleshooting](#troubleshooting)
 
@@ -527,6 +528,147 @@ curl http://localhost:8080/api/satellites | jq '.[] | select(.objectName | conta
 # Calcola passaggi per uno specifico
 curl "http://localhost:8080/api/satellites/42/passes?hours=24" | jq '.[] | select(.isVisible == true)'
 ```
+
+---
+
+## 🔧 Gestione Cache e Utilità
+
+### Cache dei Passaggi
+
+Il sistema mantiene una **cache in memoria** dei passaggi calcolati (TTL: 30 minuti) per ottimizzare le performance.
+
+#### Visualizza Stato Cache
+
+```bash
+curl http://localhost:8080/api/satellites/cache-status
+```
+
+**Risposta:**
+```json
+{
+  "entries": 2,
+  "ttl_minutes": 30,
+  "cache_entries": {
+    "San Marcellino, Caserta, Italia_3_10.0_any_6.0": 19,
+    "San Marcellino, Caserta, Italia_6_30.0_any_6.0": 25
+  }
+}
+```
+
+- `entries`: Numero di chiavi in cache
+- `ttl_minutes`: Tempo di vita della cache
+- `cache_entries`: Minuti rimanenti per ogni chiave
+
+#### Cancella Cache
+
+```bash
+curl -X DELETE http://localhost:8080/api/satellites/cache
+```
+
+**Risposta:**
+```json
+{
+  "status": "Cache pulito con successo",
+  "timestamp": "2026-02-22T19:30:45.123"
+}
+```
+
+**Quando cancellare la cache:**
+- ✅ Dopo aggiornamento dei dati satellitari (ogni 3 ore)
+- ✅ Se vuoi forzare un ricalcolo immediato
+- ✅ Per test e debug
+
+---
+
+### Notifiche Telegram
+
+#### Visualizza Utenti Registrati
+
+```bash
+curl http://localhost:8080/api/telegram/subscriptions
+```
+
+**Risposta:**
+```json
+{
+  "status": "success",
+  "count": 1,
+  "subscriptions": [
+    {
+      "id": 1,
+      "chatId": 123456789,
+      "userIdentifier": "your_username",
+      "latitude": 41.01,
+      "longitude": 14.30,
+      "altitude": 30.0,
+      "locationName": "San Marcellino, Caserta",
+      "observingCondition": "any",
+      "maxMagnitude": 6.0,
+      "minElevation": 10.0,
+      "notificationsEnabled": true
+    }
+  ]
+}
+```
+
+#### Registra Nuovo Utente
+
+```bash
+curl -X POST http://localhost:8080/api/telegram/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "chatId": 123456789,
+    "userIdentifier": "your_username",
+    "latitude": 41.01,
+    "longitude": 14.30,
+    "altitude": 30.0,
+    "locationName": "San Marcellino"
+  }'
+```
+
+#### Aggiorna Preferenze
+
+```bash
+curl -X PUT http://localhost:8080/api/telegram/preferences/123456789 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "observingCondition": "night",
+    "maxMagnitude": 4.0,
+    "minElevation": 20.0
+  }'
+```
+
+#### Disabilita/Abilita Notifiche
+
+```bash
+# Disabilita
+curl -X POST http://localhost:8080/api/telegram/123456789/disable
+
+# Abilita
+curl -X POST http://localhost:8080/api/telegram/123456789/enable
+```
+
+---
+
+### Endpoint di Test
+
+#### Test Passaggi con Notifiche Automatiche
+
+Quando chiami questi endpoint e vengono trovati passaggi visibili, il sistema **invia automaticamente notifiche Telegram** agli utenti registrati:
+
+```bash
+# Passaggi standard (elevazione > 30°)
+curl "http://localhost:8080/api/satellites/upcoming-passes?hours=3"
+
+# Passaggi con filtri avanzati
+curl "http://localhost:8080/api/satellites/upcoming-passes/filtered?hours=6&minElevation=10&observingCondition=night&maxMagnitude=4.0"
+```
+
+**Caratteristiche:**
+- ✅ Calcola passaggi visibili
+- ✅ Invia notifiche Telegram automaticamente
+- ✅ Limita a 1 notifica ogni 30 minuti per utente
+- ✅ Ideale per testare il sistema end-to-end
 
 ---
 
