@@ -186,11 +186,9 @@ public class SatelliteController {
      */
     @GetMapping("/search-by-type")
     public ResponseEntity<List<SatelliteDTO>> searchByType(@RequestParam String type) {
-        // Normalizza il tipo per cercare nel nome del satellite
-        String searchPattern = type.toLowerCase();
-        
         List<SatelliteDTO> results = satelliteRepository.findAll().stream()
-            .filter(satellite -> satellite.getObjectName().toLowerCase().contains(searchPattern))
+            .filter(satellite -> satellite.getSatelliteType() != null && 
+                               satellite.getSatelliteType().equalsIgnoreCase(type))
             .map(satellite -> {
                 OrbitalParameters latestParams = orbitalParametersRepository
                     .findTopBySatelliteOrderByFetchedAtDesc(satellite);
@@ -213,24 +211,28 @@ public class SatelliteController {
     public ResponseEntity<?> getGroupsStats() {
         List<Satellite> allSatellites = satelliteRepository.findAll();
         
-        // Crea mappa di statistiche per gruppo
+        // Crea mappa di statistiche per gruppo usando il campo satelliteType
         Map<String, Long> stats = new LinkedHashMap<>();
-        stats.put("stations", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("station") || s.getObjectName().contains("ISS") || s.getObjectName().contains("Tiangong")).count());
-        stats.put("starlink", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("starlink")).count());
-        stats.put("oneweb", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("oneweb")).count());
-        stats.put("iridium", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("iridium")).count());
-        stats.put("spire", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("spire")).count());
-        stats.put("gps", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("gps")).count());
-        stats.put("galileo", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("galileo")).count());
-        stats.put("glonass", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("glonass")).count());
-        stats.put("beidou", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("beidou")).count());
-        stats.put("science", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("hubble") || s.getObjectName().toLowerCase().contains("jwst")).count());
-        stats.put("weather", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("noaa") || s.getObjectName().toLowerCase().contains("goes") || s.getObjectName().toLowerCase().contains("meteosat")).count());
-        stats.put("planet", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("planet")).count());
-        stats.put("radar", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("radar")).count());
-        stats.put("geo", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("geo")).count());
-        stats.put("cubesat", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().contains("cubesat")).count());
-        stats.put("amateurs", allSatellites.stream().filter(s -> s.getObjectName().toLowerCase().matches(".*[A-Z]{2}[0-9]*.*")).count());
+        stats.put("stations", allSatellites.stream().filter(s -> "stations".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("starlink", allSatellites.stream().filter(s -> "starlink".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("oneweb", allSatellites.stream().filter(s -> "oneweb".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("iridium-NEXT", allSatellites.stream().filter(s -> "iridium-NEXT".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("spire", allSatellites.stream().filter(s -> "spire".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("gps-ops", allSatellites.stream().filter(s -> "gps-ops".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("galileo", allSatellites.stream().filter(s -> "galileo".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("glonass-ops", allSatellites.stream().filter(s -> "glonass-ops".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("beidou", allSatellites.stream().filter(s -> "beidou".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("sbas", allSatellites.stream().filter(s -> "sbas".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("science", allSatellites.stream().filter(s -> "science".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("weather", allSatellites.stream().filter(s -> "weather".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("planet", allSatellites.stream().filter(s -> "planet".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("radar", allSatellites.stream().filter(s -> "radar".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("geo", allSatellites.stream().filter(s -> "geo".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("amateur", allSatellites.stream().filter(s -> "amateur".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("cubesat", allSatellites.stream().filter(s -> "cubesat".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("education", allSatellites.stream().filter(s -> "education".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("engineering", allSatellites.stream().filter(s -> "engineering".equalsIgnoreCase(s.getSatelliteType())).count());
+        stats.put("military", allSatellites.stream().filter(s -> "military".equalsIgnoreCase(s.getSatelliteType())).count());
         
         // Crea risposta
         Map<String, Object> response = new LinkedHashMap<>();

@@ -107,6 +107,7 @@ public class CelestrakService {
                                 // Aggiorna eventuali informazioni del satellite se necessario
                                 satellite.setObjectName(dto.objectName());
                                 satellite.setObjectId(dto.objectId());
+                                satellite.setSatelliteType(group);  // 🔧 Salva il tipo
                                 updated++;
                             } else {
                                 // Nuovo satellite, crealo
@@ -114,6 +115,7 @@ public class CelestrakService {
                                 satellite.setObjectName(dto.objectName());
                                 satellite.setObjectId(dto.objectId());
                                 satellite.setNoradCatId(dto.noradCatId());
+                                satellite.setSatelliteType(group);  // 🔧 Salva il tipo
                                 saved++;
                             }
                             

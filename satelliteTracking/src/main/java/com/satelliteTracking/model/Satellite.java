@@ -26,6 +26,9 @@ public class Satellite{
     @Column(nullable = false, unique = true)
     private Long noradCatId;
 
+    @Column(nullable = false)
+    private String satelliteType;  // es. "starlink", "weather", "stations", etc.
+
     //Relazione con i parametri orbitali (storico)
     @OneToMany(mappedBy = "satellite", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrbitalParameters> orbitalParametersList = new ArrayList<>();
