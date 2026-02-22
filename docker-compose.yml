@@ -35,6 +35,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/satellites
       SPRING_DATASOURCE_USERNAME: admin
       SPRING_DATASOURCE_PASSWORD: admin
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
 
 volumes:
   orekit-data-volume:

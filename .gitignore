@@ -1,0 +1,44 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+target/
+build/
+*.jar
+*.war
+*.ear
+
+# Dependencies
+node_modules/
+/.classpath
+/.project
+/.settings
+/bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Orekit data
+/orekit-data/
+orekit-data-volume/
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+# Documentation
+TELEGRAM_NOTIFICATIONS.md
+FIREBASE_FCM_SETUP.md

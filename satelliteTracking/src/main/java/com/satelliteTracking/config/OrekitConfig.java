@@ -5,6 +5,7 @@ import org.orekit.data.DataProvidersManager;
 import org.orekit.data.DirectoryCrawler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.web.client.RestTemplate;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 
@@ -36,5 +37,14 @@ public class OrekitConfig {
             System.err.println("⚠️  Orekit initialization warning: " + e.getMessage());
             System.err.println("ℹ️  Satellite pass calculations will use simplified model");
         }
+    }
+
+    /**
+     * Bean per RestTemplate - utilizzato da TelegramNotificationService
+     * per effettuare chiamate HTTP all'API di Telegram
+     */
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
     }
 }
