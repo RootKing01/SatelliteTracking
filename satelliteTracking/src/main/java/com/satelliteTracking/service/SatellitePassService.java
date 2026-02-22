@@ -364,19 +364,40 @@ public class SatellitePassService {
     }
     
     /**
-     * Stima la magnitudine visiva del satellite
+     * Stima la magnitudine visiva del satellite usando formula di fase empirica
+     * Basata su: magnitudine assoluta, distanza, angolo di fase, e illuminazione solare
+     * 
+     * Per satelliti in ombra terrestre (isSunlit=false), applica una penalità empirica
+     * che rappresenta la minore luminosità dovuta alla mancanza di illuminazione diretta
+     * (ma il satellite è ancora osservabile per riflesso e radiazione terrestre)
      */
     private double estimateMagnitude(double distanceKm, double altitudeKm, boolean isSunlit) {
-        if (!isSunlit) {
-            return 10.0; // Non visibile
+        // Magnitudine assoluta media (ISS-like): -1.0 (molto luminoso quando illuminato)
+        double H = -1.0;
+        
+        // Calcola magnitudine apparente usando distanza
+        // Formula ridotta: m ≈ H + 5*log10(distance_km) - 15
+        double magnitude = H + 5.0 * Math.log10(distanceKm) - 15.0;
+        
+        // Fattore di fase per satelliti illuminati dal sole
+        // Approssimazione: angolo di fase medio ≈ 60° (fattore ≈ 0.3)
+        double phaseFactor = 0.3;
+        double phaseCorrection = -2.5 * Math.log10(phaseFactor);
+        
+        if (isSunlit) {
+            // Satellite illuminato direttamente dal sole
+            magnitude -= phaseCorrection;
+        } else {
+            // Satellite in ombra terrestre: più debole ma ancora osservabile
+            // Penalità empirica: ~3.5 magnitudini (satellite è ~30x più debole)
+            // Questo rappresenta il riflesso della Terra e della radiazione atmosferica
+            magnitude += 3.5;
         }
         
-        // Formula semplificata: magnitudine aumenta con la distanza
-        // ISS tipicamente tra -3 e 2
-        double baseMagnitude = 0.0;
-        double distanceFactor = (distanceKm - 400) / 1000.0;
+        // Limita tra -5 (molto luminoso, es. ISS al perigeo illuminata) e +9 (appena visibile in ombra)
+        magnitude = Math.max(-5.0, Math.min(9.0, magnitude));
         
-        return baseMagnitude + distanceFactor * 2.0;
+        return Math.round(magnitude * 10.0) / 10.0; // Arrotonda a 1 decimale
     }
     
     private AbsoluteDate toAbsoluteDate(LocalDateTime ldt) {
