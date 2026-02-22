@@ -2,6 +2,8 @@ package com.satelliteTracking.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
@@ -21,32 +23,29 @@ public class Satellite{
     @Column(nullable = false)
     private String objectId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private Long noradCatId;
 
-    //Parametri orbitali del satellite
-
-    private String epoch;
-    private Double inclination;
-    private Double raOfAscNode;
-    private Double eccentricity;
-    private Double argOfPericenter;
-    private Double meanAnomaly;
-    private Double meanMotion;
-
+    //Relazione con i parametri orbitali (storico)
+    @OneToMany(mappedBy = "satellite", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrbitalParameters> orbitalParametersList = new ArrayList<>();
 
     public Satellite(){
 
     }
 
     public Satellite(Long id, String objectName, String objectId, Long noradCatId){
-
         this.id=id;
         this.objectName=objectName;
         this.objectId=objectId;
         this.noradCatId = noradCatId;
     }
 
+    // Metodo helper per aggiungere parametri orbitali
+    public void addOrbitalParameters(OrbitalParameters parameters) {
+        orbitalParametersList.add(parameters);
+        parameters.setSatellite(this);
+    }
 }
 
 

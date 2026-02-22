@@ -1,3 +1,5 @@
+
+#stage 2: runtime
 FROM eclipse-temurin:21-jdk-alpine
 
 WORKDIR /app
