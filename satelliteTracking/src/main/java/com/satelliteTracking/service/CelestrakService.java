@@ -7,8 +7,10 @@ import com.satelliteTracking.model.Satellite;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class CelestrakService {
@@ -16,6 +18,41 @@ public class CelestrakService {
     private final WebClient webClient;
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
+    private final AtomicBoolean isDownloading = new AtomicBoolean(false);
+
+    private static final String[] SATELLITE_GROUPS = {
+        // Stazioni Spaziali
+        "stations",           // ISS, Tiangong, Mir
+        
+        // Costellazioni Comunicazione (ATTENZIONE: migliaia di satelliti!)
+        "starlink",           // SpaceX Starlink
+        "oneweb",             // OneWeb
+        "iridium-NEXT",       // Iridium Communications
+        "spire",              // Spire Global
+        
+        // Navigazione Satellitare
+        "gps-ops",            // GPS (USA)
+        "galileo",            // Galileo (Europa)
+        "glonass-ops",        // GLONASS (Russia)
+        "beidou",             // BeiDou (Cina)
+        "sbas",               // Satellite-Based Augmentation Systems
+        
+        // Scientifici e Osservazione
+        "science",            // Hubble, JWST, telescopi spaziali
+        "weather",            // NOAA, GOES, Meteosat
+        "planet",             // Planet Labs (imaging terrestre)
+        "radar",              // Satelliti radar
+        
+        // Geostazionari
+        "geo",                // Satelliti geostazionari
+        
+        // Altri
+        "amateur",            // Satelliti radioamatoriali
+        "cubesat",            // CubeSat (piccoli satelliti)
+        "education",          // Satelliti educativi
+        "engineering",        // Satelliti di test ingegneristici
+        "military"            // Satelliti militari declassificati
+    };
 
     public CelestrakService(SatelliteRepository satelliteRepository, 
                             OrbitalParametersRepository orbitalParametersRepository) {
@@ -29,52 +66,96 @@ public class CelestrakService {
 
     @Transactional
     public void fetchAndSaveStations() {
-        List<CelestrakSatelliteDTO> satellites = webClient.get()
-                .uri("/NORAD/elements/gp.php?GROUP=stations&FORMAT=json")
-                .retrieve()
-                .bodyToFlux(CelestrakSatelliteDTO.class)
-                .collectList()
-                .block();
-
-        if (satellites != null) {
-            satellites.forEach(dto -> {
-                // Cerca se il satellite esiste già nel database
-                Optional<Satellite> existingSatellite = satelliteRepository.findByNoradCatId(dto.noradCatId());
-                
-                Satellite satellite;
-                if (existingSatellite.isPresent()) {
-                    // Satellite già esistente, usa quello
-                    satellite = existingSatellite.get();
+        // Evita download concorrenti
+        if (!isDownloading.compareAndSet(false, true)) {
+            System.out.println("⏳ Download già in corso... salta questo ciclo.");
+            return;
+        }
+        
+        try {
+            System.out.println("🛰️  Inizio download satelliti da Celestrak...");
+            long startTime = System.currentTimeMillis();
+            int totalSaved = 0;
+            int totalUpdated = 0;
+            
+            for (String group : SATELLITE_GROUPS) {
+                try {
+                    System.out.println("📡 Scaricando gruppo: " + group);
+                    long groupStartTime = System.currentTimeMillis();
                     
-                    // Aggiorna eventuali informazioni del satellite se necessario
-                    satellite.setObjectName(dto.objectName());
-                    satellite.setObjectId(dto.objectId());
-                } else {
-                    // Nuovo satellite, crealo
-                    satellite = new Satellite();
-                    satellite.setObjectName(dto.objectName());
-                    satellite.setObjectId(dto.objectId());
-                    satellite.setNoradCatId(dto.noradCatId());
+                    List<CelestrakSatelliteDTO> satellites = webClient.get()
+                            .uri("/NORAD/elements/gp.php?GROUP=" + group + "&FORMAT=json")
+                            .retrieve()
+                            .bodyToFlux(CelestrakSatelliteDTO.class)
+                            .collectList()
+                            .timeout(Duration.ofMinutes(5))  // ⏱️ Timeout 5 minuti per gruppo
+                            .block();
+
+                    if (satellites != null) {
+                        int saved = 0;
+                        int updated = 0;
+                        
+                        for (CelestrakSatelliteDTO dto : satellites) {
+                            // Cerca se il satellite esiste già nel database
+                            Optional<Satellite> existingSatellite = satelliteRepository.findByNoradCatId(dto.noradCatId());
+                            
+                            Satellite satellite;
+                            if (existingSatellite.isPresent()) {
+                                // Satellite già esistente, usa quello
+                                satellite = existingSatellite.get();
+                                
+                                // Aggiorna eventuali informazioni del satellite se necessario
+                                satellite.setObjectName(dto.objectName());
+                                satellite.setObjectId(dto.objectId());
+                                updated++;
+                            } else {
+                                // Nuovo satellite, crealo
+                                satellite = new Satellite();
+                                satellite.setObjectName(dto.objectName());
+                                satellite.setObjectId(dto.objectId());
+                                satellite.setNoradCatId(dto.noradCatId());
+                                saved++;
+                            }
+                            
+                            // Crea nuovi parametri orbitali
+                            OrbitalParameters orbitalParams = new OrbitalParameters(
+                                satellite,
+                                dto.epoch(),
+                                dto.inclination(),
+                                dto.raOfAscNode(),
+                                dto.eccentricity(),
+                                dto.argOfPericenter(),
+                                dto.meanAnomaly(),
+                                dto.meanMotion()
+                            );
+                            
+                            // Aggiungi i parametri orbitali al satellite
+                            satellite.addOrbitalParameters(orbitalParams);
+                            
+                            // Salva il satellite (cascade salverà anche i parametri orbitali)
+                            satelliteRepository.save(satellite);
+                        }
+                        
+                        long groupDuration = System.currentTimeMillis() - groupStartTime;
+                        totalSaved += saved;
+                        totalUpdated += updated;
+                        System.out.println("✅ Gruppo '" + group + "': " + saved + " nuovi, " + updated + " aggiornati [" + groupDuration + "ms]");
+                    } else {
+                        System.out.println("⚠️  Nessun dato per gruppo: " + group);
+                    }
+                    
+                } catch (Exception e) {
+                    System.err.println("❌ Errore scaricando gruppo '" + group + "': " + e.getMessage());
+                    e.printStackTrace();
                 }
-                
-                // Crea nuovi parametri orbitali
-                OrbitalParameters orbitalParams = new OrbitalParameters(
-                    satellite,
-                    dto.epoch(),
-                    dto.inclination(),
-                    dto.raOfAscNode(),
-                    dto.eccentricity(),
-                    dto.argOfPericenter(),
-                    dto.meanAnomaly(),
-                    dto.meanMotion()
-                );
-                
-                // Aggiungi i parametri orbitali al satellite
-                satellite.addOrbitalParameters(orbitalParams);
-                
-                // Salva il satellite (cascade salverà anche i parametri orbitali)
-                satelliteRepository.save(satellite);
-            });
+            }
+            
+            long totalDuration = System.currentTimeMillis() - startTime;
+            System.out.println("🎉 Download completato! Totale: " + totalSaved + " nuovi, " + totalUpdated + " aggiornati [" + (totalDuration / 1000) + "s]");
+            
+        } finally {
+            // Resetta la flag per permettere il prossimo download
+            isDownloading.set(false);
         }
     }
 }
