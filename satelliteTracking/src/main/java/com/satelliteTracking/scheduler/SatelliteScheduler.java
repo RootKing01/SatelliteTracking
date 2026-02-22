@@ -33,6 +33,19 @@ public class SatelliteScheduler {
     }
 
     /**
+     * Task schedulato per ricevere messaggi/comandi da Telegram
+     * Polling ogni 10 secondi per gestire i comandi degli utenti (/start, /help, ecc.)
+     */
+    @Scheduled(fixedRate = 10000, initialDelay = 5000) // Ogni 10 secondi, inizio dopo 5 secondi
+    public void pollTelegramMessages() {
+        try {
+            telegramNotificationService.pollTelegramUpdates();
+        } catch (Exception e) {
+            // Errori gestiti silenziosamente (per non intasare i log)
+        }
+    }
+
+    /**
      * Task schedulato per pre-calcolare i passaggi visibili
      * Popola la cache ogni ora con i passaggi delle prossime 3 ore
      * dalla posizione di default (San Marcellino)

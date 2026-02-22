@@ -28,6 +28,9 @@ public class TelegramNotificationService {
     
     private static final String TELEGRAM_API_URL = "https://api.telegram.org";
     
+    // Memorizza l'ultimo update_id processato per il polling
+    private Long lastUpdateId = 0L;
+    
     private final TelegramSubscriptionRepository subscriptionRepository;
     private final RestTemplate restTemplate;
     
@@ -239,5 +242,180 @@ public class TelegramNotificationService {
         }
         
         return null;
+    }
+    
+    /**
+     * Polling per ricevere messaggi/comandi da Telegram
+     * Chiama getUpdates API e processa i messaggi ricevuti
+     */
+    public void pollTelegramUpdates() {
+        if (telegramBotToken.isEmpty()) {
+            return;
+        }
+        
+        try {
+            String url = String.format("%s/bot%s/getUpdates?offset=%d&timeout=10", 
+                                     TELEGRAM_API_URL, telegramBotToken, lastUpdateId + 1);
+            
+            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            
+            if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                List<Map<String, Object>> updates = (List<Map<String, Object>>) response.get("result");
+                
+                for (Map<String, Object> update : updates) {
+                    Integer updateId = (Integer) update.get("update_id");
+                    lastUpdateId = updateId.longValue();
+                    
+                    Map<String, Object> message = (Map<String, Object>) update.get("message");
+                    if (message != null) {
+                        processIncomingMessage(message);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️  Errore polling Telegram: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Processa un messaggio/comando ricevuto da Telegram
+     */
+    private void processIncomingMessage(Map<String, Object> message) {
+        try {
+            Map<String, Object> from = (Map<String, Object>) message.get("from");
+            Map<String, Object> chat = (Map<String, Object>) message.get("chat");
+            String text = (String) message.get("text");
+            
+            if (text == null || from == null || chat == null) {
+                return;
+            }
+            
+            Long chatId = ((Number) chat.get("id")).longValue();
+            String username = (String) from.get("username");
+            if (username == null) {
+                username = (String) from.get("first_name");
+            }
+            
+            System.out.println("📩 Messaggio ricevuto da " + username + " (chatId: " + chatId + "): " + text);
+            
+            // Gestisci comandi
+            if (text.startsWith("/start")) {
+                handleStartCommand(chatId, username);
+            } else if (text.startsWith("/help")) {
+                handleHelpCommand(chatId);
+            } else if (text.startsWith("/info")) {
+                handleInfoCommand(chatId);
+            } else if (text.startsWith("/stop")) {
+                handleStopCommand(chatId);
+            }
+            
+        } catch (Exception e) {
+            System.err.println("⚠️  Errore processamento messaggio: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handler per comando /start
+     * Registra automaticamente l'utente con posizione di default
+     */
+    private void handleStartCommand(Long chatId, String username) {
+        // Registra con posizione di default (San Marcellino)
+        TelegramSubscription subscription = registerTelegramUser(
+            chatId, 
+            username != null ? username : "User_" + chatId,
+            41.01,  // San Marcellino, Caserta
+            14.30, 
+            30.0, 
+            "San Marcellino, Caserta"
+        );
+        
+        String welcomeMessage = "🛰️ *Benvenuto su Satellite Tracker!*\n" +
+                              "\n" +
+                              "Registrazione completata! ✅\n" +
+                              "\n" +
+                              "*La tua posizione:* " + subscription.getLocationName() + "\n" +
+                              "*Chat ID:* `" + chatId + "`\n" +
+                              "\n" +
+                              "Riceverai notifiche automatiche quando satelliti visibili passeranno sopra la tua posizione.\n" +
+                              "\n" +
+                              "*Comandi disponibili:*\n" +
+                              "/help - Mostra aiuto\n" +
+                              "/info - Vedi le tue impostazioni\n" +
+                              "/stop - Disattiva notifiche\n" +
+                              "\n" +
+                              "Per cambiare posizione o preferenze usa gli endpoint API:\n" +
+                              "`PUT /api/telegram/preferences/" + chatId + "`";
+        
+        sendTelegramMessage(chatId, welcomeMessage);
+        System.out.println("✅ Nuovo utente registrato: " + username + " (chatId: " + chatId + ")");
+    }
+    
+    /**
+     * Handler per comando /help
+     */
+    private void handleHelpCommand(Long chatId) {
+        String helpMessage = "🛰️ *Satellite Tracker - Aiuto*\n" +
+                           "\n" +
+                           "*Comandi:*\n" +
+                           "/start - Registrati al servizio\n" +
+                           "/help - Mostra questo messaggio\n" +
+                           "/info - Vedi le tue impostazioni\n" +
+                           "/stop - Disattiva notifiche\n" +
+                           "\n" +
+                           "*Configurazione:*\n" +
+                           "Usa gli endpoint API per:\n" +
+                           "• Cambiare posizione\n" +
+                           "• Impostare magnitudine massima\n" +
+                           "• Impostare elevazione minima\n" +
+                           "• Scegliere condizioni (night/twilight/any)\n" +
+                           "\n" +
+                           "📚 Documentazione: [GitHub](https://github.com/RootKing01/SatelliteTracking)";
+        
+        sendTelegramMessage(chatId, helpMessage);
+    }
+    
+    /**
+     * Handler per comando /info
+     */
+    private void handleInfoCommand(Long chatId) {
+        Optional<TelegramSubscription> opt = subscriptionRepository.findByChatId(chatId);
+        
+        if (opt.isEmpty()) {
+            sendTelegramMessage(chatId, "❌ Non sei registrato! Usa /start per registrarti.");
+            return;
+        }
+        
+        TelegramSubscription sub = opt.get();
+        
+        String infoMessage = "🛰️ *Le tue impostazioni*\n" +
+                           "\n" +
+                           "*Chat ID:* `" + sub.getChatId() + "`\n" +
+                           "*Username:* " + sub.getUserIdentifier() + "\n" +
+                           "*Posizione:* " + sub.getLocationName() + "\n" +
+                           "*Coordinate:* " + String.format("%.2f°, %.2f°", sub.getLatitude(), sub.getLongitude()) + "\n" +
+                           "*Altitudine:* " + sub.getAltitude() + "m\n" +
+                           "\n" +
+                           "*Filtri:*\n" +
+                           "• Condizione: " + sub.getObservingCondition() + "\n" +
+                           "• Magnitudine max: " + sub.getMaxMagnitude() + "\n" +
+                           "• Elevazione min: " + sub.getMinElevation() + "°\n" +
+                           "\n" +
+                           "*Notifiche:* " + (sub.getNotificationsEnabled() ? "✅ Attive" : "❌ Disattivate");
+        
+        sendTelegramMessage(chatId, infoMessage);
+    }
+    
+    /**
+     * Handler per comando /stop
+     */
+    private void handleStopCommand(Long chatId) {
+        TelegramSubscription sub = disableNotifications(chatId);
+        
+        if (sub != null) {
+            sendTelegramMessage(chatId, "🔕 Notifiche disattivate.\n\nPer riattivarle contatta l'amministratore.");
+            System.out.println("🔕 Notifiche disattivate per chatId: " + chatId);
+        } else {
+            sendTelegramMessage(chatId, "❌ Non sei registrato!");
+        }
     }
 }
