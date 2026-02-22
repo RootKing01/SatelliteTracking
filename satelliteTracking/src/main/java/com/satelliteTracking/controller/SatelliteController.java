@@ -13,6 +13,7 @@ import com.satelliteTracking.service.SatellitePassService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
@@ -239,6 +240,118 @@ public class SatelliteController {
         response.put("stats", stats);
         response.put("total", (long) allSatellites.size());
         
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Trova tutti i satelliti visibili nelle prossime ore che passano vicino
+     * Usa posizione predefinita (San Marcellino) ed elevazione minima 30°
+     * 
+     * @param hours ore da controllare (default 6)
+     * @return lista di pass ordinati per tempo
+     */
+    @GetMapping("/upcoming-passes")
+    public ResponseEntity<List<SatellitePassDTO>> getUpcomingPasses(@RequestParam(defaultValue = "6") int hours) {
+        List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, 30.0);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Trova tutti i satelliti visibili nelle prossime ore che passano vicino
+     * Con parametri custom (posizione e elevazione minima)
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima in gradi
+     * @param latitude latitudine osservatore
+     * @param longitude longitudine osservatore
+     * @param altitude altitudine osservatore in metri
+     * @return lista di pass ordinati per tempo
+     */
+    @GetMapping("/upcoming-passes/custom")
+    public ResponseEntity<List<SatellitePassDTO>> getUpcomingPassesCustom(
+            @RequestParam(defaultValue = "6") int hours,
+            @RequestParam(defaultValue = "30") double minElevation,
+            @RequestParam double latitude,
+            @RequestParam double longitude,
+            @RequestParam(defaultValue = "0") double altitude) {
+        
+        ObserverLocation customLocation = new ObserverLocation(latitude, longitude, altitude);
+        List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, minElevation, customLocation);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Trova satelliti visibili con filtri avanzati: condizione osservazione + magnitudine
+     * Usa posizione predefinita (San Marcellino)
+     * 
+     * @param hours ore da controllare (default 6)
+     * @param minElevation elevazione minima in gradi (default 30)
+     * @param observingCondition "night", "twilight", o "any" (default "any")
+     * @param maxMagnitude magnitudine massima - più basso = più luminoso (default 6.0)
+     * @return lista di pass ordinati per tempo
+     */
+    @GetMapping("/upcoming-passes/filtered")
+    public ResponseEntity<List<SatellitePassDTO>> getUpcomingPassesFiltered(
+            @RequestParam(defaultValue = "6") int hours,
+            @RequestParam(defaultValue = "30") double minElevation,
+            @RequestParam(defaultValue = "any") String observingCondition,
+            @RequestParam(defaultValue = "6.0") double maxMagnitude) {
+        
+        List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, minElevation, 
+                                                                                       observingCondition, maxMagnitude);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Trova satelliti visibili con filtri avanzati (posizione custom)
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima in gradi
+     * @param observingCondition "night", "twilight", o "any"
+     * @param maxMagnitude magnitudine massima
+     * @param latitude latitudine osservatore
+     * @param longitude longitudine osservatore
+     * @param altitude altitudine osservatore in metri
+     * @return lista di pass ordinati per tempo
+     */
+    @GetMapping("/upcoming-passes/filtered/custom")
+    public ResponseEntity<List<SatellitePassDTO>> getUpcomingPassesFilteredCustom(
+            @RequestParam(defaultValue = "6") int hours,
+            @RequestParam(defaultValue = "30") double minElevation,
+            @RequestParam(defaultValue = "any") String observingCondition,
+            @RequestParam(defaultValue = "6.0") double maxMagnitude,
+            @RequestParam double latitude,
+            @RequestParam double longitude,
+            @RequestParam(defaultValue = "0") double altitude) {
+        
+        ObserverLocation customLocation = new ObserverLocation(latitude, longitude, altitude);
+        List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, minElevation, 
+                                                                                       customLocation, observingCondition, maxMagnitude);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Ottiene lo stato del cache dei passaggi
+     * 
+     * @return informazioni sul cache (numero entries, TTL, dettagli)
+     */
+    @GetMapping("/cache-status")
+    public ResponseEntity<?> getCacheStatus() {
+        return ResponseEntity.ok(satellitePassService.getCacheStatus());
+    }
+
+    /**
+     * Pulisce il cache dei passaggi visibili
+     * Utile se vuoi rigenerare i dati
+     * 
+     * @return messaggio di conferma
+     */
+    @DeleteMapping("/cache")
+    public ResponseEntity<?> clearCache() {
+        satellitePassService.clearPassesCache();
+        Map<String, String> response = new LinkedHashMap<>();
+        response.put("status", "Cache pulito con successo");
+        response.put("timestamp", LocalDateTime.now().toString());
         return ResponseEntity.ok(response);
     }
 }

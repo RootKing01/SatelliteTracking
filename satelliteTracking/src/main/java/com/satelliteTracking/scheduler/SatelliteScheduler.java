@@ -13,7 +13,7 @@ public class SatelliteScheduler {
         this.celestrakService = celestrakService;
     }
 
-    @Scheduled(initialDelay = 60000, fixedRate = 86400000) // Primo download dopo 1 minuto, poi ogni 24 ore
+    @Scheduled(initialDelay = 60000, fixedRate = 10800000) // Primo download dopo 1 minuto, poi ogni 3 ore
     public void updateSatellites() {
         celestrakService.fetchAndSaveStations();
     }

@@ -27,7 +27,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -41,6 +43,24 @@ public class SatellitePassService {
     
     // Posizione predefinita: San Marcellino, Caserta
     private final ObserverLocation defaultLocation = ObserverLocation.sanMarcellino();
+    
+    // Cache per i passaggi visibili
+    private static class CacheEntry {
+        List<SatellitePassDTO> passes;
+        long timestamp;
+        
+        CacheEntry(List<SatellitePassDTO> passes) {
+            this.passes = passes;
+            this.timestamp = System.currentTimeMillis();
+        }
+        
+        boolean isExpired(long maxAgeMs) {
+            return System.currentTimeMillis() - timestamp > maxAgeMs;
+        }
+    }
+    
+    private final Map<String, CacheEntry> passesCache = new HashMap<>();
+    private static final long CACHE_TTL_MS = 1800000; // 30 minuti
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
                                 OrbitalParametersRepository orbitalParametersRepository) {
@@ -373,5 +393,160 @@ public class SatellitePassService {
 
     public ObserverLocation getDefaultLocation() {
         return defaultLocation;
+    }
+
+    /**
+     * Trova tutti i satelliti visibili nelle prossime ore che passano vicino all'osservatore
+     * Con filtri rapidi predefiniti (night/twilight/any: any, magnitudine: 6.0)
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima per considerare il passaggio "vicino"
+     * @return lista di pass ordinati per tempo di rise
+     */
+    public List<SatellitePassDTO> findVisibleUpcomingPasses(int hours, double minElevation) {
+        return findVisibleUpcomingPasses(hours, minElevation, defaultLocation, "any", 6.0);
+    }
+
+    /**
+     * Trova tutti i satelliti visibili nelle prossime ore che passano vicino
+     * Con filtri rapidi predefiniti (night/twilight/any: any, magnitudine: 6.0)
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima per considerare il passaggio "vicino"
+     * @param observerLocation posizione dell'osservatore
+     * @return lista di pass ordinati per tempo di rise
+     */
+    public List<SatellitePassDTO> findVisibleUpcomingPasses(int hours, double minElevation, ObserverLocation observerLocation) {
+        return findVisibleUpcomingPasses(hours, minElevation, observerLocation, "any", 6.0);
+    }
+
+    /**
+     * Trova tutti i satelliti visibili nelle prossime ore che passano vicino all'osservatore
+     * Con filtri avanzati: condizione osservazione e magnitudine
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima
+     * @param observingCondition "night", "twilight", o "any"
+     * @param maxMagnitude magnitudine massima (più basso = più luminoso, es. 4.0)
+     * @return lista di pass ordinati per tempo di rise
+     */
+    public List<SatellitePassDTO> findVisibleUpcomingPasses(int hours, double minElevation, 
+                                                              String observingCondition, double maxMagnitude) {
+        return findVisibleUpcomingPasses(hours, minElevation, defaultLocation, observingCondition, maxMagnitude);
+    }
+
+    /**
+     * Trova tutti i satelliti visibili con filtri avanzati (posizione custom)
+     * 
+     * @param hours ore da controllare
+     * @param minElevation elevazione minima
+     * @param observerLocation posizione dell'osservatore
+     * @param observingCondition "night", "twilight", o "any"
+     * @param maxMagnitude magnitudine massima
+     * @return lista di pass ordinati per tempo di rise
+     */
+    public List<SatellitePassDTO> findVisibleUpcomingPasses(int hours, double minElevation, 
+                                                              ObserverLocation observerLocation,
+                                                              String observingCondition, double maxMagnitude) {
+        // Genera chiave di cache
+        String cacheKey = String.format("%s_%d_%.1f_%s_%.1f", observerLocation.getLocationName(), 
+                                       hours, minElevation, observingCondition, maxMagnitude);
+        
+        // Controlla cache
+        if (passesCache.containsKey(cacheKey)) {
+            CacheEntry entry = passesCache.get(cacheKey);
+            if (!entry.isExpired(CACHE_TTL_MS)) {
+                System.out.println("✅ Risultati caricati da cache (scade tra " + ((CACHE_TTL_MS - (System.currentTimeMillis() - entry.timestamp)) / 1000 / 60) + " min)");
+                return entry.passes;
+            }
+        }
+        
+        List<SatellitePassDTO> allPasses = new ArrayList<>();
+        
+        try {
+            List<Satellite> allSatellites = satelliteRepository.findAll();
+            double observerLat = Math.abs(observerLocation.getLatitude());
+            
+            // Filtra satelliti per inclinazione PRIMA di calcolare i passaggi
+            List<Satellite> visibleSatellites = new ArrayList<>();
+            for (Satellite sat : allSatellites) {
+                OrbitalParameters latestParams = orbitalParametersRepository
+                    .findTopBySatelliteOrderByFetchedAtDesc(sat);
+                
+                if (latestParams != null) {
+                    double inclination = latestParams.getInclination();
+                    if (inclination >= observerLat) {
+                        visibleSatellites.add(sat);
+                    }
+                }
+            }
+            
+            System.out.println("🔍 Scanning " + visibleSatellites.size() + " satelliti da " + 
+                             observerLocation.getLocationName() + " [Condizione: " + observingCondition + 
+                             ", Max magnitudine: " + maxMagnitude + "]");
+            
+            for (Satellite satellite : visibleSatellites) {
+                try {
+                    List<SatellitePassDTO> passes = calculatePasses(satellite.getId(), hours, observerLocation);
+                    
+                    // Filtra per elevazione minima, visibilità, condizione osservazione e magnitudine
+                    for (SatellitePassDTO pass : passes) {
+                        boolean passesElevationFilter = pass.maxElevation() >= minElevation && pass.isVisible();
+                        boolean passesConditionFilter = "any".equalsIgnoreCase(observingCondition) || 
+                                                        pass.observingCondition().equalsIgnoreCase(observingCondition);
+                        boolean passesMagnitudeFilter = pass.estimatedMagnitude() <= maxMagnitude;
+                        
+                        if (passesElevationFilter && passesConditionFilter && passesMagnitudeFilter) {
+                            allPasses.add(pass);
+                        }
+                    }
+                } catch (Exception e) {
+                    // Continua con il prossimo satellite
+                }
+            }
+            
+            // Ordina per tempo di rise
+            allPasses.sort((p1, p2) -> p1.riseTime().compareTo(p2.riseTime()));
+            
+            // Salva in cache
+            passesCache.put(cacheKey, new CacheEntry(allPasses));
+            
+            System.out.println("✅ Trovati " + allPasses.size() + " passaggi con filtri: elevazione>" + minElevation + 
+                             "°, " + observingCondition + ", magnitudine<" + maxMagnitude);
+            return allPasses;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Errore durante scan passaggi: " + e.getMessage());
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * Pulisce il cache dei passaggi visibili
+     */
+    public void clearPassesCache() {
+        passesCache.clear();
+        System.out.println("🧹 Cache passaggi pulito");
+    }
+    
+    /**
+     * Ottiene lo stato del cache
+     */
+    public Map<String, Object> getCacheStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("entries", passesCache.size());
+        status.put("ttl_minutes", CACHE_TTL_MS / 1000 / 60);
+        
+        Map<String, Long> entries = new HashMap<>();
+        for (String key : passesCache.keySet()) {
+            CacheEntry entry = passesCache.get(key);
+            long ageMs = System.currentTimeMillis() - entry.timestamp;
+            long remainingMs = CACHE_TTL_MS - ageMs;
+            entries.put(key, Math.max(0, remainingMs / 1000 / 60)); // minuti rimanenti
+        }
+        status.put("cache_entries", entries);
+        
+        return status;
     }
 }
