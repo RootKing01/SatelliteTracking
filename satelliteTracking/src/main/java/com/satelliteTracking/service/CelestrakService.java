@@ -5,6 +5,7 @@ import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +27,7 @@ public class CelestrakService {
         this.orbitalParametersRepository = orbitalParametersRepository;
     }
 
+    @Transactional
     public void fetchAndSaveStations() {
         List<CelestrakSatelliteDTO> satellites = webClient.get()
                 .uri("/NORAD/elements/gp.php?GROUP=stations&FORMAT=json")
