@@ -2,11 +2,14 @@ package com.satelliteTracking.controller;
 
 import com.satelliteTracking.dto.OrbitalParametersDTO;
 import com.satelliteTracking.dto.SatelliteDTO;
+import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.dto.SatelliteWithHistoryDTO;
+import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.service.SatellitePassService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,11 +22,14 @@ public class SatelliteController {
 
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
+    private final SatellitePassService satellitePassService;
 
     public SatelliteController(SatelliteRepository satelliteRepository, 
-                               OrbitalParametersRepository orbitalParametersRepository) {
+                               OrbitalParametersRepository orbitalParametersRepository,
+                               SatellitePassService satellitePassService) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
+        this.satellitePassService = satellitePassService;
     }
 
     /**
@@ -120,5 +126,52 @@ public class SatelliteController {
             return ResponseEntity.ok(OrbitalParametersDTO.fromEntity(latestParams));
         }
         return ResponseEntity.notFound().build();
+    }
+
+    /**
+     * Calcola i prossimi passaggi visibili di un satellite sopra San Marcellino
+     * 
+     * @param id ID del satellite
+     * @param hours numero di ore nel futuro da analizzare (default: 24)
+     * @return lista dei passaggi visibili
+     */
+    @GetMapping("/{id}/passes")
+    public ResponseEntity<List<SatellitePassDTO>> getSatellitePasses(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "24") int hours) {
+        
+        List<SatellitePassDTO> passes = satellitePassService.calculatePasses(id, hours);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Calcola i prossimi passaggi visibili di un satellite sopra una posizione personalizzata
+     * 
+     * @param id ID del satellite
+     * @param lat latitudine dell'osservatore
+     * @param lon longitudine dell'osservatore
+     * @param alt altitudine dell'osservatore in metri (default: 0)
+     * @param hours numero di ore nel futuro da analizzare (default: 24)
+     * @return lista dei passaggi visibili
+     */
+    @GetMapping("/{id}/passes/custom")
+    public ResponseEntity<List<SatellitePassDTO>> getSatellitePassesCustomLocation(
+            @PathVariable Long id,
+            @RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam(defaultValue = "0") double alt,
+            @RequestParam(defaultValue = "24") int hours) {
+        
+        ObserverLocation customLocation = new ObserverLocation(lat, lon, alt);
+        List<SatellitePassDTO> passes = satellitePassService.calculatePasses(id, hours, customLocation);
+        return ResponseEntity.ok(passes);
+    }
+
+    /**
+     * Ottiene la posizione predefinita dell'osservatore (San Marcellino)
+     */
+    @GetMapping("/observer-location")
+    public ResponseEntity<ObserverLocation> getDefaultObserverLocation() {
+        return ResponseEntity.ok(satellitePassService.getDefaultLocation());
     }
 }

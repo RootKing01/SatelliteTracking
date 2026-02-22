@@ -22,7 +22,9 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-# Copia solo il JAR dal stage di build
+# Copia il JAR dal build stage
 COPY --from=build /app/target/*.jar app.jar
+
+# I dati Orekit verranno montati da un volume condiviso
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

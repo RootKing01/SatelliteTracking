@@ -1,5 +1,14 @@
 services:
 
+  # Container dedicato per i dati Orekit
+  orekit-data:
+    build:
+      context: .
+      dockerfile: orekit-data.Dockerfile
+    container_name: orekit-data
+    volumes:
+      - orekit-data-volume:/data
+
   db:
     image: postgres:15
     container_name: satellite-db
@@ -19,7 +28,13 @@ services:
       - "8080:8080"
     depends_on:
       - db
+      - orekit-data
+    volumes:
+      - orekit-data-volume:/orekit-data:ro
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/satellites
       SPRING_DATASOURCE_USERNAME: admin
       SPRING_DATASOURCE_PASSWORD: admin
+
+volumes:
+  orekit-data-volume:

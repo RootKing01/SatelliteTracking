@@ -62,15 +62,34 @@
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
 
-	</dependencies>
+	<!-- Orekit per calcoli orbitali e propagazione SGP4 -->
+	<dependency>
+		<groupId>org.orekit</groupId>
+		<artifactId>orekit</artifactId>
+		<version>12.1</version>
+	</dependency>
 
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
-	</build>
+	<!-- Hipparchus per calcoli matematici (richiesto da Orekit) -->
+	<dependency>
+		<groupId>org.hipparchus</groupId>
+		<artifactId>hipparchus-core</artifactId>
+		<version>3.1</version>
+	</dependency>
 
+	<!-- Jakarta Annotations per @PostConstruct (Java 21+) -->
+	<dependency>
+		<groupId>jakarta.annotation</groupId>
+		<artifactId>jakarta.annotation-api</artifactId>
+	</dependency>
+
+</dependencies>
+
+<build>
+	<plugins>
+		<plugin>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-maven-plugin</artifactId>
+		</plugin>
+	</plugins>
+</build>
 </project>
