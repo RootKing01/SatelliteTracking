@@ -107,37 +107,32 @@ public class SatelliteScheduler {
                                      ", maxMagnitude=" + sub.getMaxMagnitude() + ")");
                     
                     LocalDateTime now = LocalDateTime.now();
+                    long minutesSinceLastNotification = java.time.temporal.ChronoUnit.MINUTES
+                        .between(sub.getLastNotificationSent(), now);
                     
-                    // Invia notifica per il primo passaggio trovato (se non è stato già notificato di recente)
-                    for (SatellitePassDTO pass : passes) {
-                        long minutesSinceLastNotification = java.time.temporal.ChronoUnit.MINUTES
-                            .between(sub.getLastNotificationSent(), now);
-                        
-                        System.out.println("⏰ Ultimo notifica: " + minutesSinceLastNotification + " minuti fa (threshold: 30 min)");
-                        
-                        // Evita notifiche duplicate (almeno 30 minuti tra notifiche)
-                        if (minutesSinceLastNotification >= 30) {
+                    System.out.println("⏰ Ultimo notifica: " + minutesSinceLastNotification + " minuti fa (threshold: 30 min)");
+                    
+                    // Evita notifiche duplicate globali (almeno 30 minuti tra batch di notifiche)
+                    if (minutesSinceLastNotification >= 30) {
+                        // Invia notifiche per TUTTI i passaggi trovati
+                        int notificationsSent = 0;
+                        for (SatellitePassDTO pass : passes) {
                             System.out.println("📤 Tentativo invio notifica per " + pass.satelliteName());
-                            boolean sent = telegramNotificationService.sendNotificationToUser(
-                                sub,
-                                pass.satelliteName(),
-                                pass.riseTime(),
-                                pass.maxElevation(),
-                                pass.estimatedMagnitude()
-                            );
+                            boolean sent = telegramNotificationService.sendNotificationToUser(sub, pass);
                             
                             if (sent) {
                                 System.out.println("✅ Notifica inviata per " + pass.satelliteName() + 
                                                  " che passerà tra " + 
                                                  java.time.temporal.ChronoUnit.MINUTES.between(now, pass.riseTime()) + 
                                                  " minuti");
-                                break; // Una notifica per utente per esecuzione
+                                notificationsSent++;
                             } else {
                                 System.out.println("❌ Invio fallito per " + pass.satelliteName());
                             }
-                        } else {
-                            System.out.println("⏭️  Troppo presto per altra notifica (ultimo: " + minutesSinceLastNotification + " min fa)");
                         }
+                        System.out.println("📊 Notifiche inviate in batch: " + notificationsSent + "/" + passes.size());
+                    } else {
+                        System.out.println("⏭️  Troppo presto per notifiche (ultimo batch: " + minutesSinceLastNotification + " min fa)");
                     }
                     
                 } catch (Exception e) {

@@ -13,6 +13,7 @@ public record SatellitePassDTO(
     LocalDateTime setTime,
     double maxElevation,
     double riseAzimuth,
+    double maxElevationAzimuth,  // 🆕 Azimuth al massimo dell'elevazione
     double setAzimuth,
     double maxDistance,
     boolean isVisible,
@@ -38,6 +39,13 @@ public record SatellitePassDTO(
     }
     
     /**
+     * Direzione cardinale al massimo dell'elevazione
+     */
+    public String getMaxElevationDirection() {
+        return azimuthToDirection(maxElevationAzimuth);
+    }
+    
+    /**
      * Direzione cardinale del tramonto
      */
     public String getSetDirection() {
@@ -49,23 +57,25 @@ public record SatellitePassDTO(
      */
     public String getViewingTips() {
         StringBuilder tips = new StringBuilder();
-        tips.append("Cerca il satellite verso ").append(getRiseDirection());
-        tips.append(" (azimuth ").append(String.format("%.1f", riseAzimuth)).append("°). ");
+        tips.append("📍 Sorgere: ").append(getRiseDirection()).append(" (").append(String.format("%.0f", riseAzimuth)).append("°)\n");
+        tips.append("🎯 Massima elevazione: ").append(getMaxElevationDirection()).append(" (").append(String.format("%.0f", maxElevationAzimuth)).append("°) a ").append(String.format("%.1f", maxElevation)).append("°\n");
+        tips.append("📍 Tramonto: ").append(getSetDirection()).append(" (").append(String.format("%.0f", setAzimuth)).append("°)\n\n");
         
         if (maxElevation > 60) {
-            tips.append("Passerà quasi sopra la tua testa! ");
+            tips.append("🔝 Passerà quasi sopra la tua testa!");
         } else if (maxElevation > 30) {
-            tips.append("Sarà ben visibile alto nel cielo. ");
+            tips.append("👀 Sarà ben visibile alto nel cielo.");
         } else {
-            tips.append("Sarà basso sull'orizzonte. ");
+            tips.append("🌅 Sarà basso sull'orizzonte.");
         }
+        tips.append("\n");
         
         if (isSunlit && observingCondition.equals("night")) {
-            tips.append("Ottima visibilità: satellite illuminato su cielo scuro.");
+            tips.append("✨ Ottima visibilità: satellite illuminato su cielo scuro.");
         } else if (observingCondition.equals("twilight")) {
-            tips.append("Visibile durante il crepuscolo.");
+            tips.append("🌆 Visibile durante il crepuscolo.");
         } else {
-            tips.append("Difficile da vedere (cielo troppo luminoso).");
+            tips.append("❌ Difficile da vedere (cielo troppo luminoso).");
         }
         
         return tips.toString();

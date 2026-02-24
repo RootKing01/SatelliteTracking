@@ -398,6 +398,95 @@ public class SatelliteController {
     }
 
     /**
+     * Calcola i passaggi visibili in una fascia oraria specifica
+     * 
+     * @param hours fascia oraria da ora (es. 3 = prossime 3 ore)
+     * @param latitude latitudine osservatore (default: 41.01 - San Marcellino)
+     * @param longitude longitudine osservatore (default: 14.42 - San Marcellino)
+     * @param altitude altitudine osservatore in metri (default: 100)
+     * @param minElevation elevazione minima in gradi (default: 30)
+     * @return lista dei passaggi visibili ordinati per ora
+     */
+    @GetMapping("/passes/upcoming")
+    public ResponseEntity<?> getUpcomingPasses(
+            @RequestParam(value = "hours", defaultValue = "3") Integer hours,
+            @RequestParam(value = "latitude", defaultValue = "41.01") Double latitude,
+            @RequestParam(value = "longitude", defaultValue = "14.42") Double longitude,
+            @RequestParam(value = "altitude", defaultValue = "100") Integer altitude,
+            @RequestParam(value = "minElevation", defaultValue = "30.0") Double minElevation) {
+        
+        try {
+            // Validazione input
+            if (hours == null || hours <= 0 || hours > 24) {
+                return ResponseEntity.badRequest().body(
+                    Map.of("error", "hours deve essere tra 1 e 24", "received", hours)
+                );
+            }
+            
+            if (latitude == null || latitude < -90 || latitude > 90) {
+                return ResponseEntity.badRequest().body(
+                    Map.of("error", "latitude deve essere tra -90 e 90", "received", latitude)
+                );
+            }
+            
+            if (longitude == null || longitude < -180 || longitude > 180) {
+                return ResponseEntity.badRequest().body(
+                    Map.of("error", "longitude deve essere tra -180 e 180", "received", longitude)
+                );
+            }
+            
+            if (minElevation == null || minElevation < 0 || minElevation > 90) {
+                return ResponseEntity.badRequest().body(
+                    Map.of("error", "minElevation deve essere tra 0 e 90", "received", minElevation)
+                );
+            }
+            
+            // Crea location observer
+            ObserverLocation observer = new ObserverLocation(
+                latitude,
+                longitude,
+                altitude,
+                String.format("Custom (%.2f, %.2f, %dm)", latitude, longitude, altitude)
+            );
+            
+            // Calcola passaggi
+            List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(
+                hours,
+                minElevation,
+                observer,
+                "any",  // qualsiasi condizione di osservazione
+                6.0    // magnitudine massima
+            );
+            
+            // Prepara risposta dettagliata
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("timestamp", LocalDateTime.now().toString());
+            response.put("query", Map.of(
+                "hours", hours,
+                "observer", Map.of(
+                    "latitude", latitude,
+                    "longitude", longitude,
+                    "altitude", altitude
+                ),
+                "minElevation", minElevation + "°"
+            ));
+            response.put("totalPasses", passes.size());
+            response.put("passes", passes);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(
+                Map.of(
+                    "error", "Errore durante il calcolo dei passaggi",
+                    "message", e.getMessage(),
+                    "timestamp", LocalDateTime.now().toString()
+                )
+            );
+        }
+    }
+
+    /**
      * Ottiene lo stato del cache dei passaggi
      * 
      * @return informazioni sul cache (numero entries, TTL, dettagli)

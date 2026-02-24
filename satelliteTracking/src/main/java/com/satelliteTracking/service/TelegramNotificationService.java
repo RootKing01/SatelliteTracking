@@ -1,5 +1,6 @@
 package com.satelliteTracking.service;
 
+import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.TelegramSubscriptionRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -88,9 +89,25 @@ public class TelegramNotificationService {
     /**
      * Invia notifica Telegram a un utente specifico
      */
+    /**
+     * Invia notifica per un passaggio satellitare
+     */
+    public boolean sendNotificationToUser(TelegramSubscription subscription,
+                                         SatellitePassDTO pass) {
+        return sendNotificationToUser(subscription,
+            pass.satelliteName(),
+            pass.riseTime(),
+            pass.maxElevation(),
+            pass.maxElevationAzimuth(),
+            pass.estimatedMagnitude(),
+            subscription.getLocationName()
+        );
+    }
+    
     public boolean sendNotificationToUser(TelegramSubscription subscription,
                                          String satelliteName, LocalDateTime riseTime,
-                                         Double maxElevation, Double magnitude) {
+                                         Double maxElevation, Double maxElevationAzimuth,
+                                         Double magnitude, String locationName) {
         if (!subscription.getNotificationsEnabled() || telegramBotToken.isEmpty()) {
             return false;
         }
@@ -98,8 +115,9 @@ public class TelegramNotificationService {
         try {
             String message = buildNotificationMessage(
                 satelliteName, riseTime, 
-                maxElevation, magnitude, 
-                subscription.getLocationName()
+                maxElevation, maxElevationAzimuth,
+                magnitude, 
+                locationName
             );
             
             boolean success = sendTelegramMessage(subscription.getChatId(), message);
@@ -116,6 +134,16 @@ public class TelegramNotificationService {
             System.err.println("❌ Errore invio notifica Telegram: " + e.getMessage());
             return false;
         }
+    }
+    
+    /**
+     * DEPRECATO - Usa sendNotificationToUser con maxElevationAzimuth
+     */
+    @Deprecated
+    public boolean sendNotificationToUser(TelegramSubscription subscription,
+                                         String satelliteName, LocalDateTime riseTime,
+                                         Double maxElevation, Double magnitude) {
+        return sendNotificationToUser(subscription, satelliteName, riseTime, maxElevation, 0.0, magnitude, subscription.getLocationName());
     }
     
     /**
@@ -160,18 +188,34 @@ public class TelegramNotificationService {
      * Costruisce il messaggio Telegram con formattazione
      */
     private String buildNotificationMessage(String satelliteName, LocalDateTime riseTime,
-                                           Double maxElevation, Double magnitude,
-                                           String locationName) {
+                                           Double maxElevation, Double maxElevationAzimuth,
+                                           Double magnitude, String locationName) {
+        String direction = azimuthToDirection(maxElevationAzimuth);
+        
         return "🛰️ *Satellite Tracker Alert*\n" +
                "\n" +
                "*Satellite:* " + satelliteName + "\n" +
                "*Location:* " + locationName + "\n" +
                "*Rise Time:* " + String.format("%02d:%02d UTC", riseTime.getHour(), riseTime.getMinute()) + "\n" +
                "*Max Elevation:* " + String.format("%.1f°", maxElevation) + "\n" +
+               "*Direction:* " + direction + " (azimuth " + String.format("%.0f", maxElevationAzimuth) + "°)\n" +
                "*Magnitude:* " + String.format("%.1f", magnitude) + "\n" +
                "\n📱 [Open Web App](" + "https://satellite-tracker.app" + ")"
-
 ;
+    }
+    
+    /**
+     * Converte azimuth in direzione cardinale
+     */
+    private String azimuthToDirection(double azimuth) {
+        if (azimuth < 22.5 || azimuth >= 337.5) return "N (Nord)";
+        if (azimuth < 67.5) return "NE (Nord-Est)";
+        if (azimuth < 112.5) return "E (Est)";
+        if (azimuth < 157.5) return "SE (Sud-Est)";
+        if (azimuth < 202.5) return "S (Sud)";
+        if (azimuth < 247.5) return "SW (Sud-Ovest)";
+        if (azimuth < 292.5) return "W (Ovest)";
+        return "NW (Nord-Ovest)";
     }
     
     /**

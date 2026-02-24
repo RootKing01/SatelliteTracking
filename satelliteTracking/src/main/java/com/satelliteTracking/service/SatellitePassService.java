@@ -168,6 +168,7 @@ public class SatellitePassService {
                             currentPass.maxElevation = elevation;
                             currentPass.maxElevationTime = toLocalDateTime(date);
                             currentPass.maxElevationDate = date;
+                            currentPass.maxElevationAzimuth = azimuth;  // 🆕 Salva azimuth al max
                             currentPass.maxDistance = range;
                             
                             // Calcola altitudine satellite (distanza dalla superficie terrestre)
@@ -228,6 +229,7 @@ public class SatellitePassService {
                             pd.setTime,
                             pd.maxElevation,
                             pd.riseAzimuth,
+                            pd.maxElevationAzimuth,  // 🆕
                             pd.setAzimuth,
                             pd.maxDistance,
                             isActuallyVisible,
@@ -289,6 +291,7 @@ public class SatellitePassService {
             now.plusHours((long)hoursUntilPass).plusMinutes((long)(orbitalPeriod / 2)),
             35.0,
             150.0,
+            180.0,  // maxElevationAzimuth
             210.0,
             600.0,
             true,
@@ -316,6 +319,7 @@ public class SatellitePassService {
             now.plusHours(2).plusMinutes(10),
             25.0,
             120.0,
+            180.0,  // maxElevationAzimuth
             240.0,
             800.0,
             false,
@@ -337,6 +341,7 @@ public class SatellitePassService {
         LocalDateTime setTime;
         double maxElevation = 0;
         double riseAzimuth;
+        double maxElevationAzimuth;  // 🆕 Azimuth al massimo dell'elevazione
         double setAzimuth;
         double maxDistance;
         double satelliteAltitude;
