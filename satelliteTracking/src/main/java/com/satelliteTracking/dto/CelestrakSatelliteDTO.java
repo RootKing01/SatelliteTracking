@@ -1,7 +1,9 @@
 package com.satelliteTracking.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record CelestrakSatelliteDTO(
         @JsonProperty("OBJECT_NAME") String objectName,
         @JsonProperty("OBJECT_ID") String objectId,

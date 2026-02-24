@@ -6,7 +6,9 @@ import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +35,7 @@ public class CelestrakService {
         // Navigazione Satellitare
         "gps-ops",            // GPS (USA)
         "galileo",            // Galileo (Europa)
-        "glonass-ops",        // GLONASS (Russia)
+        // "glonass-ops",     // ❌ Rimosso: gruppo non più disponibile su Celestrak
         "beidou",             // BeiDou (Cina)
         "sbas",               // Satellite-Based Augmentation Systems
         
@@ -56,9 +58,16 @@ public class CelestrakService {
 
     public CelestrakService(SatelliteRepository satelliteRepository, 
                             OrbitalParametersRepository orbitalParametersRepository) {
+        // Increase buffer size to 20MB for large satellite groups like Starlink (6000+ satellites)
+        ExchangeStrategies strategies = ExchangeStrategies.builder()
+                .codecs(configurer -> configurer.defaultCodecs()
+                        .maxInMemorySize(20 * 1024 * 1024))  // 20MB
+                .build();
+        
         this.webClient = WebClient.builder()
                 .baseUrl("https://celestrak.org")
                 .defaultHeader("User-Agent", "SatelliteTracker/1.0")
+                .exchangeStrategies(strategies)
                 .build();
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
@@ -83,15 +92,21 @@ public class CelestrakService {
                     System.out.println("📡 Scaricando gruppo: " + group);
                     long groupStartTime = System.currentTimeMillis();
                     
+                    // Usa streaming per gruppi grandi come Starlink (no buffer limit)
                     List<CelestrakSatelliteDTO> satellites = webClient.get()
                             .uri("/NORAD/elements/gp.php?GROUP=" + group + "&FORMAT=json")
+                            .accept(MediaType.APPLICATION_JSON)
                             .retrieve()
                             .bodyToFlux(CelestrakSatelliteDTO.class)
+                            .onErrorResume(error -> {
+                                System.err.println("❌ Errore per gruppo '" + group + "': " + error.getMessage());
+                                return reactor.core.publisher.Flux.empty();
+                            })
+                            .timeout(Duration.ofMinutes(5))
                             .collectList()
-                            .timeout(Duration.ofMinutes(5))  // ⏱️ Timeout 5 minuti per gruppo
                             .block();
 
-                    if (satellites != null) {
+                    if (satellites != null && !satellites.isEmpty()) {
                         int saved = 0;
                         int updated = 0;
                         

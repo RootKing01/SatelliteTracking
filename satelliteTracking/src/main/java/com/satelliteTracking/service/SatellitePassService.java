@@ -470,15 +470,31 @@ public class SatellitePassService {
                                                               ObserverLocation observerLocation,
                                                               String observingCondition, double maxMagnitude) {
         // Genera chiave di cache
-        String cacheKey = String.format("%s_%d_%.1f_%s_%.1f", observerLocation.getLocationName(), 
-                                       hours, minElevation, observingCondition, maxMagnitude);
+        String cacheKey = String.format("%s_%.4f_%.4f_%.1f_%d_%.1f_%s_%.1f",
+                           observerLocation.getLocationName(),
+                           observerLocation.getLatitude(),
+                           observerLocation.getLongitude(),
+                           observerLocation.getAltitude(),
+                           hours, minElevation, observingCondition, maxMagnitude);
         
         // Controlla cache
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
-                System.out.println("✅ Risultati caricati da cache (scade tra " + ((CACHE_TTL_MS - (System.currentTimeMillis() - entry.timestamp)) / 1000 / 60) + " min)");
-                return entry.passes;
+                LocalDateTime now = LocalDateTime.now();
+                List<SatellitePassDTO> filtered = new ArrayList<>();
+                for (SatellitePassDTO pass : entry.passes) {
+                    if (pass.riseTime().isAfter(now)) {
+                        filtered.add(pass);
+                    }
+                }
+
+                if (!filtered.isEmpty()) {
+                    System.out.println("Cache hit: returning " + filtered.size() + " upcoming passes");
+                    return filtered;
+                }
+
+                passesCache.remove(cacheKey);
             }
         }
         
@@ -506,18 +522,39 @@ public class SatellitePassService {
                              observerLocation.getLocationName() + " [Condizione: " + observingCondition + 
                              ", Max magnitudine: " + maxMagnitude + "]");
             
+            int rejectedVisibility = 0;
+            int rejectedElevation = 0;
+            int rejectedCondition = 0;
+            int rejectedMagnitude = 0;
+
             for (Satellite satellite : visibleSatellites) {
                 try {
                     List<SatellitePassDTO> passes = calculatePasses(satellite.getId(), hours, observerLocation);
                     
                     // Filtra per elevazione minima, visibilità, condizione osservazione e magnitudine
                     for (SatellitePassDTO pass : passes) {
-                        boolean passesElevationFilter = pass.maxElevation() >= minElevation && pass.isVisible();
-                        boolean passesConditionFilter = "any".equalsIgnoreCase(observingCondition) || 
-                                                        pass.observingCondition().equalsIgnoreCase(observingCondition);
-                        boolean passesMagnitudeFilter = pass.estimatedMagnitude() <= maxMagnitude;
-                        
-                        if (passesElevationFilter && passesConditionFilter && passesMagnitudeFilter) {
+                        if (!pass.isVisible()) {
+                            rejectedVisibility++;
+                            continue;
+                        }
+
+                        if (pass.maxElevation() < minElevation) {
+                            rejectedElevation++;
+                            continue;
+                        }
+
+                        if (!"any".equalsIgnoreCase(observingCondition) &&
+                            !pass.observingCondition().equalsIgnoreCase(observingCondition)) {
+                            rejectedCondition++;
+                            continue;
+                        }
+
+                        if (pass.estimatedMagnitude() > maxMagnitude) {
+                            rejectedMagnitude++;
+                            continue;
+                        }
+
+                        if (pass.isVisible()) {
                             allPasses.add(pass);
                         }
                     }
@@ -529,11 +566,17 @@ public class SatellitePassService {
             // Ordina per tempo di rise
             allPasses.sort((p1, p2) -> p1.riseTime().compareTo(p2.riseTime()));
             
-            // Salva in cache
-            passesCache.put(cacheKey, new CacheEntry(allPasses));
-            
-            System.out.println("✅ Trovati " + allPasses.size() + " passaggi con filtri: elevazione>" + minElevation + 
-                             "°, " + observingCondition + ", magnitudine<" + maxMagnitude);
+            // Salva in cache solo se ci sono risultati
+            if (!allPasses.isEmpty()) {
+                passesCache.put(cacheKey, new CacheEntry(allPasses));
+            }
+
+            System.out.println("Found " + allPasses.size() + " passes after filters (minElevation=" + minElevation +
+                             ", condition=" + observingCondition + ", maxMagnitude=" + maxMagnitude + "). Rejected: " +
+                             " notVisible=" + rejectedVisibility +
+                             ", elevation=" + rejectedElevation +
+                             ", condition=" + rejectedCondition +
+                             ", magnitude=" + rejectedMagnitude);
             return allPasses;
             
         } catch (Exception e) {
