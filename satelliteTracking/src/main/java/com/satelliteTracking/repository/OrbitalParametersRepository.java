@@ -15,4 +15,7 @@ public interface OrbitalParametersRepository extends JpaRepository<OrbitalParame
     
     // Trova i parametri orbitali più recenti per un satellite
     OrbitalParameters findTopBySatelliteOrderByFetchedAtDesc(Satellite satellite);
+    
+    // Trova l'ultimo parametro orbitale scaricato (di qualsiasi satellite)
+    OrbitalParameters findTopByOrderByFetchedAtDesc();
 }

@@ -10,6 +10,7 @@ import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.service.GeocodingService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
 import org.springframework.http.ResponseEntity;
@@ -29,15 +30,18 @@ public class SatelliteController {
     private final OrbitalParametersRepository orbitalParametersRepository;
     private final SatellitePassService satellitePassService;
     private final TelegramNotificationService telegramNotificationService;
+    private final GeocodingService geocodingService;
 
     public SatelliteController(SatelliteRepository satelliteRepository, 
                                OrbitalParametersRepository orbitalParametersRepository,
                                SatellitePassService satellitePassService,
-                               TelegramNotificationService telegramNotificationService) {
+                               TelegramNotificationService telegramNotificationService,
+                               GeocodingService geocodingService) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
         this.satellitePassService = satellitePassService;
         this.telegramNotificationService = telegramNotificationService;
+        this.geocodingService = geocodingService;
     }
 
     /**
@@ -509,5 +513,157 @@ public class SatelliteController {
         response.put("status", "Cache pulito con successo");
         response.put("timestamp", LocalDateTime.now().toString());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Trova i passaggi di un satellite specifico sopra una città
+     * Usa geocoding per convertire il nome della città in coordinate
+     * 
+     * @param id ID del satellite
+     * @param city nome della città (es: "Roma", "Milano", "San Marcellino")
+     * @param hours ore da controllare (default 24)
+     * @param minElevation elevazione minima in gradi (default 30)
+     * @return lista dei passaggi con dettagli della città
+     */
+    @GetMapping("/{id}/passes/by-city")
+    public ResponseEntity<?> getSatellitePassesByCity(
+            @PathVariable Long id,
+            @RequestParam String city,
+            @RequestParam(defaultValue = "24") int hours,
+            @RequestParam(defaultValue = "30") double minElevation) {
+        
+        try {
+            // Converte città in coordinate
+            Map<String, Object> geoResult = geocodingService.geocodeCity(city);
+            
+            if (geoResult.containsKey("error")) {
+                return ResponseEntity.badRequest().body(
+                    Map.of(
+                        "error", geoResult.get("error"),
+                        "city", city,
+                        "timestamp", LocalDateTime.now().toString()
+                    )
+                );
+            }
+            
+            double latitude = (double) geoResult.get("latitude");
+            double longitude = (double) geoResult.get("longitude");
+            int altitude = ((Number) geoResult.get("altitude")).intValue();
+            String displayName = (String) geoResult.get("displayName");
+            
+            // Crea observer location
+            ObserverLocation observer = new ObserverLocation(latitude, longitude, altitude);
+            
+            // Calcola passaggi
+            List<SatellitePassDTO> passes = satellitePassService.calculatePasses(id, hours, observer);
+            
+            // Prepara risposta dettagliata
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("timestamp", LocalDateTime.now().toString());
+            response.put("city", Map.of(
+                "name", city,
+                "displayName", displayName,
+                "latitude", latitude,
+                "longitude", longitude,
+                "altitude", altitude
+            ));
+            response.put("query", Map.of(
+                "hours", hours,
+                "minElevation", minElevation + "°"
+            ));
+            response.put("totalPasses", passes.size());
+            response.put("passes", passes);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(
+                Map.of(
+                    "error", "Errore durante il calcolo dei passaggi",
+                    "city", city,
+                    "message", e.getMessage(),
+                    "timestamp", LocalDateTime.now().toString()
+                )
+            );
+        }
+    }
+
+    /**
+     * Trova tutti i satelliti visibili sopra una città
+     * Usa geocoding per convertire il nome della città in coordinate
+     * 
+     * @param city nome della città (es: "Roma", "Milano", "San Marcellino")
+     * @param hours ore da controllare (default 6)
+     * @param minElevation elevazione minima in gradi (default 30)
+     * @param observingCondition "night", "twilight", o "any" (default "any")
+     * @param maxMagnitude magnitudine massima visibile (default 6.0)
+     * @return lista dei passaggi con dettagli della città
+     */
+    @GetMapping("/upcoming-passes/by-city")
+    public ResponseEntity<?> getUpcomingPassesByCity(
+            @RequestParam String city,
+            @RequestParam(defaultValue = "6") int hours,
+            @RequestParam(defaultValue = "30") double minElevation,
+            @RequestParam(defaultValue = "any") String observingCondition,
+            @RequestParam(defaultValue = "6.0") double maxMagnitude) {
+        
+        try {
+            // Converte città in coordinate
+            Map<String, Object> geoResult = geocodingService.geocodeCity(city);
+            
+            if (geoResult.containsKey("error")) {
+                return ResponseEntity.badRequest().body(
+                    Map.of(
+                        "error", geoResult.get("error"),
+                        "city", city,
+                        "timestamp", LocalDateTime.now().toString()
+                    )
+                );
+            }
+            
+            double latitude = (double) geoResult.get("latitude");
+            double longitude = (double) geoResult.get("longitude");
+            int altitude = ((Number) geoResult.get("altitude")).intValue();
+            String displayName = (String) geoResult.get("displayName");
+            
+            // Crea observer location
+            ObserverLocation observer = new ObserverLocation(latitude, longitude, altitude);
+            
+            // Trova passaggi visibili
+            List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(
+                hours, minElevation, observer, observingCondition, maxMagnitude
+            );
+            
+            // Prepara risposta dettagliata
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("timestamp", LocalDateTime.now().toString());
+            response.put("city", Map.of(
+                "name", city,
+                "displayName", displayName,
+                "latitude", latitude,
+                "longitude", longitude,
+                "altitude", altitude
+            ));
+            response.put("query", Map.of(
+                "hours", hours,
+                "minElevation", minElevation + "°",
+                "observingCondition", observingCondition,
+                "maxMagnitude", maxMagnitude
+            ));
+            response.put("totalPasses", passes.size());
+            response.put("passes", passes);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(
+                Map.of(
+                    "error", "Errore durante il calcolo dei passaggi",
+                    "city", city,
+                    "message", e.getMessage(),
+                    "timestamp", LocalDateTime.now().toString()
+                )
+            );
+        }
     }
 }

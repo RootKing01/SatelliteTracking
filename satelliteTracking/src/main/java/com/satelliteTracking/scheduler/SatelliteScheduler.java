@@ -1,7 +1,9 @@
 package com.satelliteTracking.scheduler;
 import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.model.ObserverLocation;
+import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.TelegramSubscription;
+import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.CelestrakService;
 import com.satelliteTracking.service.SatellitePassService;
@@ -10,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Component
@@ -18,17 +21,38 @@ public class SatelliteScheduler {
     private final CelestrakService celestrakService;
     private final SatellitePassService passService;
     private final TelegramNotificationService telegramNotificationService;
+    private final OrbitalParametersRepository orbitalParametersRepository;
 
     public SatelliteScheduler(CelestrakService celestrakService,
                               SatellitePassService passService,
-                              TelegramNotificationService telegramNotificationService) {
+                              TelegramNotificationService telegramNotificationService,
+                              OrbitalParametersRepository orbitalParametersRepository) {
         this.celestrakService = celestrakService;
         this.passService = passService;
         this.telegramNotificationService = telegramNotificationService;
+        this.orbitalParametersRepository = orbitalParametersRepository;
     }
 
     @Scheduled(initialDelay = 60000, fixedRate = 10800000) // Primo download dopo 1 minuto, poi ogni 3 ore
     public void updateSatellites() {
+        // Controlla se ci sono già dati recenti
+        OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+        
+        if (lastUpdate != null) {
+            long hoursSinceLastUpdate = ChronoUnit.HOURS.between(lastUpdate.getFetchedAt(), LocalDateTime.now());
+            
+            if (hoursSinceLastUpdate < 3) {
+                System.out.println("⏭️  [Satellite Update] Saltato download - dati aggiornati " + 
+                                 hoursSinceLastUpdate + " ore fa (threshold: 3 ore)");
+                return;
+            }
+            
+            System.out.println("🔄 [Satellite Update] Download necessario - ultimo aggiornamento " + 
+                             hoursSinceLastUpdate + " ore fa");
+        } else {
+            System.out.println("🔄 [Satellite Update] Primo download - database vuoto");
+        }
+        
         celestrakService.fetchAndSaveStations();
     }
 
@@ -94,7 +118,7 @@ public class SatelliteScheduler {
                     );
                     
                     List<SatellitePassDTO> passes = passService.findVisibleUpcomingPasses(
-                        24,
+                        3,      // Solo prossime 3 ore
                         30.0,
                         location,
                         sub.getObservingCondition(),
@@ -110,7 +134,7 @@ public class SatelliteScheduler {
                     long minutesSinceLastNotification = java.time.temporal.ChronoUnit.MINUTES
                         .between(sub.getLastNotificationSent(), now);
                     
-                    System.out.println("⏰ Ultimo notifica: " + minutesSinceLastNotification + " minuti fa (threshold: 30 min)");
+                    System.out.println("⏰ Ultimo notifica: " + minutesSinceLastNotification + " minuti fa (threshold: 60 min)");
                     
                     // Evita notifiche duplicate globali (almeno 30 minuti tra batch di notifiche)
                     if (minutesSinceLastNotification >= 30) {

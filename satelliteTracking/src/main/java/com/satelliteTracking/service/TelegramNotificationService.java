@@ -1,6 +1,7 @@
 package com.satelliteTracking.service;
 
 import com.satelliteTracking.dto.SatellitePassDTO;
+import com.satelliteTracking.dto.TelegramUpdateDTO;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.TelegramSubscriptionRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,11 +35,17 @@ public class TelegramNotificationService {
     
     private final TelegramSubscriptionRepository subscriptionRepository;
     private final RestTemplate restTemplate;
+    private final GeocodingService geocodingService;
+    private final SatellitePassService satellitePassService;
     
     public TelegramNotificationService(TelegramSubscriptionRepository subscriptionRepository,
-                                      RestTemplate restTemplate) {
+                                      RestTemplate restTemplate,
+                                      GeocodingService geocodingService,
+                                      SatellitePassService satellitePassService) {
         this.subscriptionRepository = subscriptionRepository;
         this.restTemplate = restTemplate;
+        this.geocodingService = geocodingService;
+        this.satellitePassService = satellitePassService;
     }
     
     /**
@@ -351,6 +358,9 @@ public class TelegramNotificationService {
                 handleInfoCommand(chatId);
             } else if (text.startsWith("/stop")) {
                 handleStopCommand(chatId);
+            } else {
+                // Tratta come nome di città
+                handleCityInput(chatId, text);
             }
             
         } catch (Exception e) {
@@ -461,5 +471,160 @@ public class TelegramNotificationService {
         } else {
             sendTelegramMessage(chatId, "❌ Non sei registrato!");
         }
+    }
+    
+    /**
+     * Processa gli aggiornamenti in arrivo dal bot Telegram
+     * Gestisce comandi e messaggi
+     */
+    public void processUpdate(TelegramUpdateDTO update) {
+        if (update == null || update.getMessage() == null || update.getMessage().getChat() == null) {
+            return;
+        }
+        
+        TelegramUpdateDTO.MessageDTO message = update.getMessage();
+        Long chatId = message.getChat().getId();
+        String text = message.getText();
+        
+        if (text == null) {
+            return;
+        }
+        
+        System.out.println("📨 Messaggio da chat " + chatId + ": " + text);
+        
+        // Gestisci comandi
+        if (text.startsWith("/start")) {
+            handleStartCommand(chatId, message.getFrom());
+        } else if (text.startsWith("/help")) {
+            sendTelegramMessage(chatId, 
+                "🛰️ *Satellite Tracker Bot*\n\n" +
+                "*/start* - Registra la tua posizione\n" +
+                "*/help* - Mostra questo messaggio\n\n" +
+                "Invia il nome di una città per registrare la tua posizione!"
+            );
+        } else {
+            // Tratta il messaggio come nome di città
+            handleCityInput(chatId, text);
+        }
+    }
+    
+    /**
+     * Gestisce il comando /start
+     */
+    private void handleStartCommand(Long chatId, TelegramUpdateDTO.UserDTO user) {
+        String userName = user != null && user.getFirstName() != null ? user.getFirstName() : "Utente";
+        
+        sendTelegramMessage(chatId,
+            "🛰️ *Benvenuto nel Satellite Tracker!*\n\n" +
+            "Ciao " + userName + "! 👋\n\n" +
+            "Per iniziare a ricevere notifiche di passaggi satellitari, dimmi in quale città ti trovi.\n\n" +
+            "_Ad esempio: Milano, Roma, Napoli, etc._"
+        );
+    }
+    
+    /**
+     * Gestisce l'input del nome della città
+     */
+    private void handleCityInput(Long chatId, String cityName) {
+        sendTelegramMessage(chatId, "🌍 Ricerca della città: " + cityName + "...");
+        
+        // Geocodifica la città
+        Map<String, Object> geoResult = geocodingService.geocodeCity(cityName);
+        
+        if (geoResult.containsKey("error")) {
+            sendTelegramMessage(chatId, 
+                "❌ *Errore*: " + geoResult.get("error") + "\n\n" +
+                "Riprova con un nome di città valido o /help per l'aiuto."
+            );
+            return;
+        }
+        
+        // Estrai coordinate
+        double latitude = ((Number) geoResult.get("latitude")).doubleValue();
+        double longitude = ((Number) geoResult.get("longitude")).doubleValue();
+        double altitude = ((Number) geoResult.get("altitude")).doubleValue();
+        String displayName = (String) geoResult.get("displayName");
+        
+        try {
+            // Calcola i passaggi visibili nei prossimi 3 ore
+            com.satelliteTracking.model.ObserverLocation location = 
+                new com.satelliteTracking.model.ObserverLocation(
+                    latitude, longitude, altitude, displayName
+                );
+            
+            List<SatellitePassDTO> visiblePasses = satellitePassService.findVisibleUpcomingPasses(
+                3,      // 3 ore
+                30.0,   // minima elevazione 30°
+                location,
+                "any",  // qualunque condizione
+                6.0     // magnitudine massima
+            );
+            
+            // Mostra i satelliti trovati
+            String passesMessage = formatSatellitePasses(visiblePasses, displayName);
+            sendTelegramMessage(chatId, passesMessage);
+            
+            // Chiedi se registrarsi
+            sendTelegramMessage(chatId,
+                "📝 Vuoi registrare questa posizione per ricevere notifiche automatiche?\n\n" +
+                "Se sì, rispondi: *registra*\n" +
+                "Se no, scrivi un'altra città per cercare satelliti."
+            );
+            
+            // Registra l'utente
+            registerTelegramUser(
+                chatId,
+                "user_" + chatId,
+                latitude,
+                longitude,
+                altitude,
+                displayName
+            );
+            
+        } catch (Exception e) {
+            System.err.println("❌ Errore elaborazione città: " + e.getMessage());
+            sendTelegramMessage(chatId, "❌ Errore durante l'elaborazione: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Formatta i passaggi satellitari per il messaggio Telegram
+     */
+    private String formatSatellitePasses(List<SatellitePassDTO> passes, String cityName) {
+        if (passes.isEmpty()) {
+            return "🌍 *" + cityName + "*\n\n" +
+                   "Nessun satellite visibile nei prossimi 3 ore con:\n" +
+                   "  • Elevazione minima: 30°\n" +
+                   "  • Magnitudine: ≤ 6.0";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("🌍 *").append(cityName).append("*\n");
+        sb.append("📡 *").append(passes.size()).append(" satelliti visibili nelle prossime 3 ore*\n\n");
+        
+        int count = 1;
+        for (SatellitePassDTO pass : passes.stream().limit(10).toList()) {
+            String direction = azimuthToDirection(pass.maxElevationAzimuth());
+            long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(
+                LocalDateTime.now(), pass.riseTime()
+            );
+            
+            sb.append(count).append(". *").append(pass.satelliteName()).append("*\n");
+            sb.append("   ⏰ Tra ").append(minutesUntilRise).append(" min (")
+              .append(String.format("%02d:%02d", pass.riseTime().getHour(), pass.riseTime().getMinute()))
+              .append(" UTC)\n");
+            sb.append("   📈 Elev: ").append(String.format("%.0f°", pass.maxElevation()))
+              .append(" | Dir: ").append(direction).append("\n");
+            sb.append("   ⭐ Mag: ").append(String.format("%.1f", pass.estimatedMagnitude())).append("\n\n");
+            count++;
+        }
+        
+        if (passes.size() > 10) {
+            sb.append("_...e ").append(passes.size() - 10).append(" altri satelliti_\n\n");
+            sb.append("💡 Per vedere la lista completa, visita:\n");
+            sb.append("http://localhost:8080/api/satellites/passes/upcoming");
+        }
+        
+        return sb.toString();
     }
 }
