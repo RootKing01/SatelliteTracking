@@ -13,6 +13,7 @@ import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.GeocodingService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,17 +32,26 @@ public class SatelliteController {
     private final SatellitePassService satellitePassService;
     private final TelegramNotificationService telegramNotificationService;
     private final GeocodingService geocodingService;
+    private final double defaultLatitude;
+    private final double defaultLongitude;
+    private final double defaultAltitude;
 
     public SatelliteController(SatelliteRepository satelliteRepository, 
                                OrbitalParametersRepository orbitalParametersRepository,
                                SatellitePassService satellitePassService,
                                TelegramNotificationService telegramNotificationService,
-                               GeocodingService geocodingService) {
+                               GeocodingService geocodingService,
+                               @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
+                               @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
+                               @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
         this.satellitePassService = satellitePassService;
         this.telegramNotificationService = telegramNotificationService;
         this.geocodingService = geocodingService;
+        this.defaultLatitude = defaultLatitude;
+        this.defaultLongitude = defaultLongitude;
+        this.defaultAltitude = defaultAltitude;
     }
 
     /**
@@ -414,10 +424,14 @@ public class SatelliteController {
     @GetMapping("/passes/upcoming")
     public ResponseEntity<?> getUpcomingPasses(
             @RequestParam(value = "hours", defaultValue = "3") Integer hours,
-            @RequestParam(value = "latitude", defaultValue = "41.01") Double latitude,
-            @RequestParam(value = "longitude", defaultValue = "14.42") Double longitude,
-            @RequestParam(value = "altitude", defaultValue = "100") Integer altitude,
+            @RequestParam(value = "latitude", required = false) Double latitude,
+            @RequestParam(value = "longitude", required = false) Double longitude,
+            @RequestParam(value = "altitude", required = false) Double altitude,
             @RequestParam(value = "minElevation", defaultValue = "30.0") Double minElevation) {
+
+        latitude = latitude != null ? latitude : defaultLatitude;
+        longitude = longitude != null ? longitude : defaultLongitude;
+        altitude = altitude != null ? altitude : defaultAltitude;
         
         try {
             // Validazione input
@@ -450,7 +464,7 @@ public class SatelliteController {
                 latitude,
                 longitude,
                 altitude,
-                String.format("Custom (%.2f, %.2f, %dm)", latitude, longitude, altitude)
+                String.format("Custom (%.2f, %.2f, %.0fm)", latitude, longitude, altitude)
             );
             
             // Calcola passaggi

@@ -284,6 +284,13 @@ public class TelegramNotificationService {
     }
 
     /**
+     * Messaggi di servizio inviati da scheduler o altri componenti applicativi.
+     */
+    public boolean sendSystemMessage(Long chatId, String message) {
+        return sendTelegramMessage(chatId, message);
+    }
+
+    /**
      * Escape minimale per parse_mode=Markdown di Telegram sui campi dinamici.
      */
     private String escapeTelegramMarkdown(String text) {
@@ -400,6 +407,8 @@ public class TelegramNotificationService {
                 handleInfoCommand(chatId);
             } else if (text.startsWith("/stop")) {
                 handleStopCommand(chatId);
+            } else if (text.startsWith("/allpasses")) {
+                handleAllPassesCommand(chatId);
             } else {
                 // Tratta come nome di città
                 handleCityInput(chatId, text);
@@ -450,6 +459,7 @@ public class TelegramNotificationService {
                            "/help - Mostra questo messaggio\n" +
                            "/info - Vedi le tue impostazioni\n" +
                            "/stop - Disattiva notifiche\n" +
+                           "/allpasses - Mostra tutti i passaggi (3 ore)\n" +
                            "\n" +
                            "*Impostare la posizione:*\n" +
                            "Scrivi semplicemente il nome di una città!\n" +
@@ -509,6 +519,55 @@ public class TelegramNotificationService {
             sendTelegramMessage(chatId, "❌ Non sei registrato!");
         }
     }
+
+    /**
+     * Handler comando /allpasses: invia tutti i passaggi delle prossime 3 ore in chunk da 10.
+     */
+    private void handleAllPassesCommand(Long chatId) {
+        Optional<TelegramSubscription> opt = subscriptionRepository.findByChatId(chatId);
+        if (opt.isEmpty()) {
+            sendTelegramMessage(chatId, "❌ Non sei registrato! Usa /start per registrarti.");
+            return;
+        }
+
+        TelegramSubscription sub = opt.get();
+        com.satelliteTracking.model.ObserverLocation location = new com.satelliteTracking.model.ObserverLocation(
+            sub.getLatitude(),
+            sub.getLongitude(),
+            sub.getAltitude(),
+            sub.getLocationName()
+        );
+
+        List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(
+            3,
+            sub.getMinElevation(),
+            location,
+            sub.getObservingCondition(),
+            sub.getMaxMagnitude()
+        );
+
+        if (passes.isEmpty()) {
+            sendTelegramMessage(chatId,
+                "📭 Nessun passaggio visibile nelle prossime 3 ore con i tuoi filtri attuali."
+            );
+            return;
+        }
+
+        final int pageSize = 10;
+        int totalPages = (passes.size() + pageSize - 1) / pageSize;
+
+        sendTelegramMessage(chatId,
+            "📡 Trovati *" + passes.size() + "* passaggi nelle prossime 3 ore. " +
+            "Invio dettagli in *" + totalPages + "* messaggi."
+        );
+
+        for (int page = 0; page < totalPages; page++) {
+            int fromIndex = page * pageSize;
+            int toIndex = Math.min(fromIndex + pageSize, passes.size());
+            List<SatellitePassDTO> chunk = passes.subList(fromIndex, toIndex);
+            sendTelegramMessage(chatId, formatSatellitePassesChunk(chunk, sub.getLocationName(), page + 1, totalPages, fromIndex));
+        }
+    }
     
     /**
      * Processa gli aggiornamenti in arrivo dal bot Telegram
@@ -546,6 +605,8 @@ public class TelegramNotificationService {
             handleInfoCommand(chatId);
         } else if (text.startsWith("/stop")) {
             handleStopCommand(chatId);
+        } else if (text.startsWith("/allpasses")) {
+            handleAllPassesCommand(chatId);
         } else {
             // Tratta il messaggio come nome di città
             handleCityInput(chatId, text);
@@ -603,6 +664,26 @@ public class TelegramNotificationService {
                 subscription.getObservingCondition(),
                 subscription.getMaxMagnitude()
             );
+
+            if (visiblePasses.isEmpty() && subscription.getMinElevation() > 10.0) {
+                List<SatellitePassDTO> relaxedPasses = satellitePassService.findVisibleUpcomingPasses(
+                    3,
+                    10.0,
+                    location,
+                    subscription.getObservingCondition(),
+                    subscription.getMaxMagnitude()
+                );
+
+                if (!relaxedPasses.isEmpty()) {
+                    sendTelegramMessage(chatId,
+                        "⚠️ *Nessun passaggio alla tua angolazione attuale*\n\n" +
+                        "Con elevazione minima impostata a *" + String.format("%.1f", subscription.getMinElevation()) + "°* " +
+                        "non ci sono passaggi visibili nelle prossime 3 ore.\n\n" +
+                        "Con una soglia più bassa (10°) invece ne risultano *" + relaxedPasses.size() + "*.\n" +
+                        "Se vuoi intercettare più satelliti, riduci l'elevazione minima nelle preferenze."
+                    );
+                }
+            }
 
             // Mostra i satelliti trovati
             sendTelegramMessage(chatId, formatSatellitePasses(
@@ -670,4 +751,28 @@ public class TelegramNotificationService {
         
         return sb.toString();
     }
+
+        private String formatSatellitePassesChunk(List<SatellitePassDTO> passes,
+                                                                                            String cityName,
+                                                                                            int currentPage,
+                                                                                            int totalPages,
+                                                                                            int startOffset) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("🌍 *").append(escapeTelegramMarkdown(cityName)).append("*\n");
+                sb.append("📄 Pagina ").append(currentPage).append("/").append(totalPages).append("\n\n");
+
+                int count = startOffset + 1;
+                for (SatellitePassDTO pass : passes) {
+                        long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(LocalDateTime.now(), pass.riseTime());
+                        sb.append(count).append(". *").append(escapeTelegramMarkdown(pass.satelliteName())).append("*\n");
+                        sb.append("   ⏰ Tra ").append(minutesUntilRise).append(" min (")
+                            .append(String.format("%02d:%02d", pass.riseTime().getHour(), pass.riseTime().getMinute()))
+                            .append(" UTC)\n");
+                        sb.append("   📈 Elev: ").append(String.format("%.0f°", pass.maxElevation()))
+                            .append(" | ⭐ Mag: ").append(String.format("%.1f", pass.estimatedMagnitude())).append("\n\n");
+                        count++;
+                }
+
+                return sb.toString();
+        }
 }

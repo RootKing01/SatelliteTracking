@@ -22,7 +22,9 @@ import org.orekit.time.TimeScalesFactory;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
 import org.orekit.utils.PVCoordinates;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.hipparchus.geometry.euclidean.threed.Vector3D;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -42,8 +44,8 @@ public class SatellitePassService {
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
     
-    // Posizione predefinita: San Marcellino, Caserta
-    private final ObserverLocation defaultLocation = ObserverLocation.sanMarcellino();
+    // Posizione predefinita caricata da configuration (single source of truth)
+    private final ObserverLocation defaultLocation;
     
     // Cache per i passaggi visibili
     private static class CacheEntry {
@@ -64,9 +66,14 @@ public class SatellitePassService {
     private static final long CACHE_TTL_MS = 1800000; // 30 minuti
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
-                                OrbitalParametersRepository orbitalParametersRepository) {
+                                OrbitalParametersRepository orbitalParametersRepository,
+                                @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
+                                @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
+                                @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude,
+                                @Value("${satellite.default-location.name:San Marcellino, Caserta, Italia}") String defaultLocationName) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
+        this.defaultLocation = new ObserverLocation(defaultLatitude, defaultLongitude, defaultAltitude, defaultLocationName);
     }
 
     /**
@@ -99,7 +106,7 @@ public class SatellitePassService {
             // Check preventivo: verifica se il satellite può essere visibile da questa latitudine
             double inclination = latestParams.getInclination();
             double observerLat = Math.abs(observerLocation.getLatitude());
-            boolean canBeVisible = inclination >= observerLat && inclination <= (180.0 - observerLat);
+            boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
             
             System.out.println("🛰️  Satellite: " + satellite.getObjectName() + 
                              " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat + 
@@ -176,20 +183,26 @@ public class SatellitePassService {
                             double satAltitude = pv.getPosition().getNorm() / 1000.0 - Constants.WGS84_EARTH_EQUATORIAL_RADIUS / 1000.0;
                             currentPass.satelliteAltitude = satAltitude;
                             
-                            // Calcola se il satellite è illuminato dal sole
                             PVCoordinates sunPV = sun.getPVCoordinates(date, itrf);
+
+                            // Calcola elevazione del sole per l'osservatore
+                            var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, date);
+                            double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
+                            currentPass.sunElevation = sunElevation;
+
+                            // Calcola se il satellite è illuminato dal sole (approccio ibrido)
                             double sunAngle = FastMath.toDegrees(
                                 org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
                                     pv.getPosition(), 
                                     sunPV.getPosition()
                                 )
                             );
-                            currentPass.isSunlit = sunAngle < 90.0;
-                            
-                            // Calcola elevazione del sole per l'osservatore
-                            var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, date);
-                            double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
-                            currentPass.sunElevation = sunElevation;
+                            currentPass.isSunlit = isSunlitHybrid(
+                                pv.getPosition(),
+                                sunPV.getPosition(),
+                                sunAngle,
+                                sunElevation
+                            );
                         }
                     } else {
                         if (currentPass != null) {
@@ -199,6 +212,15 @@ public class SatellitePassService {
                             currentPass = null;
                         }
                     }
+                }
+
+                // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
+                // chiudi comunque il passaggio al bordo della finestra per non perderlo.
+                if (currentPass != null) {
+                    currentPass.setTime = toLocalDateTime(endDate);
+                    currentPass.setAzimuth = currentPass.maxElevationAzimuth;
+                    passDataList.add(currentPass);
+                    currentPass = null;
                 }
                 
                 for (PassData pd : passDataList) {
@@ -274,7 +296,7 @@ public class SatellitePassService {
         // Un satellite può essere visibile solo se la sua inclinazione >= latitudine osservatore
         double inclination = params.getInclination();
         double observerLat = Math.abs(location.getLatitude());
-        boolean canBeVisible = inclination >= observerLat && inclination <= (180.0 - observerLat);
+        boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
         
         System.out.println("🛰️  Satellite: " + satellite.getObjectName() + 
                          " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat + "° | Visibile: " + canBeVisible);
@@ -405,6 +427,47 @@ public class SatellitePassService {
         
         return Math.round(magnitude * 10.0) / 10.0; // Arrotonda a 1 decimale
     }
+
+    /**
+     * Approccio ibrido: euristica veloce sempre, raffinamento geometrico solo nei casi borderline.
+     * Borderline tipici: terminatore (angolo sole ~90°) e crepuscolo locale.
+     */
+    private boolean isSunlitHybrid(Vector3D satPosition,
+                                   Vector3D sunPosition,
+                                   double sunAngleDeg,
+                                   double sunElevationDeg) {
+        boolean fastSunlit = sunAngleDeg < 90.0;
+
+        boolean nearTerminator = sunAngleDeg >= 85.0 && sunAngleDeg <= 95.0;
+        boolean twilightLike = sunElevationDeg >= -12.0 && sunElevationDeg <= 2.0;
+
+        if (nearTerminator || twilightLike) {
+            return isSunlitRefinedCylindricalShadow(satPosition, sunPosition);
+        }
+
+        return fastSunlit;
+    }
+
+    /**
+     * Verifica geometrica ombra terrestre (approssimazione cilindrica):
+     * - lato diurno => sempre illuminato
+     * - lato notturno => in ombra solo se dentro il cilindro d'ombra della Terra
+     */
+    private boolean isSunlitRefinedCylindricalShadow(Vector3D satPosition, Vector3D sunPosition) {
+        Vector3D sunDir = sunPosition.normalize();
+        double projectionOnSunDir = satPosition.dotProduct(sunDir);
+
+        // Satellite sul lato illuminato della Terra
+        if (projectionOnSunDir > 0.0) {
+            return true;
+        }
+
+        // Distanza dall'asse Sole-Terra (ombra cilindrica)
+        Vector3D orthogonal = satPosition.subtract(sunDir.scalarMultiply(projectionOnSunDir));
+        double distanceFromShadowAxis = orthogonal.getNorm();
+
+        return distanceFromShadowAxis > Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+    }
     
     private AbsoluteDate toAbsoluteDate(LocalDateTime ldt) {
         Date date = Date.from(ldt.toInstant(ZoneOffset.UTC));
@@ -416,6 +479,14 @@ public class SatellitePassService {
             ad.toDate(TimeScalesFactory.getUTC()).toInstant(),
             ZoneOffset.UTC
         );
+    }
+
+    /**
+     * Verifica rapida di raggiungibilita' latitudinale in base all'inclinazione orbitale.
+     */
+    private boolean canBeVisibleAtLatitude(double inclinationDeg, double observerLatitudeDegAbs) {
+        return inclinationDeg >= observerLatitudeDegAbs &&
+               inclinationDeg <= (180.0 - observerLatitudeDegAbs);
     }
 
     public ObserverLocation getDefaultLocation() {
@@ -476,12 +547,11 @@ public class SatellitePassService {
                                                               ObserverLocation observerLocation,
                                                               String observingCondition, double maxMagnitude) {
         // Genera chiave di cache
-        String cacheKey = String.format("%s_%.4f_%.4f_%.1f_%d_%.1f_%s_%.1f",
-                           observerLocation.getLocationName(),
-                           observerLocation.getLatitude(),
-                           observerLocation.getLongitude(),
-                           observerLocation.getAltitude(),
-                           hours, minElevation, observingCondition, maxMagnitude);
+        String cacheKey = String.format("%.4f_%.4f_%.1f_%d_%.1f_%s_%.1f",
+                   observerLocation.getLatitude(),
+                   observerLocation.getLongitude(),
+                   observerLocation.getAltitude(),
+                   hours, minElevation, observingCondition.toLowerCase(), maxMagnitude);
         
         // Controlla cache
         if (passesCache.containsKey(cacheKey)) {
@@ -518,7 +588,7 @@ public class SatellitePassService {
                 
                 if (latestParams != null) {
                     double inclination = latestParams.getInclination();
-                    if (inclination >= observerLat) {
+                    if (canBeVisibleAtLatitude(inclination, observerLat)) {
                         visibleSatellites.add(sat);
                     }
                 }

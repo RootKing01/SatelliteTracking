@@ -144,7 +144,7 @@ public class SatelliteScheduler {
 
                     System.out.println("Telegram scan for user " + sub.getUserIdentifier() +
                                      " (chatId: " + sub.getChatId() + "): " + passes.size() +
-                                     " passes (minElevation=30.0, condition=" + sub.getObservingCondition() +
+                                     " passes (minElevation=" + sub.getMinElevation() + ", condition=" + sub.getObservingCondition() +
                                      ", maxMagnitude=" + sub.getMaxMagnitude() + ")");
                     
                     LocalDateTime now = LocalDateTime.now();
@@ -155,9 +155,12 @@ public class SatelliteScheduler {
                     
                     // Evita notifiche duplicate globali (almeno 30 minuti tra batch di notifiche)
                     if (minutesSinceLastNotification >= 30) {
-                        // Invia notifiche per TUTTI i passaggi trovati
+                        // Invia notifiche automatiche solo per i primi N passaggi per evitare rate limit Telegram
+                        final int maxAutoNotifications = 10;
+                        List<SatellitePassDTO> autoPasses = passes.stream().limit(maxAutoNotifications).toList();
+
                         int notificationsSent = 0;
-                        for (SatellitePassDTO pass : passes) {
+                        for (SatellitePassDTO pass : autoPasses) {
                             System.out.println("📤 Tentativo invio notifica per " + pass.satelliteName());
                             boolean sent = telegramNotificationService.sendNotificationToUser(sub, pass);
                             
@@ -171,7 +174,19 @@ public class SatelliteScheduler {
                                 System.out.println("❌ Invio fallito per " + pass.satelliteName());
                             }
                         }
-                        System.out.println("📊 Notifiche inviate in batch: " + notificationsSent + "/" + passes.size());
+
+                        if (passes.size() > maxAutoNotifications) {
+                            int remaining = passes.size() - maxAutoNotifications;
+                            telegramNotificationService.sendSystemMessage(
+                                sub.getChatId(),
+                                "ℹ️ Ti ho inviato i primi *" + maxAutoNotifications + "* passaggi automatici su *" + passes.size() + "*.\n" +
+                                "Per ricevere l'elenco completo delle prossime 3 ore usa il comando: /allpasses\n" +
+                                "(restanti: " + remaining + ")"
+                            );
+                        }
+
+                        System.out.println("📊 Notifiche inviate in batch: " + notificationsSent + "/" + autoPasses.size() +
+                                         " (totali disponibili: " + passes.size() + ")");
                     } else {
                         System.out.println("⏭️  Troppo presto per notifiche (ultimo batch: " + minutesSinceLastNotification + " min fa)");
                     }
