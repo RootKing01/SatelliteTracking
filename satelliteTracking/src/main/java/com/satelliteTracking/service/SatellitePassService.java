@@ -4,6 +4,7 @@ import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
+import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.util.TLEConverter;
@@ -597,6 +598,27 @@ public class SatellitePassService {
     public void clearPassesCache() {
         passesCache.clear();
         System.out.println("🧹 Cache passaggi pulito");
+    }
+
+    /**
+     * Pre-calcola e mette in cache i passaggi per ogni subscription Telegram attiva,
+     * usando i parametri esatti di ciascun utente (posizione, condizione, magnitudine, elevazione).
+     * Viene chiamato dallo scheduler dopo ogni aggiornamento TLE e ogni ora.
+     */
+    public void precomputePassesForSubscriptions(List<TelegramSubscription> subscriptions) {
+        for (TelegramSubscription sub : subscriptions) {
+            try {
+                ObserverLocation loc = new ObserverLocation(
+                    sub.getLatitude(), sub.getLongitude(), sub.getAltitude(), sub.getLocationName()
+                );
+                findVisibleUpcomingPasses(3, sub.getMinElevation(), loc, sub.getObservingCondition(), sub.getMaxMagnitude());
+                System.out.println("✅ [Cache] Pre-calcolati passaggi per " + sub.getLocationName() +
+                                 " (user: " + sub.getUserIdentifier() + ")");
+            } catch (Exception e) {
+                System.err.println("⚠️  [Cache] Errore pre-calcolo per " + sub.getLocationName() +
+                                 ": " + e.getMessage());
+            }
+        }
     }
     
     /**

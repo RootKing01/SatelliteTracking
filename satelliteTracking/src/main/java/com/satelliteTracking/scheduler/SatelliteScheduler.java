@@ -8,6 +8,8 @@ import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.CelestrakService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -33,7 +35,13 @@ public class SatelliteScheduler {
         this.orbitalParametersRepository = orbitalParametersRepository;
     }
 
-    @Scheduled(initialDelay = 60000, fixedRate = 10800000) // Primo download dopo 1 minuto, poi ogni 3 ore
+    @EventListener(ApplicationReadyEvent.class)
+    public void initialSatelliteLoad() {
+        System.out.println("🚀 [Satellite Update] Avvio iniziale - caricamento satelliti prima dello scheduler...");
+        updateSatellites();
+    }
+
+    @Scheduled(initialDelay = 10800000, fixedRate = 10800000) // Ogni 3 ore dopo il caricamento iniziale
     public void updateSatellites() {
         // Controlla se ci sono già dati recenti
         OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
@@ -54,6 +62,9 @@ public class SatelliteScheduler {
         }
         
         celestrakService.fetchAndSaveStations();
+        // Dopo aggiornamento TLE: invalida cache e ricalcola subito per tutte le posizioni
+        passService.clearPassesCache();
+        precomputeUpcomingPasses();
     }
 
     /**
@@ -70,18 +81,24 @@ public class SatelliteScheduler {
     }
 
     /**
-     * Task schedulato per pre-calcolare i passaggi visibili
-     * Popola la cache ogni ora con i passaggi delle prossime 3 ore
-     * dalla posizione di default (San Marcellino)
+     * Task schedulato per pre-calcolare i passaggi visibili.
+     * Popola la cache ogni ora per la posizione di default e per tutti i subscriber Telegram attivi,
+     * così che l'invio delle notifiche trovi sempre la cache già pronta.
      */
-    @Scheduled(fixedRate = 3600000) // Ogni 1 ora
+    @Scheduled(fixedRate = 3600000, initialDelay = 120000) // Ogni 1 ora, prima esecuzione dopo 2 min
     public void precomputeUpcomingPasses() {
-        System.out.println("🔄 [Pass Precalculator] Inizio pre-calcolo passaggi (3 ore)...");
+        System.out.println("🔄 [Pass Precalculator] Pre-calcolo passaggi per tutte le posizioni...");
         try {
-            // Calcola passaggi con parametri standard
-            // 3 ore, elevazione minima 10°, qualsiasi condizione, magnitudine fino a 6.0
+            // Posizione di default (San Marcellino)
             List<SatellitePassDTO> passes = passService.findVisibleUpcomingPasses(3, 10.0);
-            System.out.println("✅ [Pass Precalculator] Pre-calcolati " + passes.size() + " passaggi visibili");
+            System.out.println("✅ [Pass Precalculator] Default: " + passes.size() + " passaggi");
+
+            // Posizioni dei subscriber Telegram attivi (con i loro parametri esatti)
+            List<TelegramSubscription> subs = telegramNotificationService.getAllSubscriptions();
+            if (!subs.isEmpty()) {
+                passService.precomputePassesForSubscriptions(subs);
+                System.out.println("✅ [Pass Precalculator] Cache aggiornata per " + subs.size() + " subscriber(s)");
+            }
         } catch (Exception e) {
             System.err.println("❌ Errore pre-calcolo passaggi: " + e.getMessage());
         }
@@ -119,7 +136,7 @@ public class SatelliteScheduler {
                     
                     List<SatellitePassDTO> passes = passService.findVisibleUpcomingPasses(
                         3,      // Solo prossime 3 ore
-                        30.0,
+                        sub.getMinElevation(),
                         location,
                         sub.getObservingCondition(),
                         sub.getMaxMagnitude()

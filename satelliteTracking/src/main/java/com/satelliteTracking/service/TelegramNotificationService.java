@@ -198,11 +198,13 @@ public class TelegramNotificationService {
                                            Double maxElevation, Double maxElevationAzimuth,
                                            Double magnitude, String locationName) {
         String direction = azimuthToDirection(maxElevationAzimuth);
+         String safeSatelliteName = escapeTelegramMarkdown(satelliteName);
+         String safeLocationName = escapeTelegramMarkdown(locationName);
         
         return "🛰️ *Satellite Tracker Alert*\n" +
                "\n" +
-               "*Satellite:* " + satelliteName + "\n" +
-               "*Location:* " + locationName + "\n" +
+             "*Satellite:* " + safeSatelliteName + "\n" +
+             "*Location:* " + safeLocationName + "\n" +
                "*Rise Time:* " + String.format("%02d:%02d UTC", riseTime.getHour(), riseTime.getMinute()) + "\n" +
                "*Max Elevation:* " + String.format("%.1f°", maxElevation) + "\n" +
                "*Direction:* " + direction + " (azimuth " + String.format("%.0f", maxElevationAzimuth) + "°)\n" +
@@ -251,9 +253,49 @@ public class TelegramNotificationService {
             
             return true;
         } catch (Exception e) {
-            System.err.println("❌ Errore comunicazione Telegram: " + e.getMessage());
+            String error = e.getMessage() != null ? e.getMessage() : "";
+            System.err.println("❌ Errore comunicazione Telegram: " + error);
+
+            // Fallback: se il markdown non viene parsato da Telegram, ritenta senza parse_mode
+            if (error.contains("can't parse entities")) {
+                try {
+                    String url = String.format("%s/bot%s/sendMessage", TELEGRAM_API_URL, telegramBotToken);
+
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("chat_id", chatId);
+                    payload.put("text", message);
+                    payload.put("disable_web_page_preview", true);
+
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+
+                    HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+                    restTemplate.postForObject(url, entity, Map.class);
+
+                    System.out.println("⚠️  Messaggio inviato in fallback plain text (parse_mode rimosso)");
+                    return true;
+                } catch (Exception retryEx) {
+                    System.err.println("❌ Errore fallback Telegram: " + retryEx.getMessage());
+                }
+            }
+
             return false;
         }
+    }
+
+    /**
+     * Escape minimale per parse_mode=Markdown di Telegram sui campi dinamici.
+     */
+    private String escapeTelegramMarkdown(String text) {
+        if (text == null) {
+            return "";
+        }
+
+        return text
+            .replace("_", "\\_")
+            .replace("*", "\\*")
+            .replace("`", "\\`")
+            .replace("[", "\\[");
     }
     
     /**
@@ -369,39 +411,32 @@ public class TelegramNotificationService {
     }
     
     /**
-     * Handler per comando /start
-     * Registra automaticamente l'utente con posizione di default
+     * Handler per comando /start (polling).
+     * Se l'utente è già registrato mostra lo stato attuale, altrimenti invita a cercare la città.
      */
     private void handleStartCommand(Long chatId, String username) {
-        // Registra con posizione di default (San Marcellino)
-        TelegramSubscription subscription = registerTelegramUser(
-            chatId, 
-            username != null ? username : "User_" + chatId,
-            41.01,  // San Marcellino, Caserta
-            14.30, 
-            30.0, 
-            "San Marcellino, Caserta"
-        );
-        
-        String welcomeMessage = "🛰️ *Benvenuto su Satellite Tracker!*\n" +
-                              "\n" +
-                              "Registrazione completata! ✅\n" +
-                              "\n" +
-                              "*La tua posizione:* " + subscription.getLocationName() + "\n" +
-                              "*Chat ID:* `" + chatId + "`\n" +
-                              "\n" +
-                              "Riceverai notifiche automatiche quando satelliti visibili passeranno sopra la tua posizione.\n" +
-                              "\n" +
-                              "*Comandi disponibili:*\n" +
-                              "/help - Mostra aiuto\n" +
-                              "/info - Vedi le tue impostazioni\n" +
-                              "/stop - Disattiva notifiche\n" +
-                              "\n" +
-                              "Per cambiare posizione o preferenze usa gli endpoint API:\n" +
-                              "`PUT /api/telegram/preferences/" + chatId + "`";
-        
-        sendTelegramMessage(chatId, welcomeMessage);
-        System.out.println("✅ Nuovo utente registrato: " + username + " (chatId: " + chatId + ")");
+        Optional<TelegramSubscription> existing = subscriptionRepository.findByChatId(chatId);
+
+        if (existing.isPresent()) {
+            TelegramSubscription sub = existing.get();
+            sendTelegramMessage(chatId,
+                "🛰️ *Satellite Tracker*\n\n" +
+                "Sei già registrato! 👋\n\n" +
+                "*Posizione attuale:* " + sub.getLocationName() + "\n" +
+                "*Notifiche:* " + (sub.getNotificationsEnabled() ? "✅ Attive" : "❌ Disattivate") + "\n\n" +
+                "Scrivi il nome di una città per aggiornare la tua posizione.\n" +
+                "/info - Vedi impostazioni complete\n" +
+                "/stop - Disattiva notifiche"
+            );
+        } else {
+            sendTelegramMessage(chatId,
+                "🛰️ *Benvenuto su Satellite Tracker!*\n\n" +
+                "Ricevi notifiche automatiche quando i satelliti visibili passano sopra di te.\n\n" +
+                "📍 *Per iniziare: scrivi il nome della tua città!*\n\n" +
+                "_Esempio: Milano, Roma, Napoli_"
+            );
+        }
+        System.out.println("ℹ️  /start da " + username + " (chatId: " + chatId + ")");
     }
     
     /**
@@ -411,20 +446,22 @@ public class TelegramNotificationService {
         String helpMessage = "🛰️ *Satellite Tracker - Aiuto*\n" +
                            "\n" +
                            "*Comandi:*\n" +
-                           "/start - Registrati al servizio\n" +
+                           "/start - Mostra il benvenuto\n" +
                            "/help - Mostra questo messaggio\n" +
                            "/info - Vedi le tue impostazioni\n" +
                            "/stop - Disattiva notifiche\n" +
                            "\n" +
-                           "*Configurazione:*\n" +
-                           "Usa gli endpoint API per:\n" +
-                           "• Cambiare posizione\n" +
-                           "• Impostare magnitudine massima\n" +
-                           "• Impostare elevazione minima\n" +
-                           "• Scegliere condizioni (night/twilight/any)\n" +
+                           "*Impostare la posizione:*\n" +
+                           "Scrivi semplicemente il nome di una città!\n" +
+                           "_Esempio: Milano, Roma, Napoli_\n" +
+                           "La posizione viene aggiornata e le notifiche attivate automaticamente.\n" +
                            "\n" +
-                           "📚 Documentazione: [GitHub](https://github.com/RootKing01/SatelliteTracking)";
-        
+                           "*Configurazione avanzata:*\n" +
+                           "Usa gli endpoint API per:\n" +
+                           "• Cambiare magnitudine massima\n" +
+                           "• Impostare elevazione minima\n" +
+                           "• Scegliere condizioni (night/twilight/any)\n";
+
         sendTelegramMessage(chatId, helpMessage);
     }
     
@@ -493,94 +530,97 @@ public class TelegramNotificationService {
         System.out.println("📨 Messaggio da chat " + chatId + ": " + text);
         
         // Gestisci comandi
+        String username = null;
+        if (message.getFrom() != null) {
+            username = message.getFrom().getUsername();
+            if (username == null) {
+                username = message.getFrom().getFirstName();
+            }
+        }
+
         if (text.startsWith("/start")) {
-            handleStartCommand(chatId, message.getFrom());
+            handleStartCommand(chatId, username);
         } else if (text.startsWith("/help")) {
-            sendTelegramMessage(chatId, 
-                "🛰️ *Satellite Tracker Bot*\n\n" +
-                "*/start* - Registra la tua posizione\n" +
-                "*/help* - Mostra questo messaggio\n\n" +
-                "Invia il nome di una città per registrare la tua posizione!"
-            );
+            handleHelpCommand(chatId);
+        } else if (text.startsWith("/info")) {
+            handleInfoCommand(chatId);
+        } else if (text.startsWith("/stop")) {
+            handleStopCommand(chatId);
         } else {
             // Tratta il messaggio come nome di città
             handleCityInput(chatId, text);
         }
     }
-    
+
     /**
-     * Gestisce il comando /start
-     */
-    private void handleStartCommand(Long chatId, TelegramUpdateDTO.UserDTO user) {
-        String userName = user != null && user.getFirstName() != null ? user.getFirstName() : "Utente";
-        
-        sendTelegramMessage(chatId,
-            "🛰️ *Benvenuto nel Satellite Tracker!*\n\n" +
-            "Ciao " + userName + "! 👋\n\n" +
-            "Per iniziare a ricevere notifiche di passaggi satellitari, dimmi in quale città ti trovi.\n\n" +
-            "_Ad esempio: Milano, Roma, Napoli, etc._"
-        );
-    }
-    
-    /**
-     * Gestisce l'input del nome della città
+     * Gestisce l'input del nome della città.
+     * Geolocalizza, registra/aggiorna la posizione dell'utente, abilita le notifiche
+     * e mostra i passaggi satellitari visibili nelle prossime 3 ore.
      */
     private void handleCityInput(Long chatId, String cityName) {
         sendTelegramMessage(chatId, "🌍 Ricerca della città: " + cityName + "...");
-        
+
         // Geocodifica la città
         Map<String, Object> geoResult = geocodingService.geocodeCity(cityName);
-        
+
         if (geoResult.containsKey("error")) {
-            sendTelegramMessage(chatId, 
-                "❌ *Errore*: " + geoResult.get("error") + "\n\n" +
-                "Riprova con un nome di città valido o /help per l'aiuto."
+            sendTelegramMessage(chatId,
+                "❌ *Città non trovata:* " + cityName + "\n\n" +
+                "Riprova con un nome valido. /help per l'aiuto."
             );
             return;
         }
-        
+
         // Estrai coordinate
         double latitude = ((Number) geoResult.get("latitude")).doubleValue();
         double longitude = ((Number) geoResult.get("longitude")).doubleValue();
         double altitude = ((Number) geoResult.get("altitude")).doubleValue();
         String displayName = (String) geoResult.get("displayName");
-        
+
         try {
-            // Calcola i passaggi visibili nei prossimi 3 ore
-            com.satelliteTracking.model.ObserverLocation location = 
+            com.satelliteTracking.model.ObserverLocation location =
                 new com.satelliteTracking.model.ObserverLocation(
                     latitude, longitude, altitude, displayName
                 );
-            
+
+            // Registra/aggiorna l'utente con la nuova posizione e abilita le notifiche
+            String userIdentifier = subscriptionRepository.findByChatId(chatId)
+                .map(TelegramSubscription::getUserIdentifier)
+                .orElse("user_" + chatId);
+            TelegramSubscription subscription = registerTelegramUser(
+                chatId, userIdentifier, latitude, longitude, altitude, displayName
+            );
+            if (!subscription.getNotificationsEnabled()) {
+                subscription.setNotificationsEnabled(true);
+                subscriptionRepository.save(subscription);
+            }
+
+            // Calcola i passaggi visibili usando i parametri della subscription
             List<SatellitePassDTO> visiblePasses = satellitePassService.findVisibleUpcomingPasses(
-                3,      // 3 ore
-                30.0,   // minima elevazione 30°
+                3,
+                subscription.getMinElevation(),
                 location,
-                "any",  // qualunque condizione
-                6.0     // magnitudine massima
+                subscription.getObservingCondition(),
+                subscription.getMaxMagnitude()
             );
-            
+
             // Mostra i satelliti trovati
-            String passesMessage = formatSatellitePasses(visiblePasses, displayName);
-            sendTelegramMessage(chatId, passesMessage);
-            
-            // Chiedi se registrarsi
+            sendTelegramMessage(chatId, formatSatellitePasses(
+                visiblePasses,
+                displayName,
+                subscription.getMinElevation(),
+                subscription.getMaxMagnitude()
+            ));
+
+            // Conferma posizione registrata e notifiche attive
             sendTelegramMessage(chatId,
-                "📝 Vuoi registrare questa posizione per ricevere notifiche automatiche?\n\n" +
-                "Se sì, rispondi: *registra*\n" +
-                "Se no, scrivi un'altra città per cercare satelliti."
+                "✅ *Posizione aggiornata!*\n\n" +
+                "📍 " + displayName + "\n" +
+                "🔔 Notifiche automatiche: *ATTIVE*\n\n" +
+                "Riceverai avvisi quando un satellite visibile si avvicina.\n" +
+                "Usa /stop per disattivare o /info per le impostazioni."
             );
-            
-            // Registra l'utente
-            registerTelegramUser(
-                chatId,
-                "user_" + chatId,
-                latitude,
-                longitude,
-                altitude,
-                displayName
-            );
-            
+
         } catch (Exception e) {
             System.err.println("❌ Errore elaborazione città: " + e.getMessage());
             sendTelegramMessage(chatId, "❌ Errore durante l'elaborazione: " + e.getMessage());
@@ -590,12 +630,15 @@ public class TelegramNotificationService {
     /**
      * Formatta i passaggi satellitari per il messaggio Telegram
      */
-    private String formatSatellitePasses(List<SatellitePassDTO> passes, String cityName) {
+    private String formatSatellitePasses(List<SatellitePassDTO> passes,
+                                        String cityName,
+                                        Double minElevation,
+                                        Double maxMagnitude) {
         if (passes.isEmpty()) {
             return "🌍 *" + cityName + "*\n\n" +
                    "Nessun satellite visibile nei prossimi 3 ore con:\n" +
-                   "  • Elevazione minima: 30°\n" +
-                   "  • Magnitudine: ≤ 6.0";
+                   "  • Elevazione minima: " + String.format("%.1f°", minElevation) + "\n" +
+                   "  • Magnitudine: ≤ " + String.format("%.1f", maxMagnitude);
         }
         
         StringBuilder sb = new StringBuilder();

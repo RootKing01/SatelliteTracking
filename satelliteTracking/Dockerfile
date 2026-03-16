@@ -9,6 +9,7 @@ COPY mvnw .
 COPY .mvn .mvn
 
 # Download delle dipendenze (layer cachable)
+RUN chmod +x mvnw
 RUN ./mvnw dependency:go-offline -B
 
 # Copia il codice sorgente
