@@ -428,10 +428,11 @@ public class TelegramNotificationService {
 
         if (existing.isPresent()) {
             TelegramSubscription sub = existing.get();
+            String safeLocation = escapeTelegramMarkdown(sub.getLocationName());
             sendTelegramMessage(chatId,
                 "🛰️ *Satellite Tracker*\n\n" +
                 "Sei già registrato! 👋\n\n" +
-                "*Posizione attuale:* " + sub.getLocationName() + "\n" +
+                "*Posizione attuale:* " + safeLocation + "\n" +
                 "*Notifiche:* " + (sub.getNotificationsEnabled() ? "✅ Attive" : "❌ Disattivate") + "\n\n" +
                 "Scrivi il nome di una città per aggiornare la tua posizione.\n" +
                 "/info - Vedi impostazioni complete\n" +
@@ -487,17 +488,20 @@ public class TelegramNotificationService {
         }
         
         TelegramSubscription sub = opt.get();
+        String safeUser = escapeTelegramMarkdown(sub.getUserIdentifier());
+        String safeLocation = escapeTelegramMarkdown(sub.getLocationName());
+        String safeCondition = escapeTelegramMarkdown(sub.getObservingCondition());
         
         String infoMessage = "🛰️ *Le tue impostazioni*\n" +
                            "\n" +
                            "*Chat ID:* `" + sub.getChatId() + "`\n" +
-                           "*Username:* " + sub.getUserIdentifier() + "\n" +
-                           "*Posizione:* " + sub.getLocationName() + "\n" +
+                   "*Username:* " + safeUser + "\n" +
+                   "*Posizione:* " + safeLocation + "\n" +
                            "*Coordinate:* " + String.format("%.2f°, %.2f°", sub.getLatitude(), sub.getLongitude()) + "\n" +
                            "*Altitudine:* " + sub.getAltitude() + "m\n" +
                            "\n" +
                            "*Filtri:*\n" +
-                           "• Condizione: " + sub.getObservingCondition() + "\n" +
+                   "• Condizione: " + safeCondition + "\n" +
                            "• Magnitudine max: " + sub.getMaxMagnitude() + "\n" +
                            "• Elevazione min: " + sub.getMinElevation() + "°\n" +
                            "\n" +
