@@ -12,7 +12,6 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: "0.5"
 
   db:
     image: postgres:15
@@ -29,7 +28,6 @@ services:
       resources:
         limits:
           memory: 1.5G
-          cpus: "1"
 
   app:
     build:
@@ -53,7 +51,6 @@ services:
        resources:
         limits:
           memory: 2G
-          cpus: "1"
 volumes:
   orekit-data-volume:
   postgres-data:

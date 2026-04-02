@@ -29,11 +29,13 @@ import org.hipparchus.geometry.euclidean.threed.Vector3D;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -211,6 +213,12 @@ public class SatellitePassService {
                         double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
                         currentPass.sunElevation = sunElevation;
 
+                        // Angolo di fase Sole-Satellite-Osservatore (in gradi)
+                        Vector3D observerPosition = earth.transform(observerPoint);
+                        Vector3D satToSun = sunPV.getPosition().subtract(pv.getPosition());
+                        Vector3D satToObserver = observerPosition.subtract(pv.getPosition());
+                        currentPass.phaseAngleDeg = FastMath.toDegrees(Vector3D.angle(satToSun, satToObserver));
+
                         // Calcola se il satellite è illuminato dal sole (approccio ibrido)
                         double sunAngle = FastMath.toDegrees(
                             org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
@@ -258,8 +266,8 @@ public class SatellitePassService {
                     // Calcola qualità della visibilità
                     String visibility = calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
 
-                    // Stima magnitudine (formula semplificata basata su distanza e illuminazione)
-                    double magnitude = estimateMagnitude(pd.maxDistance, pd.satelliteAltitude, pd.isSunlit);
+                    // Stima magnitudine con distanza, fase e illuminazione
+                    double magnitude = estimateMagnitude(pd.maxDistance, pd.phaseAngleDeg, pd.isSunlit);
 
                     // Solo passaggi con buona visibilità
                     boolean isActuallyVisible = pd.isSunlit && !observingCondition.equals("daylight");
@@ -381,6 +389,7 @@ public class SatellitePassService {
         double setAzimuth;
         double maxDistance;
         double satelliteAltitude;
+        double phaseAngleDeg = 90.0;
         boolean isSunlit;
         double sunElevation;
     }
@@ -412,7 +421,7 @@ public class SatellitePassService {
      * che rappresenta la minore luminosità dovuta alla mancanza di illuminazione diretta
      * (ma il satellite è ancora osservabile per riflesso e radiazione terrestre)
      */
-    private double estimateMagnitude(double distanceKm, double altitudeKm, boolean isSunlit) {
+    private double estimateMagnitude(double distanceKm, double phaseAngleDeg, boolean isSunlit) {
         // Magnitudine assoluta media (ISS-like): -1.0 (molto luminoso quando illuminato)
         double H = -1.0;
         
@@ -420,19 +429,18 @@ public class SatellitePassService {
         // Formula ridotta: m ≈ H + 5*log10(distance_km) - 15
         double magnitude = H + 5.0 * Math.log10(distanceKm) - 15.0;
         
-        // Fattore di fase per satelliti illuminati dal sole
-        // Approssimazione: angolo di fase medio ≈ 60° (fattore ≈ 0.3)
-        double phaseFactor = 0.3;
+        // Fattore di fase Lambertiano in funzione dell'angolo di fase reale
+        double phaseRad = Math.toRadians(Math.max(0.0, Math.min(180.0, phaseAngleDeg)));
+        double phaseFactor = (Math.sin(phaseRad) + (Math.PI - phaseRad) * Math.cos(phaseRad)) / Math.PI;
+        phaseFactor = Math.max(1.0e-3, phaseFactor);
         double phaseCorrection = -2.5 * Math.log10(phaseFactor);
         
         if (isSunlit) {
             // Satellite illuminato direttamente dal sole
             magnitude -= phaseCorrection;
         } else {
-            // Satellite in ombra terrestre: più debole ma ancora osservabile
-            // Penalità empirica: ~3.5 magnitudini (satellite è ~30x più debole)
-            // Questo rappresenta il riflesso della Terra e della radiazione atmosferica
-            magnitude += 3.5;
+            // Satellite in ombra terrestre: normalmente molto più debole
+            magnitude += 6.0;
         }
         
         // Limita tra -5 (molto luminoso, es. ISS al perigeo illuminata) e +9 (appena visibile in ombra)
@@ -462,9 +470,9 @@ public class SatellitePassService {
     }
 
     /**
-     * Verifica geometrica ombra terrestre (approssimazione cilindrica):
+     * Verifica geometrica ombra terrestre (approssimazione conica dell'umbra):
      * - lato diurno => sempre illuminato
-     * - lato notturno => in ombra solo se dentro il cilindro d'ombra della Terra
+     * - lato notturno => in ombra se dentro il cono d'umbra terrestre
      */
     private boolean isSunlitRefinedCylindricalShadow(Vector3D satPosition, Vector3D sunPosition) {
         Vector3D sunDir = sunPosition.normalize();
@@ -475,11 +483,27 @@ public class SatellitePassService {
             return true;
         }
 
-        // Distanza dall'asse Sole-Terra (ombra cilindrica)
+        // Distanza dall'asse Sole-Terra
         Vector3D orthogonal = satPosition.subtract(sunDir.scalarMultiply(projectionOnSunDir));
         double distanceFromShadowAxis = orthogonal.getNorm();
 
-        return distanceFromShadowAxis > Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+        // Distanza lungo l'asse d'ombra (dietro la Terra)
+        double nightSideDistance = -projectionOnSunDir;
+        double earthRadius = Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+        double sunDistance = sunPosition.getNorm();
+
+        // Lunghezza del cono d'umbra terrestre
+        double umbraLength = (earthRadius * sunDistance) / (Constants.SUN_RADIUS - earthRadius);
+
+        // Oltre l'apice dell'umbra consideriamo il satellite illuminato
+        if (nightSideDistance >= umbraLength) {
+            return true;
+        }
+
+        // Raggio dell'umbra alla distanza considerata
+        double umbraRadius = earthRadius * (1.0 - (nightSideDistance / umbraLength));
+
+        return distanceFromShadowAxis > umbraRadius;
     }
     
     private AbsoluteDate toAbsoluteDate(LocalDateTime ldt) {
@@ -587,7 +611,7 @@ public class SatellitePassService {
             }
         }
         
-        List<SatellitePassDTO> allPasses = new ArrayList<>();
+        List<SatellitePassDTO> allPasses = Collections.synchronizedList(new ArrayList<>());
         
         try {
             double observerLat = Math.abs(observerLocation.getLatitude());
@@ -611,51 +635,49 @@ public class SatellitePassService {
                              observerLocation.getLocationName() + " [Condizione: " + observingCondition + 
                              ", Max magnitudine: " + maxMagnitude + "]");
             
-            int rejectedVisibility = 0;
-            int rejectedElevation = 0;
-            int rejectedCondition = 0;
-            int rejectedMagnitude = 0;
+            LongAdder rejectedVisibility = new LongAdder();
+            LongAdder rejectedElevation = new LongAdder();
+            LongAdder rejectedCondition = new LongAdder();
+            LongAdder rejectedMagnitude = new LongAdder();
 
-            for (Satellite satellite : visibleSatellites) {
+            visibleSatellites.parallelStream().forEach(satellite -> {
                 try {
                     OrbitalParameters latestParams = latestParametersBySatelliteId.get(satellite.getId());
                     if (latestParams == null) {
-                        continue;
+                        return;
                     }
 
                     List<SatellitePassDTO> passes = calculatePasses(satellite, latestParams, hours, observerLocation);
-                    
+
                     // Filtra per elevazione minima, visibilità, condizione osservazione e magnitudine
                     for (SatellitePassDTO pass : passes) {
                         if (!pass.isVisible()) {
-                            rejectedVisibility++;
+                            rejectedVisibility.increment();
                             continue;
                         }
 
                         if (pass.maxElevation() < minElevation) {
-                            rejectedElevation++;
+                            rejectedElevation.increment();
                             continue;
                         }
 
                         if (!"any".equalsIgnoreCase(observingCondition) &&
                             !pass.observingCondition().equalsIgnoreCase(observingCondition)) {
-                            rejectedCondition++;
+                            rejectedCondition.increment();
                             continue;
                         }
 
                         if (pass.estimatedMagnitude() > maxMagnitude) {
-                            rejectedMagnitude++;
+                            rejectedMagnitude.increment();
                             continue;
                         }
 
-                        if (pass.isVisible()) {
-                            allPasses.add(pass);
-                        }
+                        allPasses.add(pass);
                     }
                 } catch (Exception e) {
                     // Continua con il prossimo satellite
                 }
-            }
+            });
             
             // Ordina per tempo di rise
             allPasses.sort((p1, p2) -> p1.riseTime().compareTo(p2.riseTime()));
@@ -667,10 +689,10 @@ public class SatellitePassService {
 
             System.out.println("Found " + allPasses.size() + " passes after filters (minElevation=" + minElevation +
                              ", condition=" + observingCondition + ", maxMagnitude=" + maxMagnitude + "). Rejected: " +
-                             " notVisible=" + rejectedVisibility +
-                             ", elevation=" + rejectedElevation +
-                             ", condition=" + rejectedCondition +
-                             ", magnitude=" + rejectedMagnitude);
+                             " notVisible=" + rejectedVisibility.sum() +
+                             ", elevation=" + rejectedElevation.sum() +
+                             ", condition=" + rejectedCondition.sum() +
+                             ", magnitude=" + rejectedMagnitude.sum());
             return allPasses;
             
         } catch (Exception e) {
