@@ -27,19 +27,23 @@ import org.springframework.stereotype.Service;
 import org.hipparchus.geometry.euclidean.threed.Vector3D;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Servizio per calcolare i passaggi visibili dei satelliti usando Orekit e SGP4
  */
 @Service
 public class SatellitePassService {
+
+    private static final ZoneId TIME_ZONE = ZoneId.systemDefault();
 
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
@@ -99,179 +103,7 @@ public class SatellitePassService {
             OrbitalParameters latestParams = orbitalParametersRepository
                 .findTopBySatelliteOrderByFetchedAtDesc(satellite);
             
-            if (latestParams == null) {
-                return passes;
-            }
-            
-            // Check preventivo: verifica se il satellite può essere visibile da questa latitudine
-            double inclination = latestParams.getInclination();
-            double observerLat = Math.abs(observerLocation.getLatitude());
-            boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
-            
-            System.out.println("🛰️  Satellite: " + satellite.getObjectName() + 
-                             " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat + 
-                             "° | Può essere visibile: " + canBeVisible);
-            
-            if (!canBeVisible) {
-                System.out.println("⛔ Satellite non visibile da questa posizione (inclinazione insufficiente)");
-                return passes; // Lista vuota
-            }
-            
-            // Converti parametri orbitali in TLE
-            String[] tleLines = TLEConverter.buildTLE(
-                satellite.getNoradCatId(), 
-                satellite.getObjectName(), 
-                latestParams
-            );
-            
-            // Prova calcolo con Orekit
-            try {
-                TLE tle = new TLE(tleLines[1], tleLines[2]);
-                TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
-            
-                Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
-                OneAxisEllipsoid earth = new OneAxisEllipsoid(
-                    Constants.WGS84_EARTH_EQUATORIAL_RADIUS,
-                    Constants.WGS84_EARTH_FLATTENING,
-                    itrf
-                );
-                
-                GeodeticPoint observerPoint = new GeodeticPoint(
-                    FastMath.toRadians(observerLocation.getLatitude()),
-                    FastMath.toRadians(observerLocation.getLongitude()),
-                    observerLocation.getAltitude()
-                );
-                TopocentricFrame topoFrame = new TopocentricFrame(earth, observerPoint, "Observer");
-                
-                LocalDateTime now = LocalDateTime.now();
-                AbsoluteDate startDate = toAbsoluteDate(now);
-                AbsoluteDate endDate = toAbsoluteDate(now.plusHours(hours));
-                
-                double step = 60.0;
-                List<PassData> passDataList = new ArrayList<>();
-                PassData currentPass = null;
-                
-                // Posizione del sole per calcolare illuminazione
-                var sun = CelestialBodyFactory.getSun();
-                
-                for (AbsoluteDate date = startDate; 
-                     date.compareTo(endDate) <= 0; 
-                     date = date.shiftedBy(step)) {
-                    
-                    var pv = propagator.getPVCoordinates(date, itrf);
-                    var topoCoordinates = topoFrame.getTrackingCoordinates(pv.getPosition(), itrf, date);
-                    
-                    double elevation = FastMath.toDegrees(topoCoordinates.getElevation());
-                    double azimuth = FastMath.toDegrees(topoCoordinates.getAzimuth());
-                    double range = topoCoordinates.getRange() / 1000.0;
-                    
-                    if (elevation > 0) {
-                        if (currentPass == null) {
-                            currentPass = new PassData();
-                            currentPass.riseTime = toLocalDateTime(date);
-                            currentPass.riseAzimuth = azimuth;
-                        }
-                        
-                        if (elevation > currentPass.maxElevation) {
-                            currentPass.maxElevation = elevation;
-                            currentPass.maxElevationTime = toLocalDateTime(date);
-                            currentPass.maxElevationDate = date;
-                            currentPass.maxElevationAzimuth = azimuth;  // 🆕 Salva azimuth al max
-                            currentPass.maxDistance = range;
-                            
-                            // Calcola altitudine satellite (distanza dalla superficie terrestre)
-                            double satAltitude = pv.getPosition().getNorm() / 1000.0 - Constants.WGS84_EARTH_EQUATORIAL_RADIUS / 1000.0;
-                            currentPass.satelliteAltitude = satAltitude;
-                            
-                            PVCoordinates sunPV = sun.getPVCoordinates(date, itrf);
-
-                            // Calcola elevazione del sole per l'osservatore
-                            var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, date);
-                            double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
-                            currentPass.sunElevation = sunElevation;
-
-                            // Calcola se il satellite è illuminato dal sole (approccio ibrido)
-                            double sunAngle = FastMath.toDegrees(
-                                org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
-                                    pv.getPosition(), 
-                                    sunPV.getPosition()
-                                )
-                            );
-                            currentPass.isSunlit = isSunlitHybrid(
-                                pv.getPosition(),
-                                sunPV.getPosition(),
-                                sunAngle,
-                                sunElevation
-                            );
-                        }
-                    } else {
-                        if (currentPass != null) {
-                            currentPass.setTime = toLocalDateTime(date);
-                            currentPass.setAzimuth = azimuth;
-                            passDataList.add(currentPass);
-                            currentPass = null;
-                        }
-                    }
-                }
-
-                // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
-                // chiudi comunque il passaggio al bordo della finestra per non perderlo.
-                if (currentPass != null) {
-                    currentPass.setTime = toLocalDateTime(endDate);
-                    currentPass.setAzimuth = currentPass.maxElevationAzimuth;
-                    passDataList.add(currentPass);
-                    currentPass = null;
-                }
-                
-                for (PassData pd : passDataList) {
-                    if (pd.maxElevation > 10.0) {
-                        // Determina condizioni di osservazione
-                        String observingCondition;
-                        if (pd.sunElevation < -18) {
-                            observingCondition = "night";
-                        } else if (pd.sunElevation < -6) {
-                            observingCondition = "twilight";
-                        } else {
-                            observingCondition = "daylight";
-                        }
-                        
-                        // Calcola qualità della visibilità
-                        String visibility = calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
-                        
-                        // Stima magnitudine (formula semplificata basata su distanza e illuminazione)
-                        double magnitude = estimateMagnitude(pd.maxDistance, pd.satelliteAltitude, pd.isSunlit);
-                        
-                        // Solo passaggi con buona visibilità
-                        boolean isActuallyVisible = pd.isSunlit && !observingCondition.equals("daylight");
-                        
-                        passes.add(new SatellitePassDTO(
-                            satellite.getId(),
-                            satellite.getObjectName(),
-                            pd.riseTime,
-                            pd.maxElevationTime,
-                            pd.setTime,
-                            pd.maxElevation,
-                            pd.riseAzimuth,
-                            pd.maxElevationAzimuth,  // 🆕
-                            pd.setAzimuth,
-                            pd.maxDistance,
-                            isActuallyVisible,
-                            pd.isSunlit,
-                            visibility,
-                            observingCondition,
-                            magnitude,
-                            pd.satelliteAltitude
-                        ));
-                    }
-                }
-                
-            } catch (org.orekit.errors.OrekitException oe) {
-                System.err.println("⚠️  Orekit calculation failed: " + oe.getMessage());
-                SatellitePassDTO simplifiedPass = createSimplifiedPass(satellite, latestParams, observerLocation, hours);
-                if (simplifiedPass != null && simplifiedPass.isVisible()) {
-                    passes.add(simplifiedPass);
-                }
-            }
+            return calculatePasses(satellite, latestParams, hours, observerLocation);
             
         } catch (Exception e) {
             System.err.println("❌ Error calculating passes: " + e.getMessage());
@@ -281,6 +113,187 @@ public class SatellitePassService {
         
         return passes;
     }
+
+    /**
+     * Calcola i passaggi usando i parametri orbitali già caricati.
+     */
+    private List<SatellitePassDTO> calculatePasses(Satellite satellite, OrbitalParameters latestParams,
+                                                   int hours, ObserverLocation observerLocation) {
+        List<SatellitePassDTO> passes = new ArrayList<>();
+
+        if (latestParams == null) {
+            return passes;
+        }
+
+        // Check preventivo: verifica se il satellite può essere visibile da questa latitudine
+        double inclination = latestParams.getInclination();
+        double observerLat = Math.abs(observerLocation.getLatitude());
+        boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
+
+        System.out.println("🛰️  Satellite: " + satellite.getObjectName() +
+                         " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat +
+                         "° | Può essere visibile: " + canBeVisible);
+
+        if (!canBeVisible) {
+            System.out.println("⛔ Satellite non visibile da questa posizione (inclinazione insufficiente)");
+            return passes;
+        }
+
+        // Converti parametri orbitali in TLE
+        String[] tleLines = TLEConverter.buildTLE(
+            satellite.getNoradCatId(),
+            satellite.getObjectName(),
+            latestParams
+        );
+
+        try {
+            TLE tle = new TLE(tleLines[1], tleLines[2]);
+            TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
+
+            Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
+            OneAxisEllipsoid earth = new OneAxisEllipsoid(
+                Constants.WGS84_EARTH_EQUATORIAL_RADIUS,
+                Constants.WGS84_EARTH_FLATTENING,
+                itrf
+            );
+
+            GeodeticPoint observerPoint = new GeodeticPoint(
+                FastMath.toRadians(observerLocation.getLatitude()),
+                FastMath.toRadians(observerLocation.getLongitude()),
+                observerLocation.getAltitude()
+            );
+            TopocentricFrame topoFrame = new TopocentricFrame(earth, observerPoint, "Observer");
+
+            LocalDateTime now = nowInConfiguredZone();
+            AbsoluteDate startDate = toAbsoluteDate(now);
+            AbsoluteDate endDate = toAbsoluteDate(now.plusHours(hours));
+
+            double step = 60.0;
+            List<PassData> passDataList = new ArrayList<>();
+            PassData currentPass = null;
+
+            // Posizione del sole per calcolare illuminazione
+            var sun = CelestialBodyFactory.getSun();
+
+            for (AbsoluteDate date = startDate;
+                 date.compareTo(endDate) <= 0;
+                 date = date.shiftedBy(step)) {
+
+                var pv = propagator.getPVCoordinates(date, itrf);
+                var topoCoordinates = topoFrame.getTrackingCoordinates(pv.getPosition(), itrf, date);
+
+                double elevation = FastMath.toDegrees(topoCoordinates.getElevation());
+                double azimuth = FastMath.toDegrees(topoCoordinates.getAzimuth());
+                double range = topoCoordinates.getRange() / 1000.0;
+
+                if (elevation > 0) {
+                    if (currentPass == null) {
+                        currentPass = new PassData();
+                        currentPass.riseTime = toLocalDateTime(date);
+                        currentPass.riseAzimuth = azimuth;
+                    }
+
+                    if (elevation > currentPass.maxElevation) {
+                        currentPass.maxElevation = elevation;
+                        currentPass.maxElevationTime = toLocalDateTime(date);
+                        currentPass.maxElevationDate = date;
+                        currentPass.maxElevationAzimuth = azimuth;
+                        currentPass.maxDistance = range;
+
+                        // Calcola altitudine satellite (distanza dalla superficie terrestre)
+                        double satAltitude = pv.getPosition().getNorm() / 1000.0 - Constants.WGS84_EARTH_EQUATORIAL_RADIUS / 1000.0;
+                        currentPass.satelliteAltitude = satAltitude;
+
+                        PVCoordinates sunPV = sun.getPVCoordinates(date, itrf);
+
+                        // Calcola elevazione del sole per l'osservatore
+                        var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, date);
+                        double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
+                        currentPass.sunElevation = sunElevation;
+
+                        // Calcola se il satellite è illuminato dal sole (approccio ibrido)
+                        double sunAngle = FastMath.toDegrees(
+                            org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
+                                pv.getPosition(),
+                                sunPV.getPosition()
+                            )
+                        );
+                        currentPass.isSunlit = isSunlitHybrid(
+                            pv.getPosition(),
+                            sunPV.getPosition(),
+                            sunAngle,
+                            sunElevation
+                        );
+                    }
+                } else {
+                    if (currentPass != null) {
+                        currentPass.setTime = toLocalDateTime(date);
+                        currentPass.setAzimuth = azimuth;
+                        passDataList.add(currentPass);
+                        currentPass = null;
+                    }
+                }
+            }
+
+            // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
+            // chiudi comunque il passaggio al bordo della finestra per non perderlo.
+            if (currentPass != null) {
+                currentPass.setTime = toLocalDateTime(endDate);
+                currentPass.setAzimuth = currentPass.maxElevationAzimuth;
+                passDataList.add(currentPass);
+            }
+
+            for (PassData pd : passDataList) {
+                if (pd.maxElevation > 10.0) {
+                    // Determina condizioni di osservazione
+                    String observingCondition;
+                    if (pd.sunElevation < -18) {
+                        observingCondition = "night";
+                    } else if (pd.sunElevation < -6) {
+                        observingCondition = "twilight";
+                    } else {
+                        observingCondition = "daylight";
+                    }
+
+                    // Calcola qualità della visibilità
+                    String visibility = calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
+
+                    // Stima magnitudine (formula semplificata basata su distanza e illuminazione)
+                    double magnitude = estimateMagnitude(pd.maxDistance, pd.satelliteAltitude, pd.isSunlit);
+
+                    // Solo passaggi con buona visibilità
+                    boolean isActuallyVisible = pd.isSunlit && !observingCondition.equals("daylight");
+
+                    passes.add(new SatellitePassDTO(
+                        satellite.getId(),
+                        satellite.getObjectName(),
+                        pd.riseTime,
+                        pd.maxElevationTime,
+                        pd.setTime,
+                        pd.maxElevation,
+                        pd.riseAzimuth,
+                        pd.maxElevationAzimuth,
+                        pd.setAzimuth,
+                        pd.maxDistance,
+                        isActuallyVisible,
+                        pd.isSunlit,
+                        visibility,
+                        observingCondition,
+                        magnitude,
+                        pd.satelliteAltitude
+                    ));
+                }
+            }
+        } catch (org.orekit.errors.OrekitException oe) {
+            System.err.println("⚠️  Orekit calculation failed: " + oe.getMessage());
+            SatellitePassDTO simplifiedPass = createSimplifiedPass(satellite, latestParams, observerLocation, hours);
+            if (simplifiedPass != null && simplifiedPass.isVisible()) {
+                passes.add(simplifiedPass);
+            }
+        }
+
+        return passes;
+    }
     
     /**
      * Calcolo semplificato (senza Orekit)
@@ -288,7 +301,7 @@ public class SatellitePassService {
      */
     private SatellitePassDTO createSimplifiedPass(Satellite satellite, OrbitalParameters params, 
                                                    ObserverLocation location, int hours) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowInConfiguredZone();
         double orbitalPeriod = 1440.0 / params.getMeanMotion();
         double hoursUntilPass = Math.min(hours / 2.0, orbitalPeriod / 60.0);
         
@@ -333,7 +346,7 @@ public class SatellitePassService {
         Optional<Satellite> satOpt = satelliteRepository.findById(satelliteId);
         String name = satOpt.map(Satellite::getObjectName).orElse("Unknown Satellite");
         
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowInConfiguredZone();
         return new SatellitePassDTO(
             satelliteId,
             name + " (error)",
@@ -470,14 +483,14 @@ public class SatellitePassService {
     }
     
     private AbsoluteDate toAbsoluteDate(LocalDateTime ldt) {
-        Date date = Date.from(ldt.toInstant(ZoneOffset.UTC));
+        Date date = Date.from(ldt.atZone(TIME_ZONE).toInstant());
         return new AbsoluteDate(date, TimeScalesFactory.getUTC());
     }
     
     private LocalDateTime toLocalDateTime(AbsoluteDate ad) {
         return LocalDateTime.ofInstant(
             ad.toDate(TimeScalesFactory.getUTC()).toInstant(),
-            ZoneOffset.UTC
+            TIME_ZONE
         );
     }
 
@@ -557,7 +570,7 @@ public class SatellitePassService {
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
-                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime now = nowInConfiguredZone();
                 List<SatellitePassDTO> filtered = new ArrayList<>();
                 for (SatellitePassDTO pass : entry.passes) {
                     if (pass.riseTime().isAfter(now)) {
@@ -577,20 +590,20 @@ public class SatellitePassService {
         List<SatellitePassDTO> allPasses = new ArrayList<>();
         
         try {
-            List<Satellite> allSatellites = satelliteRepository.findAll();
             double observerLat = Math.abs(observerLocation.getLatitude());
+            Map<Long, OrbitalParameters> latestParametersBySatelliteId = loadLatestOrbitalParameters();
             
             // Filtra satelliti per inclinazione PRIMA di calcolare i passaggi
             List<Satellite> visibleSatellites = new ArrayList<>();
-            for (Satellite sat : allSatellites) {
-                OrbitalParameters latestParams = orbitalParametersRepository
-                    .findTopBySatelliteOrderByFetchedAtDesc(sat);
+            for (OrbitalParameters latestParams : latestParametersBySatelliteId.values()) {
+                Satellite sat = latestParams.getSatellite();
+                if (sat == null || sat.getId() == null) {
+                    continue;
+                }
                 
-                if (latestParams != null) {
-                    double inclination = latestParams.getInclination();
-                    if (canBeVisibleAtLatitude(inclination, observerLat)) {
-                        visibleSatellites.add(sat);
-                    }
+                double inclination = latestParams.getInclination();
+                if (canBeVisibleAtLatitude(inclination, observerLat)) {
+                    visibleSatellites.add(sat);
                 }
             }
             
@@ -605,7 +618,12 @@ public class SatellitePassService {
 
             for (Satellite satellite : visibleSatellites) {
                 try {
-                    List<SatellitePassDTO> passes = calculatePasses(satellite.getId(), hours, observerLocation);
+                    OrbitalParameters latestParams = latestParametersBySatelliteId.get(satellite.getId());
+                    if (latestParams == null) {
+                        continue;
+                    }
+
+                    List<SatellitePassDTO> passes = calculatePasses(satellite, latestParams, hours, observerLocation);
                     
                     // Filtra per elevazione minima, visibilità, condizione osservazione e magnitudine
                     for (SatellitePassDTO pass : passes) {
@@ -709,5 +727,20 @@ public class SatellitePassService {
         status.put("cache_entries", entries);
         
         return status;
+    }
+
+    private Map<Long, OrbitalParameters> loadLatestOrbitalParameters() {
+        return orbitalParametersRepository.findLatestForAllSatellites().stream()
+            .filter(parameters -> parameters.getSatellite() != null && parameters.getSatellite().getId() != null)
+            .collect(Collectors.toMap(
+                parameters -> parameters.getSatellite().getId(),
+                Function.identity(),
+                (left, right) -> left,
+                HashMap::new
+            ));
+    }
+
+    private LocalDateTime nowInConfiguredZone() {
+        return LocalDateTime.now(TIME_ZONE);
     }
 }
