@@ -165,10 +165,10 @@ public class SatellitePassService {
                 observerLocation.getAltitude()
             );
             TopocentricFrame topoFrame = new TopocentricFrame(earth, observerPoint, "Observer");
+            ZoneId outputZone = resolveOutputZone(observerLocation);
 
-            LocalDateTime now = nowInConfiguredZone();
-            AbsoluteDate startDate = toAbsoluteDate(now);
-            AbsoluteDate endDate = toAbsoluteDate(now.plusHours(hours));
+            AbsoluteDate startDate = new AbsoluteDate(new Date(), TimeScalesFactory.getUTC());
+            AbsoluteDate endDate = startDate.shiftedBy(hours * 3600.0);
 
             double step = 60.0;
             List<PassData> passDataList = new ArrayList<>();
@@ -191,13 +191,13 @@ public class SatellitePassService {
                 if (elevation > 0) {
                     if (currentPass == null) {
                         currentPass = new PassData();
-                        currentPass.riseTime = toLocalDateTime(date);
+                        currentPass.riseTime = toLocalDateTime(date, outputZone);
                         currentPass.riseAzimuth = azimuth;
                     }
 
                     if (elevation > currentPass.maxElevation) {
                         currentPass.maxElevation = elevation;
-                        currentPass.maxElevationTime = toLocalDateTime(date);
+                        currentPass.maxElevationTime = toLocalDateTime(date, outputZone);
                         currentPass.maxElevationDate = date;
                         currentPass.maxElevationAzimuth = azimuth;
                         currentPass.maxDistance = range;
@@ -235,7 +235,7 @@ public class SatellitePassService {
                     }
                 } else {
                     if (currentPass != null) {
-                        currentPass.setTime = toLocalDateTime(date);
+                        currentPass.setTime = toLocalDateTime(date, outputZone);
                         currentPass.setAzimuth = azimuth;
                         passDataList.add(currentPass);
                         currentPass = null;
@@ -246,7 +246,7 @@ public class SatellitePassService {
             // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
             // chiudi comunque il passaggio al bordo della finestra per non perderlo.
             if (currentPass != null) {
-                currentPass.setTime = toLocalDateTime(endDate);
+                currentPass.setTime = toLocalDateTime(endDate, outputZone);
                 currentPass.setAzimuth = currentPass.maxElevationAzimuth;
                 passDataList.add(currentPass);
             }
@@ -309,7 +309,7 @@ public class SatellitePassService {
      */
     private SatellitePassDTO createSimplifiedPass(Satellite satellite, OrbitalParameters params, 
                                                    ObserverLocation location, int hours) {
-        LocalDateTime now = nowInConfiguredZone();
+        LocalDateTime now = LocalDateTime.now(resolveOutputZone(location));
         double orbitalPeriod = 1440.0 / params.getMeanMotion();
         double hoursUntilPass = Math.min(hours / 2.0, orbitalPeriod / 60.0);
         
@@ -354,7 +354,7 @@ public class SatellitePassService {
         Optional<Satellite> satOpt = satelliteRepository.findById(satelliteId);
         String name = satOpt.map(Satellite::getObjectName).orElse("Unknown Satellite");
         
-        LocalDateTime now = nowInConfiguredZone();
+        LocalDateTime now = LocalDateTime.now(resolveOutputZone(defaultLocation));
         return new SatellitePassDTO(
             satelliteId,
             name + " (error)",
@@ -518,6 +518,40 @@ public class SatellitePassService {
         );
     }
 
+    private LocalDateTime toLocalDateTime(AbsoluteDate ad, ZoneId zone) {
+        return LocalDateTime.ofInstant(
+            ad.toDate(TimeScalesFactory.getUTC()).toInstant(),
+            zone
+        );
+    }
+
+    private ZoneId resolveOutputZone(ObserverLocation observerLocation) {
+        if (observerLocation == null) {
+            return TIME_ZONE;
+        }
+
+        String locationName = observerLocation.getLocationName();
+        if (locationName != null) {
+            String normalized = locationName.toLowerCase();
+            if (normalized.contains("italia") || normalized.contains("italy")) {
+                return ZoneId.of("Europe/Rome");
+            }
+        }
+
+        if (isLikelyInItaly(observerLocation)) {
+            return ZoneId.of("Europe/Rome");
+        }
+
+        // Global fallback: mantieni la timezone runtime (attualmente UTC nel container)
+        return TIME_ZONE;
+    }
+
+    private boolean isLikelyInItaly(ObserverLocation observerLocation) {
+        double lat = observerLocation.getLatitude();
+        double lon = observerLocation.getLongitude();
+        return lat >= 35.0 && lat <= 48.0 && lon >= 6.0 && lon <= 19.0;
+    }
+
     /**
      * Verifica rapida di raggiungibilita' latitudinale in base all'inclinazione orbitale.
      */
@@ -594,7 +628,7 @@ public class SatellitePassService {
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
-                LocalDateTime now = nowInConfiguredZone();
+                LocalDateTime now = LocalDateTime.now(resolveOutputZone(observerLocation));
                 List<SatellitePassDTO> filtered = new ArrayList<>();
                 for (SatellitePassDTO pass : entry.passes) {
                     if (pass.riseTime().isAfter(now)) {
