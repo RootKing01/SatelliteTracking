@@ -273,35 +273,7 @@ public class SatelliteController {
     @GetMapping("/upcoming-passes")
     public ResponseEntity<List<SatellitePassDTO>> getUpcomingPasses(@RequestParam(defaultValue = "6") int hours) {
         List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, 30.0);
-        
-        // Se trova passaggi, invia notifiche Telegram agli utenti registrati
-        if (!passes.isEmpty()) {
-            try {
-                List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
-                LocalDateTime now = LocalDateTime.now();
-                
-                for (TelegramSubscription sub : subscriptions) {
-                    if (!sub.getNotificationsEnabled()) continue;
-                    
-                    // Invia notifica per il primo passaggio (evita spam)
-                    SatellitePassDTO firstPass = passes.get(0);
-                    long minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES
-                        .between(sub.getLastNotificationSent(), now);
-                    
-                    if (minutesSinceLast >= 30) {
-                        telegramNotificationService.sendNotificationToUser(
-                            sub,
-                            firstPass.satelliteName(),
-                            firstPass.riseTime(),
-                            firstPass.maxElevation(),
-                            firstPass.estimatedMagnitude()
-                        );
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
-            }
-        }
+        sendFirstPassNotificationsIfNeeded(passes);
         
         return ResponseEntity.ok(passes);
     }
@@ -351,36 +323,42 @@ public class SatelliteController {
         List<SatellitePassDTO> passes = satellitePassService.findVisibleUpcomingPasses(hours, minElevation, 
                                                                                        observingCondition, maxMagnitude);
         
-        // Se trova passaggi, invia notifiche Telegram agli utenti registrati
-        if (!passes.isEmpty()) {
-            try {
-                List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
-                LocalDateTime now = LocalDateTime.now();
-                
-                for (TelegramSubscription sub : subscriptions) {
-                    if (!sub.getNotificationsEnabled()) continue;
-                    
-                    // Invia notifica per il primo passaggio (evita spam)
-                    SatellitePassDTO firstPass = passes.get(0);
-                    long minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES
-                        .between(sub.getLastNotificationSent(), now);
-                    
-                    if (minutesSinceLast >= 30) {
-                        telegramNotificationService.sendNotificationToUser(
-                            sub,
-                            firstPass.satelliteName(),
-                            firstPass.riseTime(),
-                            firstPass.maxElevation(),
-                            firstPass.estimatedMagnitude()
-                        );
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
-            }
-        }
+        sendFirstPassNotificationsIfNeeded(passes);
         
         return ResponseEntity.ok(passes);
+    }
+
+    private void sendFirstPassNotificationsIfNeeded(List<SatellitePassDTO> passes) {
+        if (passes.isEmpty()) {
+            return;
+        }
+
+        try {
+            List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
+            LocalDateTime now = LocalDateTime.now();
+            SatellitePassDTO firstPass = passes.get(0);
+
+            for (TelegramSubscription sub : subscriptions) {
+                if (!sub.getNotificationsEnabled()) {
+                    continue;
+                }
+
+                long minutesSinceLast = java.time.temporal.ChronoUnit.MINUTES
+                    .between(sub.getLastNotificationSent(), now);
+
+                if (minutesSinceLast >= 30) {
+                    telegramNotificationService.sendNotificationToUser(
+                        sub,
+                        firstPass.satelliteName(),
+                        firstPass.riseTime(),
+                        firstPass.maxElevation(),
+                        firstPass.estimatedMagnitude()
+                    );
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
+        }
     }
 
     /**

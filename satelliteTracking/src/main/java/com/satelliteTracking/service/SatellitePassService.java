@@ -18,7 +18,6 @@ import org.orekit.frames.TopocentricFrame;
 import org.orekit.propagation.analytical.tle.TLE;
 import org.orekit.propagation.analytical.tle.TLEPropagator;
 import org.orekit.time.AbsoluteDate;
-import org.orekit.time.TimeScalesFactory;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
 import org.orekit.utils.PVCoordinates;
@@ -30,11 +29,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -45,10 +44,11 @@ import java.util.stream.Collectors;
 @Service
 public class SatellitePassService {
 
-    private static final ZoneId TIME_ZONE = ZoneId.systemDefault();
-
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
+    private final PassTimeService passTimeService;
+    private final PassVisibilityService passVisibilityService;
+    private final PassPhotometryService passPhotometryService;
     
     // Posizione predefinita caricata da configuration (single source of truth)
     private final ObserverLocation defaultLocation;
@@ -68,17 +68,23 @@ public class SatellitePassService {
         }
     }
     
-    private final Map<String, CacheEntry> passesCache = new HashMap<>();
+    private final Map<String, CacheEntry> passesCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 1800000; // 30 minuti
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
                                 OrbitalParametersRepository orbitalParametersRepository,
+                                PassTimeService passTimeService,
+                                PassVisibilityService passVisibilityService,
+                                PassPhotometryService passPhotometryService,
                                 @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
                                 @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
                                 @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude,
                                 @Value("${satellite.default-location.name:San Marcellino, Caserta, Italia}") String defaultLocationName) {
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
+        this.passTimeService = passTimeService;
+        this.passVisibilityService = passVisibilityService;
+        this.passPhotometryService = passPhotometryService;
         this.defaultLocation = new ObserverLocation(defaultLatitude, defaultLongitude, defaultAltitude, defaultLocationName);
     }
 
@@ -165,9 +171,9 @@ public class SatellitePassService {
                 observerLocation.getAltitude()
             );
             TopocentricFrame topoFrame = new TopocentricFrame(earth, observerPoint, "Observer");
-            ZoneId outputZone = resolveOutputZone(observerLocation);
+            ZoneId outputZone = passTimeService.resolveOutputZone(observerLocation);
 
-            AbsoluteDate startDate = new AbsoluteDate(new Date(), TimeScalesFactory.getUTC());
+            AbsoluteDate startDate = passTimeService.nowUtc();
             AbsoluteDate endDate = startDate.shiftedBy(hours * 3600.0);
 
             double step = 60.0;
@@ -191,13 +197,13 @@ public class SatellitePassService {
                 if (elevation > 0) {
                     if (currentPass == null) {
                         currentPass = new PassData();
-                        currentPass.riseTime = toLocalDateTime(date, outputZone);
+                            currentPass.riseTime = passTimeService.toLocalDateTime(date, outputZone);
                         currentPass.riseAzimuth = azimuth;
                     }
 
                     if (elevation > currentPass.maxElevation) {
                         currentPass.maxElevation = elevation;
-                        currentPass.maxElevationTime = toLocalDateTime(date, outputZone);
+                            currentPass.maxElevationTime = passTimeService.toLocalDateTime(date, outputZone);
                         currentPass.maxElevationDate = date;
                         currentPass.maxElevationAzimuth = azimuth;
                         currentPass.maxDistance = range;
@@ -226,7 +232,7 @@ public class SatellitePassService {
                                 sunPV.getPosition()
                             )
                         );
-                        currentPass.isSunlit = isSunlitHybrid(
+                        currentPass.isSunlit = passVisibilityService.isSunlitHybrid(
                             pv.getPosition(),
                             sunPV.getPosition(),
                             sunAngle,
@@ -235,7 +241,7 @@ public class SatellitePassService {
                     }
                 } else {
                     if (currentPass != null) {
-                        currentPass.setTime = toLocalDateTime(date, outputZone);
+                        currentPass.setTime = passTimeService.toLocalDateTime(date, outputZone);
                         currentPass.setAzimuth = azimuth;
                         passDataList.add(currentPass);
                         currentPass = null;
@@ -246,28 +252,18 @@ public class SatellitePassService {
             // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
             // chiudi comunque il passaggio al bordo della finestra per non perderlo.
             if (currentPass != null) {
-                currentPass.setTime = toLocalDateTime(endDate, outputZone);
+                currentPass.setTime = passTimeService.toLocalDateTime(endDate, outputZone);
                 currentPass.setAzimuth = currentPass.maxElevationAzimuth;
                 passDataList.add(currentPass);
             }
 
             for (PassData pd : passDataList) {
                 if (pd.maxElevation > 10.0) {
-                    // Determina condizioni di osservazione
-                    String observingCondition;
-                    if (pd.sunElevation < -18) {
-                        observingCondition = "night";
-                    } else if (pd.sunElevation < -6) {
-                        observingCondition = "twilight";
-                    } else {
-                        observingCondition = "daylight";
-                    }
+                    String observingCondition = passVisibilityService.determineObservingCondition(pd.sunElevation);
 
-                    // Calcola qualità della visibilità
-                    String visibility = calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
+                    String visibility = passVisibilityService.calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
 
-                    // Stima magnitudine con distanza, fase e illuminazione
-                    double magnitude = estimateMagnitude(pd.maxDistance, pd.phaseAngleDeg, pd.isSunlit);
+                    double magnitude = passPhotometryService.estimateMagnitude(pd.maxDistance, pd.phaseAngleDeg, pd.isSunlit);
 
                     // Solo passaggi con buona visibilità
                     boolean isActuallyVisible = pd.isSunlit && !observingCondition.equals("daylight");
@@ -309,7 +305,7 @@ public class SatellitePassService {
      */
     private SatellitePassDTO createSimplifiedPass(Satellite satellite, OrbitalParameters params, 
                                                    ObserverLocation location, int hours) {
-        LocalDateTime now = LocalDateTime.now(resolveOutputZone(location));
+        LocalDateTime now = passTimeService.nowForObserver(location);
         double orbitalPeriod = 1440.0 / params.getMeanMotion();
         double hoursUntilPass = Math.min(hours / 2.0, orbitalPeriod / 60.0);
         
@@ -354,7 +350,7 @@ public class SatellitePassService {
         Optional<Satellite> satOpt = satelliteRepository.findById(satelliteId);
         String name = satOpt.map(Satellite::getObjectName).orElse("Unknown Satellite");
         
-        LocalDateTime now = LocalDateTime.now(resolveOutputZone(defaultLocation));
+        LocalDateTime now = passTimeService.nowForObserver(defaultLocation);
         return new SatellitePassDTO(
             satelliteId,
             name + " (error)",
@@ -394,164 +390,6 @@ public class SatellitePassService {
         double sunElevation;
     }
     
-    /**
-     * Calcola la qualità della visibilità
-     */
-    private String calculateVisibility(double elevation, boolean isSunlit, String condition) {
-        if (!isSunlit || condition.equals("daylight")) {
-            return "poor";
-        }
-        
-        if (elevation > 60 && condition.equals("night")) {
-            return "excellent";
-        } else if (elevation > 40 && condition.equals("night")) {
-            return "good";
-        } else if (elevation > 20 || condition.equals("twilight")) {
-            return "fair";
-        }
-        
-        return "poor";
-    }
-    
-    /**
-     * Stima la magnitudine visiva del satellite usando formula di fase empirica
-     * Basata su: magnitudine assoluta, distanza, angolo di fase, e illuminazione solare
-     * 
-     * Per satelliti in ombra terrestre (isSunlit=false), applica una penalità empirica
-     * che rappresenta la minore luminosità dovuta alla mancanza di illuminazione diretta
-     * (ma il satellite è ancora osservabile per riflesso e radiazione terrestre)
-     */
-    private double estimateMagnitude(double distanceKm, double phaseAngleDeg, boolean isSunlit) {
-        // Magnitudine assoluta media (ISS-like): -1.0 (molto luminoso quando illuminato)
-        double H = -1.0;
-        
-        // Calcola magnitudine apparente usando distanza
-        // Formula ridotta: m ≈ H + 5*log10(distance_km) - 15
-        double magnitude = H + 5.0 * Math.log10(distanceKm) - 15.0;
-        
-        // Fattore di fase Lambertiano in funzione dell'angolo di fase reale
-        double phaseRad = Math.toRadians(Math.max(0.0, Math.min(180.0, phaseAngleDeg)));
-        double phaseFactor = (Math.sin(phaseRad) + (Math.PI - phaseRad) * Math.cos(phaseRad)) / Math.PI;
-        phaseFactor = Math.max(1.0e-3, phaseFactor);
-        double phaseCorrection = -2.5 * Math.log10(phaseFactor);
-        
-        if (isSunlit) {
-            // Satellite illuminato direttamente dal sole
-            magnitude -= phaseCorrection;
-        } else {
-            // Satellite in ombra terrestre: normalmente molto più debole
-            magnitude += 6.0;
-        }
-        
-        // Limita tra -5 (molto luminoso, es. ISS al perigeo illuminata) e +9 (appena visibile in ombra)
-        magnitude = Math.max(-5.0, Math.min(9.0, magnitude));
-        
-        return Math.round(magnitude * 10.0) / 10.0; // Arrotonda a 1 decimale
-    }
-
-    /**
-     * Approccio ibrido: euristica veloce sempre, raffinamento geometrico solo nei casi borderline.
-     * Borderline tipici: terminatore (angolo sole ~90°) e crepuscolo locale.
-     */
-    private boolean isSunlitHybrid(Vector3D satPosition,
-                                   Vector3D sunPosition,
-                                   double sunAngleDeg,
-                                   double sunElevationDeg) {
-        boolean fastSunlit = sunAngleDeg < 90.0;
-
-        boolean nearTerminator = sunAngleDeg >= 85.0 && sunAngleDeg <= 95.0;
-        boolean twilightLike = sunElevationDeg >= -12.0 && sunElevationDeg <= 2.0;
-
-        if (nearTerminator || twilightLike) {
-            return isSunlitRefinedCylindricalShadow(satPosition, sunPosition);
-        }
-
-        return fastSunlit;
-    }
-
-    /**
-     * Verifica geometrica ombra terrestre (approssimazione conica dell'umbra):
-     * - lato diurno => sempre illuminato
-     * - lato notturno => in ombra se dentro il cono d'umbra terrestre
-     */
-    private boolean isSunlitRefinedCylindricalShadow(Vector3D satPosition, Vector3D sunPosition) {
-        Vector3D sunDir = sunPosition.normalize();
-        double projectionOnSunDir = satPosition.dotProduct(sunDir);
-
-        // Satellite sul lato illuminato della Terra
-        if (projectionOnSunDir > 0.0) {
-            return true;
-        }
-
-        // Distanza dall'asse Sole-Terra
-        Vector3D orthogonal = satPosition.subtract(sunDir.scalarMultiply(projectionOnSunDir));
-        double distanceFromShadowAxis = orthogonal.getNorm();
-
-        // Distanza lungo l'asse d'ombra (dietro la Terra)
-        double nightSideDistance = -projectionOnSunDir;
-        double earthRadius = Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
-        double sunDistance = sunPosition.getNorm();
-
-        // Lunghezza del cono d'umbra terrestre
-        double umbraLength = (earthRadius * sunDistance) / (Constants.SUN_RADIUS - earthRadius);
-
-        // Oltre l'apice dell'umbra consideriamo il satellite illuminato
-        if (nightSideDistance >= umbraLength) {
-            return true;
-        }
-
-        // Raggio dell'umbra alla distanza considerata
-        double umbraRadius = earthRadius * (1.0 - (nightSideDistance / umbraLength));
-
-        return distanceFromShadowAxis > umbraRadius;
-    }
-    
-    private AbsoluteDate toAbsoluteDate(LocalDateTime ldt) {
-        Date date = Date.from(ldt.atZone(TIME_ZONE).toInstant());
-        return new AbsoluteDate(date, TimeScalesFactory.getUTC());
-    }
-    
-    private LocalDateTime toLocalDateTime(AbsoluteDate ad) {
-        return LocalDateTime.ofInstant(
-            ad.toDate(TimeScalesFactory.getUTC()).toInstant(),
-            TIME_ZONE
-        );
-    }
-
-    private LocalDateTime toLocalDateTime(AbsoluteDate ad, ZoneId zone) {
-        return LocalDateTime.ofInstant(
-            ad.toDate(TimeScalesFactory.getUTC()).toInstant(),
-            zone
-        );
-    }
-
-    private ZoneId resolveOutputZone(ObserverLocation observerLocation) {
-        if (observerLocation == null) {
-            return TIME_ZONE;
-        }
-
-        String locationName = observerLocation.getLocationName();
-        if (locationName != null) {
-            String normalized = locationName.toLowerCase();
-            if (normalized.contains("italia") || normalized.contains("italy")) {
-                return ZoneId.of("Europe/Rome");
-            }
-        }
-
-        if (isLikelyInItaly(observerLocation)) {
-            return ZoneId.of("Europe/Rome");
-        }
-
-        // Global fallback: mantieni la timezone runtime (attualmente UTC nel container)
-        return TIME_ZONE;
-    }
-
-    private boolean isLikelyInItaly(ObserverLocation observerLocation) {
-        double lat = observerLocation.getLatitude();
-        double lon = observerLocation.getLongitude();
-        return lat >= 35.0 && lat <= 48.0 && lon >= 6.0 && lon <= 19.0;
-    }
-
     /**
      * Verifica rapida di raggiungibilita' latitudinale in base all'inclinazione orbitale.
      */
@@ -628,7 +466,7 @@ public class SatellitePassService {
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
-                LocalDateTime now = LocalDateTime.now(resolveOutputZone(observerLocation));
+                LocalDateTime now = passTimeService.nowForObserver(observerLocation);
                 List<SatellitePassDTO> filtered = new ArrayList<>();
                 for (SatellitePassDTO pass : entry.passes) {
                     if (pass.riseTime().isAfter(now)) {
@@ -796,7 +634,4 @@ public class SatellitePassService {
             ));
     }
 
-    private LocalDateTime nowInConfiguredZone() {
-        return LocalDateTime.now(TIME_ZONE);
-    }
 }
