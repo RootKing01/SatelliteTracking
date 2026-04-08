@@ -66,6 +66,12 @@
 			<artifactId>jackson-databind</artifactId>
 		</dependency>
 
+		<dependency>
+			<groupId>net.iakovlev</groupId>
+			<artifactId>timeshape</artifactId>
+			<version>2025b.26</version>
+		</dependency>
+
 	<!-- Orekit per calcoli orbitali e propagazione SGP4 -->
 	<dependency>
 		<groupId>org.orekit</groupId>

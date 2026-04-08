@@ -1,10 +1,12 @@
 package com.satelliteTracking.service;
 
 import com.satelliteTracking.model.ObserverLocation;
+import net.iakovlev.timeshape.TimeZoneEngine;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.time.TimeScalesFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
@@ -13,6 +15,7 @@ import java.util.Date;
 public class PassTimeService {
 
     private static final ZoneId SYSTEM_ZONE = ZoneId.systemDefault();
+    private static final TimeZoneEngine TIME_ZONE_ENGINE = TimeZoneEngine.initialize();
 
     public AbsoluteDate nowUtc() {
         return new AbsoluteDate(new Date(), TimeScalesFactory.getUTC());
@@ -34,24 +37,29 @@ public class PassTimeService {
             return SYSTEM_ZONE;
         }
 
-        String locationName = observerLocation.getLocationName();
-        if (locationName != null) {
-            String normalized = locationName.toLowerCase();
-            if (normalized.contains("italia") || normalized.contains("italy")) {
-                return ZoneId.of("Europe/Rome");
+        return TIME_ZONE_ENGINE.query(observerLocation.getLatitude(), observerLocation.getLongitude())
+            .orElseGet(() -> zoneFromLocationName(observerLocation.getLocationName()));
+    }
+
+    private ZoneId zoneFromLocationName(String locationName) {
+        if (locationName == null || locationName.isBlank()) {
+            return SYSTEM_ZONE;
+        }
+
+        String normalized = locationName.trim();
+        if (normalized.contains("/")) {
+            try {
+                return ZoneId.of(normalized);
+            } catch (DateTimeException ignored) {
+                // Fallback to system zone
             }
         }
 
-        if (isLikelyInItaly(observerLocation)) {
+        String lower = normalized.toLowerCase();
+        if (lower.contains("italia") || lower.contains("italy")) {
             return ZoneId.of("Europe/Rome");
         }
 
         return SYSTEM_ZONE;
-    }
-
-    private boolean isLikelyInItaly(ObserverLocation observerLocation) {
-        double lat = observerLocation.getLatitude();
-        double lon = observerLocation.getLongitude();
-        return lat >= 35.0 && lat <= 48.0 && lon >= 6.0 && lon <= 19.0;
     }
 }
