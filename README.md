@@ -248,28 +248,6 @@ Includes:
 
 ---
 
-## 🔒 Security
-
-### Exposed
-
-* Satellite metadata
-* Computed visibility data
-
-### Never Expose
-
-* DB credentials
-* Tokens
-* Internal infrastructure
-
-### Hardening
-
-* Disable SQL logs
-* Centralized error handling
-* Rate limiting
-* Restricted CORS
-
----
-
 ## 💡 Roadmap
 
 ### High Priority
