@@ -3,6 +3,7 @@ package com.satelliteTracking.controller;
 import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.TelegramSubscription;
+import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,22 +23,40 @@ import java.util.Map;
 @RequestMapping("/api/satellites")
 public class SatellitePassController {
 
+    private final SatelliteRepository satelliteRepository;
     private final SatellitePassService satellitePassService;
     private final TelegramNotificationService telegramNotificationService;
     private final double defaultLatitude;
     private final double defaultLongitude;
     private final double defaultAltitude;
 
-    public SatellitePassController(SatellitePassService satellitePassService,
+    public SatellitePassController(SatelliteRepository satelliteRepository,
+                                   SatellitePassService satellitePassService,
                                    TelegramNotificationService telegramNotificationService,
                                    @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
                                    @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
                                    @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude) {
+        this.satelliteRepository = satelliteRepository;
         this.satellitePassService = satellitePassService;
         this.telegramNotificationService = telegramNotificationService;
         this.defaultLatitude = defaultLatitude;
         this.defaultLongitude = defaultLongitude;
         this.defaultAltitude = defaultAltitude;
+    }
+
+    @GetMapping("/passes/by-name")
+    public ResponseEntity<?> getSatellitePassesByName(
+        @RequestParam(defaultValue = "ISS") String name,
+        @RequestParam(defaultValue = "24") int hours) {
+
+        return satelliteRepository.findFirstByObjectNameContainingIgnoreCaseOrderByIdAsc(name)
+            .<ResponseEntity<?>>map(satellite -> ResponseEntity.ok(satellitePassService.calculatePasses(satellite.getId(), hours)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/passes/iss")
+    public ResponseEntity<?> getIssPasses(@RequestParam(defaultValue = "24") int hours) {
+        return getSatellitePassesByName("ISS", hours);
     }
 
     @GetMapping("/{id}/passes")

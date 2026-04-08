@@ -9,4 +9,7 @@ import java.util.Optional;
 public interface SatelliteRepository extends JpaRepository<Satellite, Long> {
     // Trova un satellite per NORAD Catalog ID
     Optional<Satellite> findByNoradCatId(Long noradCatId);
+
+    // Trova il primo satellite che contiene il nome richiesto (case-insensitive)
+    Optional<Satellite> findFirstByObjectNameContainingIgnoreCaseOrderByIdAsc(String objectName);
 }
