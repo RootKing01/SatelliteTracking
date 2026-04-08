@@ -1,359 +1,324 @@
-# Satellite Tracker
+# 🛰️ Satellite Tracker
 
-A production-oriented satellite tracking backend that computes when and where satellites will be visible from a given observer location.
+A production-ready backend for satellite tracking that predicts **when**, **where**, and **how well** satellites will be visible from any observer location.
 
-It uses fresh orbital data from CelesTrak, Orekit/SGP4 propagation, visibility heuristics, and optional Telegram notifications.
+It leverages up-to-date orbital data from CelesTrak, SGP4 propagation via Orekit, advanced visibility algorithms, and optional Telegram notifications.
 
-## Table Of Contents
+---
 
-1. Project Overview
-2. Key Features
-3. Tech Stack
-4. High-Level Architecture
-5. Getting Started
-6. Configuration
-7. Security And Data Exposure
-8. API Reference
-9. Orbital Computation Flow
-10. Time Zones And Date Handling
-11. Testing
-12. Troubleshooting
-13. Suggested Improvements
-14. Development Notes
+## 🌍 Overview
 
-## Project Overview
+Satellite Tracker answers questions like:
 
-Satellite Tracker helps you answer practical questions such as:
+* **When will the ISS pass over my location?**
+* **Which satellites will be visible in the next hours?**
+* **Where should I look?** (azimuth / cardinal direction)
+* **How good are the viewing conditions?** (night, twilight, daylight, illumination, estimated magnitude)
 
-1. When will the ISS pass over my location?
-2. Which satellites are visible in the next few hours?
-3. In which direction should I look (azimuth/cardinal direction)?
-4. How good are viewing conditions (night/twilight/daylight, sunlit, estimated magnitude)?
+Designed for easy deployment with Docker Compose, it exposes a complete REST API.
 
-The backend exposes REST APIs and is designed to run with Docker Compose.
+---
 
-## Key Features
+## ✨ Key Features
 
-1. Satellite catalog and orbital history retrieval.
-2. Pass prediction for single satellite and bulk upcoming passes.
-3. Custom observer location support.
-4. City-name lookup (geocoding) to coordinates.
-5. Visibility classification and photometry estimation.
-6. Cache for upcoming pass computations.
-7. Telegram notification integration.
-8. ISS quick access by satellite name (no numeric ID required).
+* 📡 **Satellite Catalog** — Full catalog access with orbital history
+* 🔮 **Pass Prediction** — Single or multi-satellite predictions
+* 📍 **Custom Observer Location** — Any coordinates supported
+* 🏙️ **Geocoding** — City → coordinates conversion
+* 👁️ **Visibility Classification** — Observation quality + illumination
+* ⚡ **Smart Caching** — Optimized performance for repeated queries
+* 📱 **Telegram Notifications** — Optional alert system
+* 🚀 **ISS Shortcut** — Quick access without NORAD ID
 
-## Tech Stack
+---
 
-1. Java 17
-2. Spring Boot 4
-3. Spring Data JPA + Hibernate
-4. PostgreSQL 15
-5. Orekit 12.1 + Hipparchus 3.1
-6. Docker + Docker Compose
-7. JUnit 5 + Mockito
+## 🛠️ Tech Stack
 
-## High-Level Architecture
+```
+Backend:    Java 17 + Spring Boot
+Database:   PostgreSQL 15 + JPA/Hibernate
+Orbit:      Orekit + Hipparchus
+Deploy:     Docker + Docker Compose
+Testing:    JUnit 5 + Mockito
+```
 
-Main modules after refactor:
+---
 
-1. Controllers
-1. SatelliteQueryController: catalog and metadata endpoints.
-2. SatellitePassController: pass-related endpoints.
-3. SatelliteCityController: city-based pass endpoints.
-4. SatelliteCacheController: cache management endpoints.
-2. Services
-1. SatellitePassService: orchestration layer for pass computations.
-2. PassTimeService: timezone/date conversion.
-3. PassVisibilityService: sunlit/condition/visibility logic.
-4. PassPhotometryService: estimated magnitude model.
-5. TelegramNotificationService: notification workflow.
-
-## Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-1. Docker + Docker Compose
-2. A free TCP 8080 port (or adjust compose mapping)
+* Docker & Docker Compose
+* Port 8080 available
 
 ### Run
 
 ```bash
-git clone <your-repo-url>
+git clone <your-repo>
 cd satelliteTracker
 sudo docker compose up -d --build
 ```
 
-### Stop
+Service will be available at:
+
+```
+http://localhost:8080
+```
+
+### Useful Commands
 
 ```bash
+# Stop containers
 sudo docker compose down
-```
 
-### Stop And Remove Volumes
-
-Use this only if you want to wipe DB and persisted data.
-
-```bash
+# Remove volumes (⚠️ data loss)
 sudo docker compose down -v
+
+# Logs
+sudo docker compose logs -f
+
+# Restart
+sudo docker compose restart
 ```
 
-## Configuration
+---
 
-Main runtime settings are in:
+## ⚙️ Configuration
 
-1. satelliteTracking/src/main/resources/application.properties
-2. docker-compose.yml
+### Main Files
 
-Important environment variables:
+| File                     | Purpose              |
+| ------------------------ | -------------------- |
+| `application.properties` | Spring configuration |
+| `docker-compose.yml`     | Containers setup     |
 
-1. SPRING_DATASOURCE_URL
-2. SPRING_DATASOURCE_USERNAME
-3. SPRING_DATASOURCE_PASSWORD
-4. TELEGRAM_BOT_TOKEN
-
-Recommended runtime secret handling:
-
-1. Keep secrets in environment variables or secret stores, never in source files.
-2. Do not commit `.env` files with real credentials.
-3. Rotate tokens/passwords regularly.
-4. Use different credentials for local, staging, and production environments.
-
-Default observer location can be set via:
-
-1. satellite.default-location.latitude
-2. satellite.default-location.longitude
-3. satellite.default-location.altitude
-4. satellite.default-location.name
-
-## Security And Data Exposure
-
-This project should not expose sensitive data in API responses.
-
-What is intentionally exposed:
-
-1. Satellite metadata and computed visibility results.
-2. Observer query parameters sent by the client.
-3. Derived values such as azimuth, elevation, rise/set times, and estimated magnitude.
-
-What must never be exposed:
-
-1. Database credentials.
-2. Telegram bot tokens.
-3. Private infrastructure details or internal admin secrets.
-4. Stack traces to public clients in production.
-
-Hardening checklist:
-
-1. Disable SQL debug logs in production (`spring.jpa.show-sql=false`).
-2. Add centralized exception handling to sanitize error payloads.
-3. Add authentication/authorization for administrative endpoints.
-4. Restrict CORS to trusted frontend origins only.
-5. Add rate limiting for public pass endpoints.
-
-Note on this README:
-
-1. All examples are intentionally non-sensitive.
-2. No real tokens or private keys are included.
-
-## API Reference
-
-Base path:
-
-`/api/satellites`
-
-### Satellite Query Endpoints
-
-1. `GET /api/satellites`
-2. `GET /api/satellites/{id}`
-3. `GET /api/satellites/norad/{noradCatId}`
-4. `GET /api/satellites/{id}/latest-parameters`
-5. `GET /api/satellites/{id}/orbital-history`
-6. `GET /api/satellites/search-by-type?type=stations`
-7. `GET /api/satellites/groups-stats`
-
-### Pass Endpoints
-
-1. `GET /api/satellites/{id}/passes?hours=24`
-2. `GET /api/satellites/{id}/passes/custom?lat=41.9&lon=12.5&alt=20&hours=24`
-3. `GET /api/satellites/observer-location`
-4. `GET /api/satellites/upcoming-passes?hours=6`
-5. `GET /api/satellites/upcoming-passes/custom?hours=6&minElevation=30&latitude=41.9&longitude=12.5&altitude=20`
-6. `GET /api/satellites/upcoming-passes/filtered?hours=6&minElevation=30&observingCondition=night&maxMagnitude=6.0`
-7. `GET /api/satellites/upcoming-passes/filtered/custom?...`
-8. `GET /api/satellites/passes/upcoming?hours=3&latitude=41.01&longitude=14.3&altitude=30&minElevation=30`
-
-### New Name-Based Pass Endpoints
-
-1. `GET /api/satellites/passes/by-name?name=ISS&hours=24`
-2. `GET /api/satellites/passes/iss?hours=24`
-
-These endpoints allow querying passes without knowing a numeric satellite ID.
-
-### City-Based Endpoints
-
-1. `GET /api/satellites/{id}/passes/by-city?city=Rome&hours=24&minElevation=30`
-2. `GET /api/satellites/upcoming-passes/by-city?city=Rome&hours=6&minElevation=30&observingCondition=any&maxMagnitude=6.0`
-
-### Cache Endpoints
-
-1. `GET /api/satellites/cache-status`
-2. `DELETE /api/satellites/cache`
-
-## Orbital Computation Flow
-
-The pass pipeline is:
-
-1. Load latest orbital parameters from database.
-2. Build TLE lines from orbital parameters.
-3. Initialize Orekit propagator (SGP4/SDP4 through TLE propagator).
-4. Sweep time window with fixed step (currently 60 seconds).
-5. Transform propagated position to topocentric frame of observer.
-6. Detect rise/max/set events via elevation threshold crossing.
-7. Compute sun geometry and classify sunlit state.
-8. Determine observing condition (`night`, `twilight`, `daylight`).
-9. Estimate apparent magnitude.
-10. Apply filters (visibility, elevation, condition, magnitude).
-
-Detailed execution stages:
-
-1. Data acquisition and persistence
-1. TLE-like orbital parameters are refreshed from external providers.
-2. Latest parameters are selected per satellite before pass computation.
-2. Geometric feasibility pre-filter
-1. Satellites that cannot reach observer latitude (based on inclination) are skipped early.
-2. This removes unnecessary propagation work.
-3. Orbit propagation
-1. Orekit propagates state vectors in ITRF frame over the requested time window.
-2. Sample step is 60 seconds by default; this is a speed/precision trade-off.
-4. Observer projection
-1. Satellite position is projected into the observer topocentric frame.
-2. Azimuth, elevation, and range are extracted for each step.
-5. Pass event extraction
-1. Rise starts when elevation crosses above horizon.
-2. Maximum elevation is tracked while elevation remains positive.
-3. Set is detected when elevation returns below horizon.
-6. Illumination and visibility quality
-1. Sun position is computed for each sampled epoch.
-2. A hybrid sunlit model combines fast heuristics with refined shadow checks near borderline conditions.
-3. Observation condition is derived from Sun elevation (`night`, `twilight`, `daylight`).
-7. Photometry
-1. Apparent magnitude is estimated from distance, phase angle, and sunlit state.
-2. Values are clamped to a practical range for user-facing output.
-8. Output filtering
-1. Passes can be filtered by minimum elevation, condition, and max magnitude.
-2. Results are sorted chronologically by rise time.
-9. Caching
-1. Upcoming-pass responses are cached by location and filter signature.
-2. Cache entries are TTL-based and refreshed automatically.
-
-Accuracy notes:
-
-1. 60-second sampling means event times are approximate (not millisecond-accurate).
-2. For higher precision, use smaller step sizes or interpolation at rise/set boundaries.
-3. Fresh orbital data is critical; stale TLE data degrades prediction quality.
-
-## Time Zones And Date Handling
-
-1. Core orbital propagation is done in absolute time (UTC scale in Orekit).
-2. Output timestamps are converted to local time based on observer coordinates via `PassTimeService`.
-3. Global timezone lookup is implemented using the `timeshape` library.
-4. If lookup fails, system timezone fallback is used.
-
-Operational recommendation:
-
-1. Keep container timezone deterministic (UTC is preferred).
-2. Always convert for display using observer location, not server local clock.
-
-## Testing
-
-Current tests include:
-
-1. Service unit tests
-1. PassPhotometryServiceTest
-2. PassVisibilityServiceTest
-3. PassTimeServiceTest
-2. Controller unit tests (Mockito)
-1. SatellitePassControllerTest
-
-Run tests locally:
+### Environment Variables
 
 ```bash
-cd satelliteTracking
+SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/satellitedb
+SPRING_DATASOURCE_USERNAME=your_user
+SPRING_DATASOURCE_PASSWORD=your_password
+
+TELEGRAM_BOT_TOKEN=your_token
+```
+
+### Default Observer
+
+```properties
+satellite.default-location.latitude=41.9
+satellite.default-location.longitude=12.5
+satellite.default-location.altitude=20
+satellite.default-location.name=Rome
+```
+
+### 🔐 Secrets Best Practices
+
+* Use environment variables or secret managers
+* Never commit credentials
+* Rotate tokens regularly
+* Separate environments (dev/staging/prod)
+
+---
+
+## 📡 API Overview
+
+**Base URL:** `/api/satellites`
+
+### Satellite Queries
+
+```http
+GET /api/satellites
+GET /api/satellites/{id}
+GET /api/satellites/norad/{id}
+GET /api/satellites/search-by-type?type=stations
+```
+
+### Pass Predictions
+
+```http
+GET /api/satellites/{id}/passes?hours=24
+GET /api/satellites/{id}/passes/custom?...
+GET /api/satellites/upcoming-passes?hours=6
+```
+
+### Filters
+
+* `minElevation`
+* `observingCondition` (night, twilight, daylight)
+* `maxMagnitude`
+
+### By Name / City
+
+```http
+GET /api/satellites/passes/by-name?name=ISS
+GET /api/satellites/passes/iss
+GET /api/satellites/.../by-city?city=Rome
+```
+
+### Cache
+
+```http
+GET /api/satellites/cache-status
+DELETE /api/satellites/cache
+```
+
+---
+
+## 🏗️ Architecture
+
+### Layers
+
+```
+Controller → Service → Orbital Engine → Cache → Response
+```
+
+### Core Services
+
+* `SatellitePassService` — orchestration
+* `PassVisibilityService` — visibility logic
+* `PassPhotometryService` — magnitude estimation
+* `PassTimeService` — timezone handling
+* `TelegramNotificationService`
+
+---
+
+## 🔬 How It Works
+
+### Processing Pipeline
+
+1. Load orbital data (TLE)
+2. Pre-filter satellites by inclination
+3. Propagate orbit (SGP4 via Orekit)
+4. Convert to topocentric frame
+5. Detect events (rise / max / set)
+6. Compute sun position & illumination
+7. Classify observing conditions
+8. Estimate magnitude
+9. Filter & sort results
+10. Cache response
+
+### Accuracy Notes
+
+* ~60s sampling → not millisecond precision
+* Accuracy depends on TLE freshness
+* Higher precision possible via interpolation
+
+---
+
+## 🌐 Time Handling
+
+* Core calculations: UTC
+* Output: observer local timezone
+* Automatic timezone resolution via coordinates
+
+---
+
+## 🧪 Testing
+
+```bash
 ./mvnw test
 ```
 
-If your environment requires it:
+Includes:
 
-```bash
-export JAVA_HOME=<path-to-jdk-17>
-```
+* Unit tests (services)
+* Controller tests (Mockito)
 
-## Troubleshooting
+---
 
-### Docker Build Fails On Maven Dependency Resolution
+## 🔧 Troubleshooting
 
-If a dependency version does not exist on Maven Central, update it in `satelliteTracking/pom.xml`.
+### Slow Predictions
 
-### Build Fails During Test Compilation
+* Reduce `hours`
+* Increase `minElevation`
+* Check DB indexes
+* Use cache
 
-`-DskipTests` skips execution, but test sources may still compile during package phase.
-Ensure test dependencies and imports are compatible with your pom setup.
+### Wrong Timezone
 
-### Wrong Local Time In API Output
+* Verify coordinates
+* Check timezone resolver
+* Validate container timezone
 
-1. Ensure observer coordinates are passed correctly.
-2. Verify timezone resolution in `PassTimeService`.
-3. Check container/system timezone fallback behavior.
+### Docker Build Issues
 
-### Slow Upcoming Pass Calculations
+* Check Maven dependencies
+* Ensure compatible versions
 
-1. Ensure DB index for latest-parameter pattern exists.
-2. Use cache endpoints to inspect and clear stale cache.
-3. Reduce search window (`hours`) and/or increase `minElevation` if needed.
+---
 
-### Unexpected Local Time In Results
+## 🔒 Security
 
-1. Verify observer coordinates are correct.
-2. Verify timezone lookup dependency is available at runtime.
-3. Confirm server fallback timezone if coordinate lookup fails.
+### Exposed
 
-### Build Fails After Adding Tests
+* Satellite metadata
+* Computed visibility data
 
-1. Ensure test classes compile with the dependencies declared in `pom.xml`.
-2. If using slice tests (WebMvc), include matching Spring Boot test modules.
-3. If build image is strict, prefer lightweight unit tests with Mockito for controller logic.
+### Never Expose
 
-## Suggested Improvements
+* DB credentials
+* Tokens
+* Internal infrastructure
 
-1. Add API authentication for non-public or costly endpoints.
-2. Introduce rate limiting and request quotas per client.
-3. Add structured logging and request correlation IDs.
-4. Add actuator health/readiness endpoints for operations.
-5. Add contract tests for public API payload stability.
-6. Add interpolation-based rise/set refinement for sub-minute timing precision.
-7. Add explicit timezone in API response metadata for client clarity.
-8. Add benchmark tests for high-load upcoming-pass scenarios.
-9. Add CI pipeline stages for lint, test, and Docker build.
-10. Add OpenAPI/Swagger documentation generation.
+### Hardening
 
-## Development Notes
+* Disable SQL logs
+* Centralized error handling
+* Rate limiting
+* Restricted CORS
 
-1. Keep controller classes focused by domain.
-2. Keep orbital math logic in dedicated services.
-3. Prefer unit tests for pure computation logic.
-4. Add integration tests for critical API contracts.
-5. Avoid mixing display timezone concerns with propagation logic.
+---
 
-## License
+## 💡 Roadmap
 
-Rootking, contact me if interested
+### High Priority
 
-## Contributing
+* API authentication
+* Rate limiting
+* Health endpoints
+* Structured logging
 
-Pull requests are welcome. For large changes, open an issue first with:
+### Medium
 
-1. Problem statement
-2. Proposed approach
-3. API/behavior impact
+* Higher precision pass detection
+* OpenAPI documentation
+* Contract testing
+
+### Low
+
+* CI/CD pipeline
+* Performance benchmarks
+
+---
+
+## 🤝 Contributing
+
+PRs are welcome. For major changes:
+
+1. Problem description
+2. Proposed solution
+3. API impact
 4. Test plan
+
+---
+
+## 📄 License
+
+Contact author for licensing details.
+
+---
+
+## 🙏 Credits
+
+* Orekit — orbital mechanics
+* CelesTrak — TLE data
+* Timeshape — timezone resolution
+
+---
+
+<div align="center">
+
+**Made with ☕ and 🛰️**
+
+</div>
