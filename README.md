@@ -1,4 +1,4 @@
-# 🛰️ Satellite Tracker
+# 🛰️ Satellite Tracking
 
 A production-ready backend for satellite tracking that predicts **when**, **where**, and **how well** satellites will be visible from any observer location.
 
