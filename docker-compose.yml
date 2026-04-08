@@ -1,0 +1,56 @@
+services:
+
+  # Container dedicato per i dati Orekit
+  orekit-data:
+    build:
+      context: .
+      dockerfile: orekit-data.Dockerfile
+    container_name: ${OREKIT_CONTAINER_NAME}
+    volumes:
+      - orekit-data-volume:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${OREKIT_MEMORY_LIMIT}
+
+  db:
+    image: ${DB_IMAGE}
+    container_name: ${DB_CONTAINER_NAME}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT}
+
+  app:
+    build:
+      context: satelliteTracking
+      dockerfile: Dockerfile
+    container_name: ${APP_CONTAINER_NAME}
+    ports:
+      - "${APP_PORT}:8080"
+    depends_on:
+      - db
+      - orekit-data
+    volumes:
+      - orekit-data-volume:/orekit-data:ro
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    
+    deploy:
+       resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT}
+volumes:
+  orekit-data-volume:
+  postgres-data:

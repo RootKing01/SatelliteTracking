@@ -40,8 +40,6 @@ orekit-data-volume/
 logs/
 *.log
 
-# Docker
-docker-compose.yml
 # Documentation
 TELEGRAM_NOTIFICATIONS.md
 FIREBASE_FCM_SETUP.md
