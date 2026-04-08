@@ -1,906 +1,359 @@
-# 🛰️ Satellite Tracker
+# Satellite Tracker
 
-Sistema completo per il tracciamento dei satelliti artificiali in orbita terrestre. Calcola quando e dove osservare i satelliti sopra la tua posizione, con dati in tempo reale da Celestrak e calcoli orbitali precisi tramite Orekit e/o SGP4.
+A production-oriented satellite tracking backend that computes when and where satellites will be visible from a given observer location.
 
+It uses fresh orbital data from CelesTrak, Orekit/SGP4 propagation, visibility heuristics, and optional Telegram notifications.
 
----
+## Table Of Contents
 
-## 📖 Indice
+1. Project Overview
+2. Key Features
+3. Tech Stack
+4. High-Level Architecture
+5. Getting Started
+6. Configuration
+7. Security And Data Exposure
+8. API Reference
+9. Orbital Computation Flow
+10. Time Zones And Date Handling
+11. Testing
+12. Troubleshooting
+13. Suggested Improvements
+14. Development Notes
 
-- [Cos'è questo progetto](#cosè-questo-progetto)
-- [Concetti Base](#concetti-base)
-- [Tecnologie](#tecnologie)
-- [Installazione e Avvio](#installazione-e-avvio)
-- [API Endpoints](#api-endpoints)
-- [Come Funzionano i Calcoli](#come-funzionano-i-calcoli)
-- [Interpretare i Risultati](#interpretare-i-risultati)
-- [Esempi Pratici](#esempi-pratici)
-- [Gestione Cache e Utilità](#gestione-cache-e-utilità)
-- [Configurazione Avanzata](#configurazione-avanzata)
-- [Troubleshooting](#troubleshooting)
+## Project Overview
 
----
+Satellite Tracker helps you answer practical questions such as:
 
-## Cos'è questo progetto
+1. When will the ISS pass over my location?
+2. Which satellites are visible in the next few hours?
+3. In which direction should I look (azimuth/cardinal direction)?
+4. How good are viewing conditions (night/twilight/daylight, sunlit, estimated magnitude)?
 
-Questo sistema ti permette di:
+The backend exposes REST APIs and is designed to run with Docker Compose.
 
-✅ **Tracciare satelliti** in tempo reale (ISS, Starlink, Hubble, etc.)  
-✅ **Calcolare passaggi visibili** sopra qualsiasi posizione sulla Terra  
-✅ **Sapere quando guardare** - orari precisi di rise, max elevation, set  
-✅ **Sapere dove guardare** - direzione cardinale e gradi azimuth  
-✅ **Valutare la visibilità** - elevazione, condizioni di illuminazione, magnitudine stimata  
-✅ **Ricevere consigli** - suggerimenti testuali per l'osservazione  
+## Key Features
 
-I dati orbitali vengono aggiornati automaticamente ogni 6 ore da [Celestrak](https://celestrak.org/), garantendo precisione nei calcoli.
+1. Satellite catalog and orbital history retrieval.
+2. Pass prediction for single satellite and bulk upcoming passes.
+3. Custom observer location support.
+4. City-name lookup (geocoding) to coordinates.
+5. Visibility classification and photometry estimation.
+6. Cache for upcoming pass computations.
+7. Telegram notification integration.
+8. ISS quick access by satellite name (no numeric ID required).
 
----
+## Tech Stack
 
-## Concetti Base
+1. Java 17
+2. Spring Boot 4
+3. Spring Data JPA + Hibernate
+4. PostgreSQL 15
+5. Orekit 12.1 + Hipparchus 3.1
+6. Docker + Docker Compose
+7. JUnit 5 + Mockito
 
-### 🧭 Azimuth (Azimut)
+## High-Level Architecture
 
-L'**azimuth** è l'angolo orizzontale misurato in **gradi** (da 0° a 360°) partendo dal **Nord** e procedendo in senso orario.
+Main modules after refactor:
 
-```
-        N (0°/360°)
-         |
-         |
-W (270°)---+---E (90°)
-         |
-         |
-       S (180°)
-```
+1. Controllers
+1. SatelliteQueryController: catalog and metadata endpoints.
+2. SatellitePassController: pass-related endpoints.
+3. SatelliteCityController: city-based pass endpoints.
+4. SatelliteCacheController: cache management endpoints.
+2. Services
+1. SatellitePassService: orchestration layer for pass computations.
+2. PassTimeService: timezone/date conversion.
+3. PassVisibilityService: sunlit/condition/visibility logic.
+4. PassPhotometryService: estimated magnitude model.
+5. TelegramNotificationService: notification workflow.
 
-**Esempi pratici:**
-- Azimuth **0°** = Nord puro
-- Azimuth **90°** = Est puro  
-- Azimuth **180°** = Sud puro
-- Azimuth **270°** = Ovest puro
-- Azimuth **45°** = Nordest
-- Azimuth **225°** = Sudovest
+## Getting Started
 
-**Perché è importante?** Ti indica **verso quale direzione guardare sull'orizzonte** per vedere il satellite apparire (rise) o scomparire (set).
+### Prerequisites
 
-### 📐 Elevazione
+1. Docker + Docker Compose
+2. A free TCP 8080 port (or adjust compose mapping)
 
-L'**elevazione** è l'angolo verticale in **gradi** (da 0° a 90°) tra l'orizzonte e il satellite.
-
-```
-          90° (Zenit)
-           * satellite
-          /|
-         / |
-        /  | elevazione
-       /   |
-------/--------- 0° (Orizzonte)
-```
-
-**Esempi pratici:**
-- Elevazione **0°** = Satellite esattamente sull'orizzonte
-- Elevazione **45°** = Satellite a metà strada tra orizzonte e zenit
-- Elevazione **90°** = Satellite direttamente sopra la testa
-
-**Perché è importante?** Determina **quanto in alto guardare nel cielo**. Elevazioni > 30° sono ottime per l'osservazione.
-
-### 🌍 Coordinate Geografiche
-
-- **Latitudine**: da -90° (Polo Sud) a +90° (Polo Nord)
-- **Longitudine**: da -180° (ovest) a +180° (est)  
-- **Altitudine**: metri sopra il livello del mare
-
-### 🎯 Magnitudine
-
-Misura della **luminosità apparente** del satellite:
-- **Valori negativi** = Molto luminosi (es. ISS a -3 come Venere)
-- **Valori positivi bassi** (0-2) = Ben visibili
-- **Valori alti** (>5) = Visibili solo con telescopio
-
-### ☀️ Condizioni di Illuminazione
-
-Un satellite è **visibile a occhio nudo** solo se:
-1. È **illuminato dal Sole** (isSunlit = true)
-2. Il **cielo è scuro** per l'osservatore (night o twilight)
-
-**Momento migliore:** Subito dopo il tramonto o prima dell'alba, quando:
-- Per te è buio (sole sotto l'orizzonte)
-- Ma il satellite, più in alto, è ancora illuminato dal sole
-
----
-
-## Tecnologie
-
-### Backend
-- **Spring Boot 4.0.3** - Framework Java per REST API
-- **PostgreSQL 15** - Database per satelliti e parametri orbitali
-- **Orekit 12.1** - Libreria per dinamica orbitale e propagazione SGP4/SDP4
-- **Hipparchus 3.1** - Libreria matematica per calcoli astronomici
-- **Spring WebFlux** - Client HTTP reattivo per chiamate a Celestrak
-- **Hibernate/JPA** - ORM per persistenza dati
-- **Lombok** - Riduzione boilerplate Java
-
-### Infrastructure
-- **Docker & Docker Compose** - Containerizzazione
-- **Maven** - Build automation
-
-### Algoritmi e Standard
-- **SGP4/SDP4** - Simplified General Perturbations per propagazione orbitale
-- **TLE** - Two-Line Element format per parametri orbitali
-- **ITRF** - International Terrestrial Reference Frame
-- **WGS84** - World Geodetic System per coordinate terrestri
-
----
-
-## Installazione e Avvio
-
-### Prerequisiti
-
-- **Docker Desktop** installato e avviato
-- **Git** (opzionale, per clonare il repository)
-- **8080** porta libera (o modificare in docker-compose.yml)
-
-### Avvio Rapido
+### Run
 
 ```bash
-# 1. Clona il repository (o scarica lo ZIP)
-git clone <repository-url>
+git clone <your-repo-url>
 cd satelliteTracker
-
-# 2. Avvia tutti i servizi con Docker Compose
-docker compose up --build
-
-# 3. Attendi che i servizi si avviino (2-3 minuti al primo avvio)
-# Vedrai:
-# ✅ Database PostgreSQL avviato
-# ✅ Container dati Orekit creato
-# ✅ Applicazione Spring Boot avviata sulla porta 8080
-# ✅ Scheduler inizia a scaricare dati satelliti (primi 100 da Celestrak)
+sudo docker compose up -d --build
 ```
 
-L'applicazione è pronta quando vedi:
-```
-satellite-app  | ✅ Orekit initialized with local data: /orekit-data
-satellite-app  | Started SatelliteTrackerApplication in X.XXX seconds
-```
-
-### Verifica Funzionamento
+### Stop
 
 ```bash
-# Controlla satelliti disponibili
-curl http://localhost:8080/api/satellites
-
-# Calcola passaggi ISS
-curl http://localhost:8080/api/satellites/1/passes?hours=24
+sudo docker compose down
 ```
 
-### Arresto
+### Stop And Remove Volumes
+
+Use this only if you want to wipe DB and persisted data.
 
 ```bash
-# Ferma i container mantenendo i dati
-docker compose down
-
-# Ferma e rimuovi anche i volumi (dati persi)
-docker compose down -v
+sudo docker compose down -v
 ```
 
----
-
-## API Endpoints
-
-### 1. Lista Satelliti
-
-```http
-GET /api/satellites
-```
-
-Restituisce tutti i satelliti tracciati con i parametri orbitali più recenti.
-
-**Risposta:**
-```json
-[
-  {
-    "id": 1,
-    "noradCatId": 25544,
-    "objectName": "ISS (ZARYA)",
-    "objectType": "PAYLOAD",
-    "orbitalParameters": [
-      {
-        "epoch": "2026-02-22T12:34:56",
-        "inclination": 51.6416,
-        "raan": 13.2515,
-        "eccentricity": 0.0005678,
-        "argOfPerigee": 123.4567,
-        "meanAnomaly": 236.7890,
-        "meanMotion": 15.501,
-        "fetchedAt": "2026-02-22T18:00:00"
-      }
-    ]
-  }
-]
-```
-
----
-
-### 2. Calcola Passaggi (Posizione Predefinita)
-
-```http
-GET /api/satellites/{id}/passes?hours=24
-```
-
-**Parametri:**
-- `id` (path, obbligatorio) - ID del satellite
-- `hours` (query, default 24) - Ore nel futuro da analizzare
-
-**Esempio:**
-```bash
-curl "http://localhost:8080/api/satellites/1/passes?hours=48"
-```
-
-**Risposta:**
-```json
-[
-  {
-    "satelliteId": 1,
-    "satelliteName": "ISS (ZARYA)",
-    "riseTime": "2026-02-22T22:45:30",
-    "maxElevationTime": "2026-02-22T22:50:15",
-    "setTime": "2026-02-22T22:55:45",
-    "maxElevation": 68.5,
-    "riseAzimuth": 238.5,
-    "setAzimuth": 53.2,
-    "maxDistance": 398.7,
-    "isVisible": true,
-    "isSunlit": true,
-    "visibility": "excellent",
-    "observingCondition": "night",
-    "estimatedMagnitude": -2.5,
-    "satelliteAltitudeKm": 418.3,
-    "durationSeconds": 615,
-    "riseDirection": "SW",
-    "setDirection": "NE",
-    "viewingTips": "Cerca il satellite verso SW (azimuth 238.5°). Passerà quasi sopra la tua testa! Ottima visibilità: satellite illuminato su cielo scuro."
-  }
-]
-```
-
----
-
-### 3. Calcola Passaggi (Posizione Personalizzata)
-
-```http
-GET /api/satellites/{id}/passes/custom?lat=41.9&lon=12.5&alt=20&hours=24
-```
-
-**Parametri:**
-- `id` (path) - ID del satellite
-- `lat` (query) - Latitudine (-90 a +90)
-- `lon` (query) - Longitudine (-180 a +180)
-- `alt` (query, default 0) - Altitudine in metri
-- `hours` (query, default 24) - Ore da analizzare
-
-**Esempio Roma:**
-```bash
-curl "http://localhost:8080/api/satellites/1/passes/custom?lat=41.9&lon=12.5&alt=20&hours=12"
-```
-
----
+## Configuration
 
-### 4. Posizione Osservatore Predefinita
+Main runtime settings are in:
 
-```http
-GET /api/satellites/observer-location
-```
+1. satelliteTracking/src/main/resources/application.properties
+2. docker-compose.yml
 
-**Risposta:**
-```json
-{
-  "latitude": 41.01,
-  "longitude": 14.30,
-  "altitude": 30.0,
-  "locationName": "San Marcellino, Caserta, Italia"
-}
-```
+Important environment variables:
 
----
+1. SPRING_DATASOURCE_URL
+2. SPRING_DATASOURCE_USERNAME
+3. SPRING_DATASOURCE_PASSWORD
+4. TELEGRAM_BOT_TOKEN
 
-### 5. Dettagli Satellite
+Recommended runtime secret handling:
 
-```http
-GET /api/satellites/{id}
-```
+1. Keep secrets in environment variables or secret stores, never in source files.
+2. Do not commit `.env` files with real credentials.
+3. Rotate tokens/passwords regularly.
+4. Use different credentials for local, staging, and production environments.
 
----
+Default observer location can be set via:
 
-### 6. Storico Parametri Orbitali
+1. satellite.default-location.latitude
+2. satellite.default-location.longitude
+3. satellite.default-location.altitude
+4. satellite.default-location.name
 
-```http
-GET /api/satellites/{id}/orbital-history
-```
+## Security And Data Exposure
 
-Mostra tutti i TLE storici per vedere come l'orbita è cambiata nel tempo.
+This project should not expose sensitive data in API responses.
 
----
+What is intentionally exposed:
 
-### 7. Cerca per NORAD ID
+1. Satellite metadata and computed visibility results.
+2. Observer query parameters sent by the client.
+3. Derived values such as azimuth, elevation, rise/set times, and estimated magnitude.
 
-```http
-GET /api/satellites/norad/{noradCatId}
-```
+What must never be exposed:
 
-**Esempio ISS:**
-```bash
-curl http://localhost:8080/api/satellites/norad/25544
-```
+1. Database credentials.
+2. Telegram bot tokens.
+3. Private infrastructure details or internal admin secrets.
+4. Stack traces to public clients in production.
 
----
+Hardening checklist:
 
-## Come Funzionano i Calcoli
+1. Disable SQL debug logs in production (`spring.jpa.show-sql=false`).
+2. Add centralized exception handling to sanitize error payloads.
+3. Add authentication/authorization for administrative endpoints.
+4. Restrict CORS to trusted frontend origins only.
+5. Add rate limiting for public pass endpoints.
 
-### 1. Acquisizione Dati (Celestrak)
+Note on this README:
 
-Ogni 6 ore, lo scheduler scarica i TLE aggiornati da Celestrak:
+1. All examples are intentionally non-sensitive.
+2. No real tokens or private keys are included.
 
-```
-https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json
-```
+## API Reference
 
-I dati includono:
-- Identificatori (NORAD Catalog ID)
-- Parametri orbitali (inclination, RAAN, eccentricity, etc.)
-- Epoch (timestamp di validità)
+Base path:
 
-### 2. Conversione TLE
+`/api/satellites`
 
-I parametri orbitali vengono convertiti in formato **TLE standard** (Two-Line Elements):
+### Satellite Query Endpoints
 
-```
-ISS (ZARYA)
-1 25544U 98067A   24054.12345678  .00000000  00000-0  00000-0 0    09
-2 25544  51.6416  13.2515 0005678 123.4567 236.7890  15.50103472345678
-```
+1. `GET /api/satellites`
+2. `GET /api/satellites/{id}`
+3. `GET /api/satellites/norad/{noradCatId}`
+4. `GET /api/satellites/{id}/latest-parameters`
+5. `GET /api/satellites/{id}/orbital-history`
+6. `GET /api/satellites/search-by-type?type=stations`
+7. `GET /api/satellites/groups-stats`
 
-- **Line 1**: Satellite ID, epoca, drag, radiazione
-- **Line 2**: Inclinazione, RAAN, eccentricità, argomento perigeo, anomalia media, mean motion
+### Pass Endpoints
 
-### 3. Propagazione SGP4
+1. `GET /api/satellites/{id}/passes?hours=24`
+2. `GET /api/satellites/{id}/passes/custom?lat=41.9&lon=12.5&alt=20&hours=24`
+3. `GET /api/satellites/observer-location`
+4. `GET /api/satellites/upcoming-passes?hours=6`
+5. `GET /api/satellites/upcoming-passes/custom?hours=6&minElevation=30&latitude=41.9&longitude=12.5&altitude=20`
+6. `GET /api/satellites/upcoming-passes/filtered?hours=6&minElevation=30&observingCondition=night&maxMagnitude=6.0`
+7. `GET /api/satellites/upcoming-passes/filtered/custom?...`
+8. `GET /api/satellites/passes/upcoming?hours=3&latitude=41.01&longitude=14.3&altitude=30&minElevation=30`
 
-**SGP4** (Simplified General Perturbations) è un algoritmo che:
+### New Name-Based Pass Endpoints
 
-1. Parte dai parametri TLE
-2. Propaga l'orbita nel tempo considerando:
-   - Attrazione gravitazionale terrestre (armoniche sferiche J2, J3, J4)
-   - Resistenza atmosferica (drag)
-   - Pressione di radiazione solare
-   - Perturbazioni lunari e solari (per orbite alte)
+1. `GET /api/satellites/passes/by-name?name=ISS&hours=24`
+2. `GET /api/satellites/passes/iss?hours=24`
 
-3. Calcola posizione e velocità del satellite in ogni istante
+These endpoints allow querying passes without knowing a numeric satellite ID.
 
-**Precisione:** ~1 km per orbite LEO se il TLE è recente (<1 settimana)
+### City-Based Endpoints
 
-### 4. Trasformazione Topocentric
+1. `GET /api/satellites/{id}/passes/by-city?city=Rome&hours=24&minElevation=30`
+2. `GET /api/satellites/upcoming-passes/by-city?city=Rome&hours=6&minElevation=30&observingCondition=any&maxMagnitude=6.0`
 
-Per calcolare cosa vede un osservatore sulla Terra:
+### Cache Endpoints
 
-```
-Posizione Satellite (ITRF) 
-    ↓
-Trasformazione → Frame Topocentrico (osservatore)
-    ↓
-Estrazione → Azimuth, Elevazione, Distanza
-```
-
-**Processo:**
-- Ogni 60 secondi, calcola posizione satellite
-- Trasforma in coordinate relative all'osservatore
-- Estrae azimuth (0-360°) ed elevazione (-90 a +90°)
-- Calcola distanza slant-range (km)
-
-### 5. Rilevamento Passaggi
-
-Un **passaggio** è identificato quando:
-
-1. **Rise**: Satellite supera l'orizzonte (elevazione passa da <0° a >0°)
-2. **Max Elevation**: Punto di massima elevazione durante il passaggio
-3. **Set**: Satellite scende sotto l'orizzonte (elevazione torna <0°)
-
-**Filtro visibilità minima:** Solo passaggi con elevazione massima >10° (altrimenti troppo bassi).
-
-### 6. Calcolo Illuminazione
-
-Per determinare se il satellite è visibile:
-
-1. **Posizione Sole**: Calcolata con effemeridi preciseDatella libreria Orekit
-2. **Angolo Satellite-Sole**: Se <90°, satellite è illuminato
-3. **Elevazione Sole per Osservatore**:
-   - Sole < -18° → Notte astronomica
-   - Sole tra -18° e -6° → Crepuscolo
-   - Sole > -6° → Giorno
-
-**Visibilità ottimale:** Satellite illuminato + Osservatore al buio
-
-### 7. Stima Magnitudine
-
-Formula semplificata basata su:
-- Distanza dal satellite (più vicino = più luminoso)
-- Altitudine orbitale (LEO più luminose di MEO/GEO)
-- Stato di illuminazione
-
-ISS tipicamente varia da **-3** (brillantissima) a **+2** (ben visibile).
-
----
-
-## Interpretare i Risultati
-
-### 📊 Campi della Risposta
-
-| Campo | Significato | Valori |
-|-------|-------------|--------|
-| `riseTime` | Quando il satellite appare sull'orizzonte | ISO 8601 timestamp |
-| `maxElevationTime` | Momento di massima altezza | ISO 8601 timestamp |
-| `setTime` | Quando scompare sotto l'orizzonte | ISO 8601 timestamp |
-| `maxElevation` | Altezza massima sopra orizzonte | 0-90° |
-| `riseAzimuth` | Direzione dove appare | 0-360° |
-| `setAzimuth` | Direzione dove scompare | 0-360° |
-| `maxDistance` | Distanza nel punto più vicino | km |
-| `isVisible` | Effettivamente visibile a occhio nudo | true/false |
-| `isSunlit` | Satellite illuminato dal sole | true/false |
-| `visibility` | Qualità dell'osservazione | excellent/good/fair/poor |
-| `observingCondition` | Condizioni di luce | night/twilight/daylight |
-| `estimatedMagnitude` | Luminosità apparente | -4 a +6 |
-| `satelliteAltitudeKm` | Altitudine orbitale | km |
-| `durationSeconds` | Durata totale passaggio | secondi |
-| `riseDirection` | Direzione cardinale rise | N/NE/E/SE/S/SW/W/NW |
-| `setDirection` | Direzione cardinale set | N/NE/E/SE/S/SW/W/NW |
-| `viewingTips` | Suggerimenti testuali | stringa |
-
-### 🎯 Quali Passaggi Osservare
-
-**Migliori condizioni:**
-- ✅ `visibility: "excellent"` o `"good"`
-- ✅ `isVisible: true`
-- ✅ `observingCondition: "night"`
-- ✅ `maxElevation > 40°`
-- ✅ `estimatedMagnitude < 3`
-
-**Condizioni discrete:**
-- ⚠️ `visibility: "fair"`
-- ⚠️ `observingCondition: "twilight"`
-- ⚠️ `maxElevation 20-40°`
-
-**Da evitare:**
-- ❌ `visibility: "poor"`
-- ❌ `observingCondition: "daylight"`
-- ❌ `isVisible: false`
-- ❌ `maxElevation < 20°`
-
----
-
-## Esempi Pratici
-
-### Esempio 1: Osservare la ISS Stasera
+1. `GET /api/satellites/cache-status`
+2. `DELETE /api/satellites/cache`
+
+## Orbital Computation Flow
+
+The pass pipeline is:
+
+1. Load latest orbital parameters from database.
+2. Build TLE lines from orbital parameters.
+3. Initialize Orekit propagator (SGP4/SDP4 through TLE propagator).
+4. Sweep time window with fixed step (currently 60 seconds).
+5. Transform propagated position to topocentric frame of observer.
+6. Detect rise/max/set events via elevation threshold crossing.
+7. Compute sun geometry and classify sunlit state.
+8. Determine observing condition (`night`, `twilight`, `daylight`).
+9. Estimate apparent magnitude.
+10. Apply filters (visibility, elevation, condition, magnitude).
+
+Detailed execution stages:
+
+1. Data acquisition and persistence
+1. TLE-like orbital parameters are refreshed from external providers.
+2. Latest parameters are selected per satellite before pass computation.
+2. Geometric feasibility pre-filter
+1. Satellites that cannot reach observer latitude (based on inclination) are skipped early.
+2. This removes unnecessary propagation work.
+3. Orbit propagation
+1. Orekit propagates state vectors in ITRF frame over the requested time window.
+2. Sample step is 60 seconds by default; this is a speed/precision trade-off.
+4. Observer projection
+1. Satellite position is projected into the observer topocentric frame.
+2. Azimuth, elevation, and range are extracted for each step.
+5. Pass event extraction
+1. Rise starts when elevation crosses above horizon.
+2. Maximum elevation is tracked while elevation remains positive.
+3. Set is detected when elevation returns below horizon.
+6. Illumination and visibility quality
+1. Sun position is computed for each sampled epoch.
+2. A hybrid sunlit model combines fast heuristics with refined shadow checks near borderline conditions.
+3. Observation condition is derived from Sun elevation (`night`, `twilight`, `daylight`).
+7. Photometry
+1. Apparent magnitude is estimated from distance, phase angle, and sunlit state.
+2. Values are clamped to a practical range for user-facing output.
+8. Output filtering
+1. Passes can be filtered by minimum elevation, condition, and max magnitude.
+2. Results are sorted chronologically by rise time.
+9. Caching
+1. Upcoming-pass responses are cached by location and filter signature.
+2. Cache entries are TTL-based and refreshed automatically.
+
+Accuracy notes:
+
+1. 60-second sampling means event times are approximate (not millisecond-accurate).
+2. For higher precision, use smaller step sizes or interpolation at rise/set boundaries.
+3. Fresh orbital data is critical; stale TLE data degrades prediction quality.
+
+## Time Zones And Date Handling
+
+1. Core orbital propagation is done in absolute time (UTC scale in Orekit).
+2. Output timestamps are converted to local time based on observer coordinates via `PassTimeService`.
+3. Global timezone lookup is implemented using the `timeshape` library.
+4. If lookup fails, system timezone fallback is used.
+
+Operational recommendation:
+
+1. Keep container timezone deterministic (UTC is preferred).
+2. Always convert for display using observer location, not server local clock.
+
+## Testing
+
+Current tests include:
+
+1. Service unit tests
+1. PassPhotometryServiceTest
+2. PassVisibilityServiceTest
+3. PassTimeServiceTest
+2. Controller unit tests (Mockito)
+1. SatellitePassControllerTest
+
+Run tests locally:
 
 ```bash
-# 1. Trova l'ID della ISS
-curl http://localhost:8080/api/satellites | jq '.[] | select(.objectName | contains("ISS"))'
-
-# 2. Calcola passaggi prossime 12 ore
-curl "http://localhost:8080/api/satellites/1/passes?hours=12" | jq
-
-# 3. Filtra solo passaggi ottimi (elevazione > 40°)
-curl "http://localhost:8080/api/satellites/1/passes?hours=12" | jq '.[] | select(.maxElevation > 40)'
-
-# 4. Ordina per magnitudine (più luminosi)
-curl "http://localhost:8080/api/satellites/1/passes?hours=12" | jq 'sort_by(.estimatedMagnitude)'
+cd satelliteTracking
+./mvnw test
 ```
 
-### Esempio 2: Migliore Passaggio ISS nei Prossimi 3 Giorni
+If your environment requires it:
 
 ```bash
-curl "http://localhost:8080/api/satellites/1/passes?hours=72" | \
-  jq '[.[] | select(.visibility == "excellent")] | sort_by(.maxElevation) | reverse | .[0]'
+export JAVA_HOME=<path-to-jdk-17>
 ```
-
-Risultato: Il passaggio con elevazione più alta nei prossimi 3 giorni.
-
-### Esempio 3: Tutti i Satelliti Visibili Oggi
-
-```bash
-# Per ogni satellite, calcola passaggi e conta quanti sono visibili
-for id in $(curl -s http://localhost:8080/api/satellites | jq '.[].id'); do
-  name=$(curl -s http://localhost:8080/api/satellites/$id | jq -r '.objectName')
-  visible=$(curl -s "http://localhost:8080/api/satellites/$id/passes?hours=24" | jq '[.[] | select(.isVisible == true)] | length')
-  echo "$name: $visible passaggi visibili"
-done
-```
-
-### Esempio 4: Passaggio ISS su Roma
-
-```bash
-curl "http://localhost:8080/api/satellites/1/passes/custom?lat=41.9&lon=12.5&alt=20&hours=24" | jq
-```
-
-### Esempio 5: Quando Osservare Starlink
-
-```bash
-# Trova Starlink disponibili
-curl http://localhost:8080/api/satellites | jq '.[] | select(.objectName | contains("STARLINK")) | {id, name: .objectName}'
-
-# Calcola passaggi per uno specifico
-curl "http://localhost:8080/api/satellites/42/passes?hours=24" | jq '.[] | select(.isVisible == true)'
-```
-
----
-
-## 🔧 Gestione Cache e Utilità
-
-### Cache dei Passaggi
-
-Il sistema mantiene una **cache in memoria** dei passaggi calcolati (TTL: 30 minuti) per ottimizzare le performance.
-
-#### Visualizza Stato Cache
-
-```bash
-curl http://localhost:8080/api/satellites/cache-status
-```
-
-**Risposta:**
-```json
-{
-  "entries": 2,
-  "ttl_minutes": 30,
-  "cache_entries": {
-    "San Marcellino, Caserta, Italia_3_10.0_any_6.0": 19,
-    "San Marcellino, Caserta, Italia_6_30.0_any_6.0": 25
-  }
-}
-```
-
-- `entries`: Numero di chiavi in cache
-- `ttl_minutes`: Tempo di vita della cache
-- `cache_entries`: Minuti rimanenti per ogni chiave
-
-#### Cancella Cache
-
-```bash
-curl -X DELETE http://localhost:8080/api/satellites/cache
-```
-
-**Risposta:**
-```json
-{
-  "status": "Cache pulito con successo",
-  "timestamp": "2026-02-22T19:30:45.123"
-}
-```
-
-**Quando cancellare la cache:**
-- ✅ Dopo aggiornamento dei dati satellitari (ogni 3 ore)
-- ✅ Se vuoi forzare un ricalcolo immediato
-- ✅ Per test e debug
-
----
-
-### Notifiche Telegram
-
-#### Visualizza Utenti Registrati
-
-```bash
-curl http://localhost:8080/api/telegram/subscriptions
-```
-
-**Risposta:**
-```json
-{
-  "status": "success",
-  "count": 1,
-  "subscriptions": [
-    {
-      "id": 1,
-      "chatId": 123456789,
-      "userIdentifier": "your_username",
-      "latitude": 41.01,
-      "longitude": 14.30,
-      "altitude": 30.0,
-      "locationName": "San Marcellino, Caserta",
-      "observingCondition": "any",
-      "maxMagnitude": 6.0,
-      "minElevation": 10.0,
-      "notificationsEnabled": true
-    }
-  ]
-}
-```
-
-#### Registra Nuovo Utente
-
-```bash
-curl -X POST http://localhost:8080/api/telegram/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "chatId": 123456789,
-    "userIdentifier": "your_username",
-    "latitude": 41.01,
-    "longitude": 14.30,
-    "altitude": 30.0,
-    "locationName": "San Marcellino"
-  }'
-```
-
-#### Aggiorna Preferenze
-
-```bash
-curl -X PUT http://localhost:8080/api/telegram/preferences/123456789 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "observingCondition": "night",
-    "maxMagnitude": 4.0,
-    "minElevation": 20.0
-  }'
-```
-
-#### Disabilita/Abilita Notifiche
-
-```bash
-# Disabilita
-curl -X POST http://localhost:8080/api/telegram/123456789/disable
-
-# Abilita
-curl -X POST http://localhost:8080/api/telegram/123456789/enable
-```
-
----
-
-### Endpoint di Test
-
-#### Test Passaggi con Notifiche Automatiche
-
-Quando chiami questi endpoint e vengono trovati passaggi visibili, il sistema **invia automaticamente notifiche Telegram** agli utenti registrati:
-
-```bash
-# Passaggi standard (elevazione > 30°)
-curl "http://localhost:8080/api/satellites/upcoming-passes?hours=3"
-
-# Passaggi con filtri avanzati
-curl "http://localhost:8080/api/satellites/upcoming-passes/filtered?hours=6&minElevation=10&observingCondition=night&maxMagnitude=4.0"
-```
-
-**Caratteristiche:**
-- ✅ Calcola passaggi visibili
-- ✅ Invia notifiche Telegram automaticamente
-- ✅ Limita a 1 notifica ogni 30 minuti per utente
-- ✅ Ideale per testare il sistema end-to-end
-
----
-
-## Configurazione Avanzata
-
-### Cambiare Posizione Predefinita
-
-Modifica `ObserverLocation.java`:
-
-```java
-public static ObserverLocation sanMarcellino() {
-    return new ObserverLocation(
-        45.46,  // Latitudine Milano
-        9.19,   // Longitudine Milano
-        120.0,  // Altitudine
-        "Milano, Italia"
-    );
-}
-```
-
-### Modificare Frequenza Aggiornamenti
-
-In `SatelliteScheduler.java`:
-
-```java
-@Scheduled(fixedRate = 21600000) // 6 ore in millisecondi
-// Cambia in 3600000 per 1 ora, 43200000 per 12 ore, etc.
-```
-
-### Cambiare Elevazione Minima
-
-In `SatellitePassService.java`:
-
-```java
-if (pd.maxElevation > 10.0) {  // Cambia 10.0 in altro valore
-```
-
-### Modificare Step di Calcolo
-
-In `SatellitePassService.java`:
-
-```java
-double step = 60.0; // Secondi tra ogni calcolo
-// 30.0 = più preciso ma più lento
-// 120.0 = meno preciso ma più veloce
-```
-
-### Aggiungere Altri Gruppi Satelliti
-
-In `CelestrakService.java`:
-
-```java
-private static final String[] SATELLITE_GROUPS = {
-    "stations",      // ISS, Tiangong
-    "starlink",      // Tutti i Starlink
-    "planet",        // Planet Labs
-    "science",       // Hubble, JWST
-    "weather",       // NOAA, GOES
-    "amateur"        // Satelliti radioamatoriali
-};
-```
-
----
 
 ## Troubleshooting
 
-### ❌ Errore: "Failed to initialize Orekit"
+### Docker Build Fails On Maven Dependency Resolution
 
-**Causa:** Dati astronomici Orekit non scaricati correttamente.
+If a dependency version does not exist on Maven Central, update it in `satelliteTracking/pom.xml`.
 
-**Soluzione:**
-```bash
-docker compose down -v
-docker compose up --build --force-recreate
-```
+### Build Fails During Test Compilation
 
-### ❌ Nessun Satellite nel Database
+`-DskipTests` skips execution, but test sources may still compile during package phase.
+Ensure test dependencies and imports are compatible with your pom setup.
 
-**Causa:** Scheduler non è partito o Celestrak non raggiungibile.
+### Wrong Local Time In API Output
 
-**Soluzione:**
-```bash
-# Verifica log
-docker logs satellite-app
+1. Ensure observer coordinates are passed correctly.
+2. Verify timezone resolution in `PassTimeService`.
+3. Check container/system timezone fallback behavior.
 
-# Forza il download manualmente
-curl -X POST http://localhost:8080/api/satellites/refresh
-```
+### Slow Upcoming Pass Calculations
 
-### ❌ Nessun Passaggio Trovato
+1. Ensure DB index for latest-parameter pattern exists.
+2. Use cache endpoints to inspect and clear stale cache.
+3. Reduce search window (`hours`) and/or increase `minElevation` if needed.
 
-**Possibili cause:**
-1. Satellite con inclinazione insufficiente per la tua latitudine
-2. Periodo di analisi troppo breve
-3. Parametri orbitali obsoleti
+### Unexpected Local Time In Results
 
-**Soluzioni:**
-```bash
-# Aumenta periodo
-curl "http://localhost:8080/api/satellites/1/passes?hours=72"
+1. Verify observer coordinates are correct.
+2. Verify timezone lookup dependency is available at runtime.
+3. Confirm server fallback timezone if coordinate lookup fails.
 
-# Verifica ultimo aggiornamento parametri
-curl http://localhost:8080/api/satellites/1 | jq '.orbitalParameters[0].fetchedAt'
+### Build Fails After Adding Tests
 
-# Prova satellite diverso (ISS quasi sempre visibile)
-curl "http://localhost:8080/api/satellites/1/passes?hours=24"
-```
+1. Ensure test classes compile with the dependencies declared in `pom.xml`.
+2. If using slice tests (WebMvc), include matching Spring Boot test modules.
+3. If build image is strict, prefer lightweight unit tests with Mockito for controller logic.
 
-### ❌ Passaggi Non Accurati
+## Suggested Improvements
 
-**Causa:** TLE vecchi (perdono precisione dopo giorni/settimane).
+1. Add API authentication for non-public or costly endpoints.
+2. Introduce rate limiting and request quotas per client.
+3. Add structured logging and request correlation IDs.
+4. Add actuator health/readiness endpoints for operations.
+5. Add contract tests for public API payload stability.
+6. Add interpolation-based rise/set refinement for sub-minute timing precision.
+7. Add explicit timezone in API response metadata for client clarity.
+8. Add benchmark tests for high-load upcoming-pass scenarios.
+9. Add CI pipeline stages for lint, test, and Docker build.
+10. Add OpenAPI/Swagger documentation generation.
 
-**Soluzione:**
-- Assicurati che lo scheduler stia aggiornando (ogni 6 ore)
-- Verifica `fetchedAt` recente
-- Celestrak potrebbe essere temporaneamente down
+## Development Notes
 
-### ❌ Porta 8080 Occupata
+1. Keep controller classes focused by domain.
+2. Keep orbital math logic in dedicated services.
+3. Prefer unit tests for pure computation logic.
+4. Add integration tests for critical API contracts.
+5. Avoid mixing display timezone concerns with propagation logic.
 
-Modifica `docker-compose.yml`:
+## License
 
-```yaml
-ports:
-  - "9090:8080"  # Usa porta 9090 esterna
-```
+Rootking, contact me if interested
 
-Poi accedi su `http://localhost:9090`
+## Contributing
 
-### ❌ Build Lento
+Pull requests are welcome. For large changes, open an issue first with:
 
-**Prima build:** Normale (scarica Orekit data ~50MB).
-
-**Build successivi:** Usa cache Docker. Se sempre lento:
-```bash
-# Pulisci cache Maven
-docker compose down
-docker volume prune
-docker compose up --build
-```
-
----
-
-## 📚 Risorse Utili
-
-### Documentazione Tecnica
-- [Orekit Documentation](https://www.orekit.org/)
-- [SGP4 Model Explained](https://en.wikipedia.org/wiki/Simplified_perturbations_models)
-- [TLE Format Specification](https://en.wikipedia.org/wiki/Two-line_element_set)
-- [Celestrak](https://celestrak.org/) - Fonte dati TLE
-
-### Astronomia e Satelliti
-- [Heavens Above](https://www.heavens-above.com/) - Tracking satelliti online
-- [N2YO](https://www.n2yo.com/) - Real-time satellite tracking
-- [ISS Tracker](https://spotthestation.nasa.gov/) - NASA ISS notifications
-
-### Coordinate e Mappe
-- [LatLong.net](https://www.latlong.net/) - Trova coordinate di qualsiasi luogo
-- [Google Maps](https://maps.google.com) - Click destro → coordinate
-
----
-
-## 🎉 Funzionalità Implementate
-
-✅ Tracciamento satelliti con dati TLE da Celestrak  
-✅ Aggiornamento automatico ogni 6 ore  
-✅ Calcoli orbitali precisi con SGP4 e Orekit  
-✅ Calcolo passaggi visibili per qualsiasi posizione  
-✅ Azimuth, elevazione, distanza, durata  
-✅ Direzioni cardinali (N, NE, E, SE, S, SW, W, NW)  
-✅ Calcolo illuminazione satellite (sunlit)  
-✅ Condizioni di osservazione (night/twilight/daylight)  
-✅ Stima magnitudine apparente  
-✅ Qualità visibilità (excellent/good/fair/poor)  
-✅ Suggerimenti testuali per l'osservazione  
-✅ Storico parametri orbitali  
-✅ API REST completa  
-✅ Containerizzazione Docker completa  
-✅ Separazione dati Orekit in container dedicato  
-✅ Nessuna duplicazione satelliti nel database  
-
----
-
-## 📝 Licenza
-
-Progetto educational per tracking satelliti.
-
----
-
-## 👨‍💻 Sviluppo
-
-**Stack:**
-- Java 21
-- Spring Boot 4.0.3
-- PostgreSQL 15
-- Orekit 12.1
-- Docker & Docker Compose
-
-**Struttura Progetto:**
-```
-satelliteTracker/
-├── docker-compose.yml           # Orchestrazione container
-├── orekit-data.Dockerfile      # Container dati Orekit
-├── satelliteTracking/
-│   ├── Dockerfile              # Container applicazione
-│   ├── pom.xml                 # Dipendenze Maven
-│   └── src/main/java/com/satelliteTracking/
-│       ├── config/
-│       │   └── OrekitConfig.java
-│       ├── controller/
-│       │   └── SatelliteController.java
-│       ├── dto/
-│       │   ├── SatellitePassDTO.java
-│       │   └── CelestrakSatelliteDTO.java
-│       ├── model/
-│       │   ├── Satellite.java
-│       │   ├── OrbitalParameters.java
-│       │   └── ObserverLocation.java
-│       ├── repository/
-│       │   ├── SatelliteRepository.java
-│       │   └── OrbitalParametersRepository.java
-│       ├── scheduler/
-│       │   └── SatelliteScheduler.java
-│       ├── service/
-│       │   ├── CelestrakService.java
-│       │   └── SatellitePassService.java
-│       └── util/
-│           └── TLEConverter.java
-```
-
----
-
-**Buon tracking! 🛰️✨**
-
-*Data: 22 Febbraio 2026*  
-*Versione: 2.0.0*
+1. Problem statement
+2. Proposed approach
+3. API/behavior impact
+4. Test plan
