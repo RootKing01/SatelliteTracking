@@ -22,11 +22,11 @@ Designed for easy deployment with Docker Compose, it exposes a complete REST API
 ## ✨ Key Features
 
 * 📡 **Satellite Catalog** — Full catalog access with orbital history
-* 🔮 **Pass Prediction** — Single or multi-satellite predictions
+* 🔮 **Pass Prediction** — Single or multi-satellite predictions with event-driven rise/peak/set detection
 * 📍 **Custom Observer Location** — Any coordinates supported
 * 🏙️ **Geocoding** — City → coordinates conversion
-* 👁️ **Visibility Classification** — Observation quality + illumination
-* ⚡ **Smart Caching** — Optimized performance for repeated queries
+* 👁️ **Visibility Classification** — Observation quality + hybrid sunlit/shadow logic
+* ⚡ **Smart Caching** — Optimized performance for repeated queries and precomputed windows
 * 📱 **Telegram Notifications** — Optional alert system
 * 🚀 **ISS Shortcut** — Quick access without NORAD ID
 
@@ -175,9 +175,9 @@ Controller → Service → Orbital Engine → Cache → Response
 ### Core Services
 
 * `SatellitePassService` — orchestration
+* `PassTimeService` — UTC/local conversion and observer timezone resolution
 * `PassVisibilityService` — visibility logic
 * `PassPhotometryService` — magnitude estimation
-* `PassTimeService` — timezone handling
 * `TelegramNotificationService`
 
 ---
@@ -189,19 +189,20 @@ Controller → Service → Orbital Engine → Cache → Response
 1. Load orbital data (TLE)
 2. Pre-filter satellites by inclination
 3. Propagate orbit (SGP4 via Orekit)
-4. Convert to topocentric frame
-5. Detect events (rise / max / set)
-6. Compute sun position & illumination
-7. Classify observing conditions
-8. Estimate magnitude
-9. Filter & sort results
-10. Cache response
+4. Coarse scan to bracket candidate passes
+5. Refine rise/set with `ElevationDetector`
+6. Refine peak with `ElevationExtremumDetector` + slope filter
+7. Re-sample refined timestamps in topocentric frame
+8. Compute sun position, phase angle, and illumination
+9. Classify observing conditions + estimate magnitude
+10. Filter, sort, and cache response
 
 ### Accuracy Notes
 
-* ~60s sampling → not millisecond precision
-* Accuracy depends on TLE freshness
-* Higher precision possible via interpolation
+* Coarse scan is 60s only for bracketing, not final output timestamps
+* Rise/peak/set timestamps are refined by Orekit event detectors with millisecond-level numerical threshold
+* Real-world accuracy still depends on TLE freshness and SGP4 model limits
+* Numerical precision != physical prediction accuracy
 
 ---
 
@@ -259,7 +260,7 @@ Includes:
 
 ### Medium
 
-* Higher precision pass detection
+* Optional detector tuning per satellite class (LEO/GEO)
 * OpenAPI documentation
 * Contract testing
 

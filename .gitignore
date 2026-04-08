@@ -41,5 +41,6 @@ logs/
 *.log
 
 # Documentation
+/docs/
 TELEGRAM_NOTIFICATIONS.md
 FIREBASE_FCM_SETUP.md

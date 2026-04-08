@@ -15,6 +15,12 @@ import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.frames.Frame;
 import org.orekit.frames.FramesFactory;
 import org.orekit.frames.TopocentricFrame;
+import org.orekit.propagation.events.ElevationDetector;
+import org.orekit.propagation.events.ElevationExtremumDetector;
+import org.orekit.propagation.events.EventSlopeFilter;
+import org.orekit.propagation.events.EventsLogger;
+import org.orekit.propagation.events.FilterType;
+import org.orekit.propagation.events.handlers.ContinueOnEvent;
 import org.orekit.propagation.analytical.tle.TLE;
 import org.orekit.propagation.analytical.tle.TLEPropagator;
 import org.orekit.time.AbsoluteDate;
@@ -70,6 +76,8 @@ public class SatellitePassService {
     
     private final Map<String, CacheEntry> passesCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 1800000; // 30 minuti
+    private static final double EVENT_MAX_CHECK_SECONDS = 60.0;
+    private static final double EVENT_THRESHOLD_SECONDS = 0.001;
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
                                 OrbitalParametersRepository orbitalParametersRepository,
@@ -180,10 +188,21 @@ public class SatellitePassService {
             List<PassData> passDataList = new ArrayList<>();
             PassData currentPass = null;
 
+            AbsoluteDate previousDate = startDate;
+            double previousElevation = sampleElevationDegrees(propagator, itrf, topoFrame, previousDate);
+
+            if (previousElevation > 0) {
+                currentPass = new PassData();
+                currentPass.riseBracketStart = startDate;
+                currentPass.riseBracketEnd = startDate;
+                currentPass.maxElevation = previousElevation;
+                currentPass.maxElevationDate = startDate;
+            }
+
             // Posizione del sole per calcolare illuminazione
             var sun = CelestialBodyFactory.getSun();
 
-            for (AbsoluteDate date = startDate;
+            for (AbsoluteDate date = startDate.shiftedBy(step);
                  date.compareTo(endDate) <= 0;
                  date = date.shiftedBy(step)) {
 
@@ -195,70 +214,90 @@ public class SatellitePassService {
                 double range = topoCoordinates.getRange() / 1000.0;
 
                 if (elevation > 0) {
-                    if (currentPass == null) {
+                    if (currentPass == null && previousElevation <= 0) {
                         currentPass = new PassData();
-                            currentPass.riseTime = passTimeService.toLocalDateTime(date, outputZone);
+                        currentPass.riseBracketStart = previousDate;
+                        currentPass.riseBracketEnd = date;
                         currentPass.riseAzimuth = azimuth;
+                    } else if (currentPass != null && currentPass.riseBracketStart == null) {
+                        currentPass.riseBracketStart = startDate;
+                        currentPass.riseBracketEnd = date;
                     }
 
                     if (elevation > currentPass.maxElevation) {
                         currentPass.maxElevation = elevation;
-                            currentPass.maxElevationTime = passTimeService.toLocalDateTime(date, outputZone);
                         currentPass.maxElevationDate = date;
                         currentPass.maxElevationAzimuth = azimuth;
                         currentPass.maxDistance = range;
-
-                        // Calcola altitudine satellite (distanza dalla superficie terrestre)
-                        double satAltitude = pv.getPosition().getNorm() / 1000.0 - Constants.WGS84_EARTH_EQUATORIAL_RADIUS / 1000.0;
-                        currentPass.satelliteAltitude = satAltitude;
-
-                        PVCoordinates sunPV = sun.getPVCoordinates(date, itrf);
-
-                        // Calcola elevazione del sole per l'osservatore
-                        var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, date);
-                        double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
-                        currentPass.sunElevation = sunElevation;
-
-                        // Angolo di fase Sole-Satellite-Osservatore (in gradi)
-                        Vector3D observerPosition = earth.transform(observerPoint);
-                        Vector3D satToSun = sunPV.getPosition().subtract(pv.getPosition());
-                        Vector3D satToObserver = observerPosition.subtract(pv.getPosition());
-                        currentPass.phaseAngleDeg = FastMath.toDegrees(Vector3D.angle(satToSun, satToObserver));
-
-                        // Calcola se il satellite è illuminato dal sole (approccio ibrido)
-                        double sunAngle = FastMath.toDegrees(
-                            org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
-                                pv.getPosition(),
-                                sunPV.getPosition()
-                            )
-                        );
-                        currentPass.isSunlit = passVisibilityService.isSunlitHybrid(
-                            pv.getPosition(),
-                            sunPV.getPosition(),
-                            sunAngle,
-                            sunElevation
-                        );
                     }
                 } else {
                     if (currentPass != null) {
-                        currentPass.setTime = passTimeService.toLocalDateTime(date, outputZone);
-                        currentPass.setAzimuth = azimuth;
+                        currentPass.setBracketStart = previousDate;
+                        currentPass.setBracketEnd = date;
                         passDataList.add(currentPass);
                         currentPass = null;
                     }
                 }
+
+                previousDate = date;
+                previousElevation = elevation;
             }
 
             // Se la finestra termina mentre il satellite e' ancora sopra l'orizzonte,
             // chiudi comunque il passaggio al bordo della finestra per non perderlo.
             if (currentPass != null) {
-                currentPass.setTime = passTimeService.toLocalDateTime(endDate, outputZone);
-                currentPass.setAzimuth = currentPass.maxElevationAzimuth;
+                currentPass.setBracketStart = previousDate;
+                currentPass.setBracketEnd = endDate;
                 passDataList.add(currentPass);
             }
 
             for (PassData pd : passDataList) {
                 if (pd.maxElevation > 10.0) {
+                    AbsoluteDate refinedRise = refineRiseOrSet(pd.riseBracketStart, pd.riseBracketEnd, propagator, itrf, topoFrame);
+                    AbsoluteDate refinedSet = refineRiseOrSet(pd.setBracketStart, pd.setBracketEnd, propagator, itrf, topoFrame);
+                    AbsoluteDate refinedPeak = refinePeakTime(refinedRise, refinedSet, propagator, itrf, topoFrame);
+
+                    PassSample riseSample = sampleAt(refinedRise, propagator, itrf, topoFrame);
+                    PassSample setSample = sampleAt(refinedSet, propagator, itrf, topoFrame);
+                    PassSample peakSample = sampleAt(refinedPeak, propagator, itrf, topoFrame);
+
+                    pd.riseTime = passTimeService.toLocalDateTime(refinedRise, outputZone);
+                    pd.riseAzimuth = riseSample.azimuth;
+                    pd.setTime = passTimeService.toLocalDateTime(refinedSet, outputZone);
+                    pd.setAzimuth = setSample.azimuth;
+                    pd.maxElevationTime = passTimeService.toLocalDateTime(refinedPeak, outputZone);
+                    pd.maxElevationDate = refinedPeak;
+                    pd.maxElevation = peakSample.elevation;
+                    pd.maxElevationAzimuth = peakSample.azimuth;
+                    pd.maxDistance = peakSample.rangeKm;
+
+                    PVCoordinates peakPv = peakSample.pv;
+                    PVCoordinates sunPV = sun.getPVCoordinates(refinedPeak, itrf);
+                    var sunTopoCoords = topoFrame.getTrackingCoordinates(sunPV.getPosition(), itrf, refinedPeak);
+                    double sunElevation = FastMath.toDegrees(sunTopoCoords.getElevation());
+                    pd.sunElevation = sunElevation;
+
+                    double satAltitude = peakPv.getPosition().getNorm() / 1000.0 - Constants.WGS84_EARTH_EQUATORIAL_RADIUS / 1000.0;
+                    pd.satelliteAltitude = satAltitude;
+
+                    Vector3D observerPosition = earth.transform(observerPoint);
+                    Vector3D satToSun = sunPV.getPosition().subtract(peakPv.getPosition());
+                    Vector3D satToObserver = observerPosition.subtract(peakPv.getPosition());
+                    pd.phaseAngleDeg = FastMath.toDegrees(Vector3D.angle(satToSun, satToObserver));
+
+                    double sunAngle = FastMath.toDegrees(
+                        org.hipparchus.geometry.euclidean.threed.Vector3D.angle(
+                            peakPv.getPosition(),
+                            sunPV.getPosition()
+                        )
+                    );
+                    pd.isSunlit = passVisibilityService.isSunlitHybrid(
+                        peakPv.getPosition(),
+                        sunPV.getPosition(),
+                        sunAngle,
+                        sunElevation
+                    );
+
                     String observingCondition = passVisibilityService.determineObservingCondition(pd.sunElevation);
 
                     String visibility = passVisibilityService.calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
@@ -297,6 +336,87 @@ public class SatellitePassService {
         }
 
         return passes;
+    }
+
+    private PassSample sampleAt(AbsoluteDate date, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+        var pv = propagator.getPVCoordinates(date, itrf);
+        var topoCoordinates = topoFrame.getTrackingCoordinates(pv.getPosition(), itrf, date);
+
+        return new PassSample(
+            date,
+            FastMath.toDegrees(topoCoordinates.getElevation()),
+            FastMath.toDegrees(topoCoordinates.getAzimuth()),
+            topoCoordinates.getRange() / 1000.0,
+            pv
+        );
+    }
+
+    private double sampleElevationDegrees(TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame, AbsoluteDate date) {
+        return sampleAt(date, propagator, itrf, topoFrame).elevation;
+    }
+
+    private AbsoluteDate refineRiseOrSet(AbsoluteDate lower, AbsoluteDate upper, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+        if (lower == null && upper == null) {
+            return null;
+        }
+        if (lower == null) {
+            return upper;
+        }
+        if (upper == null || lower.equals(upper)) {
+            return lower;
+        }
+
+        EventsLogger logger = new EventsLogger();
+        ElevationDetector detector = new ElevationDetector(EVENT_MAX_CHECK_SECONDS, EVENT_THRESHOLD_SECONDS, topoFrame)
+            .withConstantElevation(0.0)
+            .withHandler(new ContinueOnEvent());
+
+        try {
+            propagator.clearEventsDetectors();
+            propagator.addEventDetector(logger.monitorDetector(detector));
+            propagator.propagate(lower, upper);
+
+            if (!logger.getLoggedEvents().isEmpty()) {
+                return logger.getLoggedEvents().get(0).getDate();
+            }
+
+            return lower.shiftedBy(upper.durationFrom(lower) / 2.0);
+        } finally {
+            propagator.clearEventsDetectors();
+        }
+    }
+
+    private AbsoluteDate refinePeakTime(AbsoluteDate lower, AbsoluteDate upper, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+        if (lower == null && upper == null) {
+            return null;
+        }
+        if (lower == null) {
+            return upper;
+        }
+        if (upper == null || lower.equals(upper)) {
+            return lower;
+        }
+
+        EventsLogger logger = new EventsLogger();
+        EventSlopeFilter<ElevationExtremumDetector> detector =
+            new EventSlopeFilter<>(
+                new ElevationExtremumDetector(EVENT_MAX_CHECK_SECONDS, EVENT_THRESHOLD_SECONDS, topoFrame),
+                FilterType.TRIGGER_ONLY_DECREASING_EVENTS
+            ).withHandler(new ContinueOnEvent());
+
+        try {
+            propagator.clearEventsDetectors();
+            propagator.addEventDetector(logger.monitorDetector(detector));
+            propagator.propagate(lower, upper);
+
+            if (!logger.getLoggedEvents().isEmpty()) {
+                return logger.getLoggedEvents().get(0).getDate();
+            }
+
+            return lower.shiftedBy(upper.durationFrom(lower) / 2.0);
+        } finally {
+            propagator.clearEventsDetectors();
+        }
     }
     
     /**
@@ -375,9 +495,13 @@ public class SatellitePassService {
      * Classe helper per passaggi
      */
     private static class PassData {
+        AbsoluteDate riseBracketStart;
+        AbsoluteDate riseBracketEnd;
         LocalDateTime riseTime;
         LocalDateTime maxElevationTime;
         AbsoluteDate maxElevationDate;
+        AbsoluteDate setBracketStart;
+        AbsoluteDate setBracketEnd;
         LocalDateTime setTime;
         double maxElevation = 0;
         double riseAzimuth;
@@ -388,6 +512,22 @@ public class SatellitePassService {
         double phaseAngleDeg = 90.0;
         boolean isSunlit;
         double sunElevation;
+    }
+
+    private static class PassSample {
+        final AbsoluteDate date;
+        final double elevation;
+        final double azimuth;
+        final double rangeKm;
+        final PVCoordinates pv;
+
+        PassSample(AbsoluteDate date, double elevation, double azimuth, double rangeKm, PVCoordinates pv) {
+            this.date = date;
+            this.elevation = elevation;
+            this.azimuth = azimuth;
+            this.rangeKm = rangeKm;
+            this.pv = pv;
+        }
     }
     
     /**
