@@ -23,6 +23,7 @@ Designed for easy deployment with Docker Compose, it exposes a complete REST API
 
 * 📡 **Satellite Catalog** — Full catalog access with orbital history
 * 🔮 **Pass Prediction** — Single or multi-satellite predictions with event-driven rise/peak/set detection
+* 🌐 **Real-Time Position API** — Current geodetic position for one satellite or bulk map updates
 * 📍 **Custom Observer Location** — Any coordinates supported
 * 🏙️ **Geocoding** — City → coordinates conversion
 * 👁️ **Visibility Classification** — Observation quality + hybrid sunlit/shadow logic
@@ -100,15 +101,19 @@ SPRING_DATASOURCE_USERNAME=your_user
 SPRING_DATASOURCE_PASSWORD=your_password
 
 TELEGRAM_BOT_TOKEN=your_token
+
+# Bind app HTTP port (recommended: localhost when using a reverse proxy)
+APP_BIND_ADDRESS=127.0.0.1
+APP_PORT=8080
 ```
 
 ### Default Observer
 
 ```properties
-satellite.default-location.latitude=41.9
-satellite.default-location.longitude=12.5
-satellite.default-location.altitude=20
-satellite.default-location.name=Rome
+satellite.default-location.latitude=41.01
+satellite.default-location.longitude=14.30
+satellite.default-location.altitude=30.0
+satellite.default-location.name=San Marcellino, Caserta, Italia
 ```
 
 ### 🔐 Secrets Best Practices
@@ -124,21 +129,28 @@ satellite.default-location.name=Rome
 
 **Base URL:** `/api/satellites`
 
-### Satellite Queries
+### Catalog Queries
 
 ```http
 GET /api/satellites
 GET /api/satellites/{id}
 GET /api/satellites/norad/{id}
+GET /api/satellites/{id}/latest-parameters
+GET /api/satellites/{id}/orbital-history
 GET /api/satellites/search-by-type?type=stations
+GET /api/satellites/groups-stats
 ```
 
 ### Pass Predictions
 
 ```http
 GET /api/satellites/{id}/passes?hours=24
-GET /api/satellites/{id}/passes/custom?...
+GET /api/satellites/{id}/passes/custom?lat=...&lon=...&alt=...&hours=24
 GET /api/satellites/upcoming-passes?hours=6
+GET /api/satellites/upcoming-passes/custom?hours=6&minElevation=30&latitude=...&longitude=...&altitude=...
+GET /api/satellites/upcoming-passes/filtered?hours=6&minElevation=30&observingCondition=any&maxMagnitude=6.0
+GET /api/satellites/upcoming-passes/filtered/custom?hours=6&minElevation=30&observingCondition=any&maxMagnitude=6.0&latitude=...&longitude=...&altitude=...
+GET /api/satellites/passes/upcoming?hours=3&latitude=...&longitude=...&altitude=...&minElevation=30
 ```
 
 ### Filters
@@ -147,12 +159,23 @@ GET /api/satellites/upcoming-passes?hours=6
 * `observingCondition` (night, twilight, daylight)
 * `maxMagnitude`
 
+### Real-Time Positions
+
+```http
+GET /api/satellites/{id}/position
+GET /api/satellites/positions
+GET /api/satellites/positions?type=starlink
+```
+
+`/positions` is the recommended endpoint for frontend map polling.
+
 ### By Name / City
 
 ```http
 GET /api/satellites/passes/by-name?name=ISS
 GET /api/satellites/passes/iss
-GET /api/satellites/.../by-city?city=Rome
+GET /api/satellites/{id}/passes/by-city?city=Rome&hours=24&minElevation=30
+GET /api/satellites/upcoming-passes/by-city?city=Rome&hours=6&minElevation=30&observingCondition=any&maxMagnitude=6.0
 ```
 
 ### Cache
@@ -171,6 +194,13 @@ DELETE /api/satellites/cache
 ```
 Controller → Service → Orbital Engine → Cache → Response
 ```
+
+Controllers are split by use case:
+* `SatelliteQueryController` for catalog/history queries
+* `SatellitePassController` for visibility and pass prediction
+* `SatellitePositionController` for current geodetic positions (single + bulk)
+* `SatelliteCityController` for city-driven pass queries
+* `SatelliteCacheController` for cache inspection/maintenance
 
 ### Core Services
 
