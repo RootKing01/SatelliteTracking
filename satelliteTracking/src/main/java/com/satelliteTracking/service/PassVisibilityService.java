@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class PassVisibilityService {
 
+    // Mean solar radius (IAU nominal), expressed in meters.
+    private static final double SOLAR_RADIUS_METERS = 695_700_000.0;
+
     public String determineObservingCondition(double sunElevation) {
         if (sunElevation < -18) {
             return "night";
@@ -65,7 +68,11 @@ public class PassVisibilityService {
         double nightSideDistance = -projectionOnSunDir;
         double earthRadius = Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
         double sunDistance = sunPosition.getNorm();
-        double umbraLength = (earthRadius * sunDistance) / (Constants.SUN_RADIUS - earthRadius);
+        // Similar triangles for Earth's umbra cone length:
+        // L = Re * D / (Rs - Re)
+        // where Re = Earth radius, Rs = Sun radius, D = Earth-Sun distance.
+        // All values are in meters, so the formula is dimensionally consistent.
+        double umbraLength = (earthRadius * sunDistance) / (SOLAR_RADIUS_METERS - earthRadius);
 
         if (nightSideDistance >= umbraLength) {
             return true;

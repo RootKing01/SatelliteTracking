@@ -6,6 +6,8 @@ import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +24,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/satellites")
 public class SatellitePassController {
+
+    private static final Logger log = LoggerFactory.getLogger(SatellitePassController.class);
 
     private final SatelliteRepository satelliteRepository;
     private final SatellitePassService satellitePassService;
@@ -235,7 +239,7 @@ public class SatellitePassController {
                 }
             }
         } catch (Exception e) {
-            System.err.println("⚠️ Errore invio notifiche: " + e.getMessage());
+            log.warn("Errore invio notifiche", e);
         }
     }
 }

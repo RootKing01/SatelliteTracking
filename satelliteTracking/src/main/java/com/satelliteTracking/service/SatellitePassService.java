@@ -146,8 +146,7 @@ public class SatellitePassService {
             return calculatePasses(satellite, latestParams, hours, observerLocation);
             
         } catch (Exception e) {
-            System.err.println("❌ Error calculating passes: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error calculating passes for satelliteId={}", satelliteId, e);
             passes.add(createSimplifiedPass(satelliteId));
         }
         
@@ -322,7 +321,12 @@ public class SatellitePassService {
 
                     String visibility = passVisibilityService.calculateVisibility(pd.maxElevation, pd.isSunlit, observingCondition);
 
-                    double magnitude = passPhotometryService.estimateMagnitude(pd.maxDistance, pd.phaseAngleDeg, pd.isSunlit);
+                    double magnitude = passPhotometryService.estimateMagnitude(
+                        pd.maxDistance,
+                        pd.phaseAngleDeg,
+                        pd.isSunlit,
+                        satellite
+                    );
 
                     // Solo passaggi con buona visibilità
                     boolean isActuallyVisible = pd.isSunlit && !observingCondition.equals("daylight");
@@ -348,7 +352,7 @@ public class SatellitePassService {
                 }
             }
         } catch (org.orekit.errors.OrekitException oe) {
-            System.err.println("⚠️  Orekit calculation failed: " + oe.getMessage());
+            log.warn("Orekit calculation failed for satellite {}", satellite.getObjectName(), oe);
             SatellitePassDTO simplifiedPass = createSimplifiedPass(satellite, latestParams, observerLocation, hours);
             if (simplifiedPass != null && simplifiedPass.isVisible()) {
                 passes.add(simplifiedPass);
@@ -576,7 +580,7 @@ public class SatellitePassService {
             AbsoluteDate currentDate = passTimeService.nowUtc();
             return buildCurrentSatellitePosition(satellite, latestParams, currentDate);
         } catch (Exception e) {
-            System.err.println("⚠️  Error calculating current satellite position: " + e.getMessage());
+            log.warn("Error calculating current satellite position for satelliteId={}", satelliteId, e);
             return Optional.empty();
         }
     }
@@ -740,7 +744,7 @@ public class SatellitePassService {
                 }
 
                 if (!filtered.isEmpty()) {
-                    System.out.println("Cache hit: returning " + filtered.size() + " upcoming passes");
+                    log.debug("Cache hit: returning {} upcoming passes", filtered.size());
                     return filtered;
                 }
 
@@ -768,9 +772,8 @@ public class SatellitePassService {
                 }
             }
             
-            System.out.println("🔍 Scanning " + visibleSatellites.size() + " satelliti da " + 
-                             observerLocation.getLocationName() + " [Condizione: " + observingCondition + 
-                             ", Max magnitudine: " + maxMagnitude + "]");
+            log.info("Scanning {} satellites for location '{}' [condition={}, maxMagnitude={}]",
+                visibleSatellites.size(), observerLocation.getLocationName(), observingCondition, maxMagnitude);
             
             LongAdder rejectedVisibility = new LongAdder();
             LongAdder rejectedElevation = new LongAdder();
@@ -824,17 +827,13 @@ public class SatellitePassService {
                 passesCache.put(cacheKey, new CacheEntry(allPasses));
             }
 
-            System.out.println("Found " + allPasses.size() + " passes after filters (minElevation=" + minElevation +
-                             ", condition=" + observingCondition + ", maxMagnitude=" + maxMagnitude + "). Rejected: " +
-                             " notVisible=" + rejectedVisibility.sum() +
-                             ", elevation=" + rejectedElevation.sum() +
-                             ", condition=" + rejectedCondition.sum() +
-                             ", magnitude=" + rejectedMagnitude.sum());
+            log.info("Found {} passes after filters (minElevation={}, condition={}, maxMagnitude={}). Rejected: notVisible={}, elevation={}, condition={}, magnitude={}",
+                allPasses.size(), minElevation, observingCondition, maxMagnitude,
+                rejectedVisibility.sum(), rejectedElevation.sum(), rejectedCondition.sum(), rejectedMagnitude.sum());
             return allPasses;
             
         } catch (Exception e) {
-            System.err.println("❌ Errore durante scan passaggi: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Errore durante scan passaggi", e);
             return new ArrayList<>();
         }
     }
@@ -844,7 +843,7 @@ public class SatellitePassService {
      */
     public void clearPassesCache() {
         passesCache.clear();
-        System.out.println("🧹 Cache passaggi pulito");
+        log.info("Passes cache cleared");
     }
 
     /**
@@ -859,11 +858,9 @@ public class SatellitePassService {
                     sub.getLatitude(), sub.getLongitude(), sub.getAltitude(), sub.getLocationName()
                 );
                 findVisibleUpcomingPasses(3, sub.getMinElevation(), loc, sub.getObservingCondition(), sub.getMaxMagnitude());
-                System.out.println("✅ [Cache] Pre-calcolati passaggi per " + sub.getLocationName() +
-                                 " (user: " + sub.getUserIdentifier() + ")");
+                log.info("[Cache] Precomputed passes for {} (user: {})", sub.getLocationName(), sub.getUserIdentifier());
             } catch (Exception e) {
-                System.err.println("⚠️  [Cache] Errore pre-calcolo per " + sub.getLocationName() +
-                                 ": " + e.getMessage());
+                log.warn("[Cache] Errore pre-calcolo per {}", sub.getLocationName(), e);
             }
         }
     }

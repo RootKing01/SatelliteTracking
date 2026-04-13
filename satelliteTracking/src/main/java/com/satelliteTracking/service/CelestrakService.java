@@ -4,6 +4,8 @@ import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.MediaType;
@@ -16,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class CelestrakService {
+
+    private static final Logger log = LoggerFactory.getLogger(CelestrakService.class);
 
     private final WebClient webClient;
     private final SatelliteRepository satelliteRepository;
@@ -77,19 +81,19 @@ public class CelestrakService {
     public void fetchAndSaveStations() {
         // Evita download concorrenti
         if (!isDownloading.compareAndSet(false, true)) {
-            System.out.println("⏳ Download già in corso... salta questo ciclo.");
+            log.info("Download already in progress, skipping current cycle");
             return;
         }
         
         try {
-            System.out.println("🛰️  Inizio download satelliti da Celestrak...");
+            log.info("Starting satellites download from Celestrak");
             long startTime = System.currentTimeMillis();
             int totalSaved = 0;
             int totalUpdated = 0;
             
             for (String group : SATELLITE_GROUPS) {
                 try {
-                    System.out.println("📡 Scaricando gruppo: " + group);
+                    log.info("Downloading group: {}", group);
                     long groupStartTime = System.currentTimeMillis();
                     
                     // Usa streaming per gruppi grandi come Starlink (no buffer limit)
@@ -99,7 +103,7 @@ public class CelestrakService {
                             .retrieve()
                             .bodyToFlux(CelestrakSatelliteDTO.class)
                             .onErrorResume(error -> {
-                                System.err.println("❌ Errore per gruppo '" + group + "': " + error.getMessage());
+                                log.error("Errore per gruppo '{}'", group, error);
                                 return reactor.core.publisher.Flux.empty();
                             })
                             .timeout(Duration.ofMinutes(5))
@@ -156,19 +160,18 @@ public class CelestrakService {
                         long groupDuration = System.currentTimeMillis() - groupStartTime;
                         totalSaved += saved;
                         totalUpdated += updated;
-                        System.out.println("✅ Gruppo '" + group + "': " + saved + " nuovi, " + updated + " aggiornati [" + groupDuration + "ms]");
+                        log.info("Group '{}' done: {} new, {} updated [{}ms]", group, saved, updated, groupDuration);
                     } else {
-                        System.out.println("⚠️  Nessun dato per gruppo: " + group);
+                        log.warn("No data for group: {}", group);
                     }
                     
                 } catch (Exception e) {
-                    System.err.println("❌ Errore scaricando gruppo '" + group + "': " + e.getMessage());
-                    e.printStackTrace();
+                    log.error("Errore scaricando gruppo '{}'", group, e);
                 }
             }
             
             long totalDuration = System.currentTimeMillis() - startTime;
-            System.out.println("🎉 Download completato! Totale: " + totalSaved + " nuovi, " + totalUpdated + " aggiornati [" + (totalDuration / 1000) + "s]");
+            log.info("Download completed: {} new, {} updated [{}s]", totalSaved, totalUpdated, totalDuration / 1000);
             
         } finally {
             // Resetta la flag per permettere il prossimo download
