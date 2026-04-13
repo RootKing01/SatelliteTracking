@@ -1,6 +1,8 @@
 package com.satelliteTracking.service;
 
 import com.satelliteTracking.dto.SatellitePassDTO;
+import com.satelliteTracking.dto.SatellitePositionDTO;
+import com.satelliteTracking.dto.OrbitalParametersDTO;
 import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
@@ -27,6 +29,8 @@ import org.orekit.time.AbsoluteDate;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
 import org.orekit.utils.PVCoordinates;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.hipparchus.geometry.euclidean.threed.Vector3D;
@@ -36,6 +40,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,6 +54,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class SatellitePassService {
+
+    private static final Logger log = LoggerFactory.getLogger(SatellitePassService.class);
 
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
@@ -76,8 +83,25 @@ public class SatellitePassService {
     
     private final Map<String, CacheEntry> passesCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 1800000; // 30 minuti
+    private static final long POSITIONS_CACHE_TTL_MS = 5000; // 5 secondi
     private static final double EVENT_MAX_CHECK_SECONDS = 60.0;
     private static final double EVENT_THRESHOLD_SECONDS = 0.001;
+
+    private static class PositionCacheEntry {
+        List<SatellitePositionDTO> positions;
+        long timestamp;
+
+        PositionCacheEntry(List<SatellitePositionDTO> positions) {
+            this.positions = positions;
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        boolean isExpired(long maxAgeMs) {
+            return System.currentTimeMillis() - timestamp > maxAgeMs;
+        }
+    }
+
+    private final Map<String, PositionCacheEntry> positionsCache = new ConcurrentHashMap<>();
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
                                 OrbitalParametersRepository orbitalParametersRepository,
@@ -146,12 +170,8 @@ public class SatellitePassService {
         double observerLat = Math.abs(observerLocation.getLatitude());
         boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
 
-        System.out.println("🛰️  Satellite: " + satellite.getObjectName() +
-                         " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat +
-                         "° | Può essere visibile: " + canBeVisible);
-
         if (!canBeVisible) {
-            System.out.println("⛔ Satellite non visibile da questa posizione (inclinazione insufficiente)");
+            log.debug("Satellite {} skipped by inclination filter for observer latitude {}", satellite.getObjectName(), observerLat);
             return passes;
         }
 
@@ -435,9 +455,6 @@ public class SatellitePassService {
         double observerLat = Math.abs(location.getLatitude());
         boolean canBeVisible = canBeVisibleAtLatitude(inclination, observerLat);
         
-        System.out.println("🛰️  Satellite: " + satellite.getObjectName() + 
-                         " | Inclinazione: " + inclination + "° | Osservatore: " + observerLat + "° | Visibile: " + canBeVisible);
-        
         // Se non può essere visibile, restituisci null (non aggiungere alla lista)
         if (!canBeVisible) {
             return null;
@@ -540,6 +557,114 @@ public class SatellitePassService {
 
     public ObserverLocation getDefaultLocation() {
         return defaultLocation;
+    }
+
+    /**
+     * Calcola la posizione corrente del satellite rispetto alla Terra.
+     */
+    public Optional<SatellitePositionDTO> getCurrentSatellitePosition(Long satelliteId) {
+        try {
+            Optional<Satellite> satelliteOpt = satelliteRepository.findById(satelliteId);
+            if (satelliteOpt.isEmpty()) {
+                return Optional.empty();
+            }
+
+            Satellite satellite = satelliteOpt.get();
+            OrbitalParameters latestParams = orbitalParametersRepository
+                .findTopBySatelliteOrderByFetchedAtDesc(satellite);
+
+            AbsoluteDate currentDate = passTimeService.nowUtc();
+            return buildCurrentSatellitePosition(satellite, latestParams, currentDate);
+        } catch (Exception e) {
+            System.err.println("⚠️  Error calculating current satellite position: " + e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Calcola le posizioni correnti di tutti i satelliti, con filtro opzionale per tipo.
+     */
+    public List<SatellitePositionDTO> getCurrentSatellitePositions() {
+        return getCurrentSatellitePositions(null);
+    }
+
+    public List<SatellitePositionDTO> getCurrentSatellitePositions(String satelliteType) {
+        String normalizedType = satelliteType == null || satelliteType.isBlank()
+            ? "all"
+            : satelliteType.trim().toLowerCase();
+
+        PositionCacheEntry cachedEntry = positionsCache.get(normalizedType);
+        if (cachedEntry != null && !cachedEntry.isExpired(POSITIONS_CACHE_TTL_MS)) {
+            return cachedEntry.positions;
+        }
+
+        AbsoluteDate currentDate = passTimeService.nowUtc();
+        Map<Long, OrbitalParameters> latestParametersBySatelliteId = loadLatestOrbitalParameters();
+
+        List<SatellitePositionDTO> positions = latestParametersBySatelliteId.values().parallelStream()
+            .filter(parameters -> parameters.getSatellite() != null)
+            .filter(parameters -> normalizedType.equals("all") ||
+                (parameters.getSatellite().getSatelliteType() != null &&
+                    parameters.getSatellite().getSatelliteType().equalsIgnoreCase(normalizedType)))
+            .map(parameters -> buildCurrentSatellitePosition(parameters.getSatellite(), parameters, currentDate))
+            .flatMap(Optional::stream)
+            .sorted(Comparator.comparing(SatellitePositionDTO::satelliteId))
+            .collect(Collectors.toList());
+
+        positionsCache.put(normalizedType, new PositionCacheEntry(positions));
+        return positions;
+    }
+
+    private Optional<SatellitePositionDTO> buildCurrentSatellitePosition(Satellite satellite,
+                                                                         OrbitalParameters latestParams,
+                                                                         AbsoluteDate currentDate) {
+        if (satellite == null || latestParams == null) {
+            return Optional.empty();
+        }
+
+        String[] tleLines = TLEConverter.buildTLE(
+            satellite.getNoradCatId(),
+            satellite.getObjectName(),
+            latestParams
+        );
+
+        TLE tle = new TLE(tleLines[1], tleLines[2]);
+        TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
+
+        Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
+        OneAxisEllipsoid earth = new OneAxisEllipsoid(
+            Constants.WGS84_EARTH_EQUATORIAL_RADIUS,
+            Constants.WGS84_EARTH_FLATTENING,
+            itrf
+        );
+
+        PVCoordinates pv = propagator.getPVCoordinates(currentDate, itrf);
+        GeodeticPoint geodeticPoint = earth.transform(pv.getPosition(), itrf, currentDate);
+
+        double latitudeDeg = FastMath.toDegrees(geodeticPoint.getLatitude());
+        double longitudeDeg = FastMath.toDegrees(geodeticPoint.getLongitude());
+        double altitudeKm = geodeticPoint.getAltitude() / 1000.0;
+        double distanceFromEarthCenterKm = pv.getPosition().getNorm() / 1000.0;
+        double meanMotion = latestParams.getMeanMotion();
+        double orbitalPeriodMinutes = 1440.0 / meanMotion;
+        double orbitalPeriodHours = orbitalPeriodMinutes / 60.0;
+        LocalDateTime calculatedAtUtc = passTimeService.toLocalDateTime(currentDate, ZoneId.of("UTC"));
+
+        return Optional.of(new SatellitePositionDTO(
+            satellite.getId(),
+            satellite.getObjectName(),
+            satellite.getObjectId(),
+            satellite.getNoradCatId(),
+            calculatedAtUtc,
+            latitudeDeg,
+            longitudeDeg,
+            altitudeKm,
+            distanceFromEarthCenterKm,
+            meanMotion,
+            orbitalPeriodMinutes,
+            orbitalPeriodHours,
+            OrbitalParametersDTO.fromEntity(latestParams)
+        ));
     }
 
     /**

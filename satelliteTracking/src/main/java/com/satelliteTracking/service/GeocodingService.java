@@ -47,7 +47,7 @@ public class GeocodingService {
             
             // Prepara headers con User-Agent (richiesto da Nominatim)
             HttpHeaders headers = new HttpHeaders();
-            headers.set("User-Agent", "SatelliteTracker/1.0 (https://github.com/satellite-tracker)");
+            headers.set("User-Agent", "SatelliteTracker/1.0 (https://github.com/RootKing01/SatelliteTracking)");
             HttpEntity<String> entity = new HttpEntity<>(headers);
             
             // Prepara query per Nominatim - prima prova globale, poi fallback su Italia
