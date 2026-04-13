@@ -110,10 +110,10 @@ APP_PORT=8080
 ### Default Observer
 
 ```properties
-satellite.default-location.latitude=41.01
-satellite.default-location.longitude=14.30
+satellite.default-location.latitude=<your_latitude>
+satellite.default-location.longitude=<your_longitude>
 satellite.default-location.altitude=30.0
-satellite.default-location.name=San Marcellino, Caserta, Italia
+satellite.default-location.name=<your_city>
 ```
 
 ### 🔐 Secrets Best Practices
