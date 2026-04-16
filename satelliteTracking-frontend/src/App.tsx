@@ -5,7 +5,11 @@ import { getCurrentUser, login, logout, register, type AuthUser } from './api/au
 import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
 import { fetchSatellitePositionById } from './api/satellitePositionsClient'
 import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/sightingsClient'
-import { fetchVisibleUpcomingPasses, type UpcomingPass } from './api/satelliteVisibilityClient'
+import {
+  fetchVisibleUpcomingPasses,
+  fetchVisibleUpcomingPassesByCity,
+  type UpcomingPass,
+} from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
 import { AuthPanel } from './components/auth/AuthPanel'
@@ -65,9 +69,12 @@ type AuthMode = 'login' | 'register'
 
 function extractAuthErrorMessage(error: unknown, fallbackMessage: string) {
   if (isAxiosError(error)) {
-    const responseData = error.response?.data as { message?: string } | undefined
+    const responseData = error.response?.data as { message?: string; error?: string } | undefined
     if (responseData?.message) {
       return responseData.message
+    }
+    if (responseData?.error) {
+      return responseData.error
     }
   }
   return fallbackMessage
@@ -129,7 +136,11 @@ function App() {
   const [visibilityLoading, setVisibilityLoading] = useState(false)
   const [visibilityError, setVisibilityError] = useState('')
   const [visibilityInfo, setVisibilityInfo] = useState('')
+  const [visibilityCity, setVisibilityCity] = useState('')
   const [visibilityResults, setVisibilityResults] = useState<UpcomingPass[]>([])
+  const [visibilityAllResults, setVisibilityAllResults] = useState<UpcomingPass[]>([])
+  const [visibilityOverlayOpen, setVisibilityOverlayOpen] = useState(false)
+  const [visibilityOverlayQuery, setVisibilityOverlayQuery] = useState('')
   const [visibilityLatitude, setVisibilityLatitude] = useState<number | null>(null)
   const [visibilityLongitude, setVisibilityLongitude] = useState<number | null>(null)
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
@@ -228,6 +239,28 @@ function App() {
     }
     return map
   }, [allGroups, groupPositions])
+
+  const visibilityQueryLocationLabel = useMemo(() => {
+    if (visibilityCity.trim()) {
+      return `Citta: ${visibilityCity.trim()}`
+    }
+    if (visibilityLatitude !== null && visibilityLongitude !== null) {
+      return `Coordinate browser: ${visibilityLatitude.toFixed(4)}, ${visibilityLongitude.toFixed(4)}`
+    }
+    return 'Posizione default backend (San Marcellino)'
+  }, [visibilityCity, visibilityLatitude, visibilityLongitude])
+
+  const visibilityOverlayFilteredResults = useMemo(() => {
+    const normalized = visibilityOverlayQuery.trim().toLowerCase()
+    if (!normalized) {
+      return visibilityAllResults
+    }
+
+    return visibilityAllResults.filter((pass) => {
+      const text = `${pass.satelliteName} ${pass.satelliteId} ${pass.observingCondition} ${pass.visibility}`
+      return text.toLowerCase().includes(normalized)
+    })
+  }, [visibilityAllResults, visibilityOverlayQuery])
 
   const groupRows = useMemo(
     () =>
@@ -695,16 +728,32 @@ function App() {
     setVisibilityInfo('')
 
     try {
-      const results = await fetchVisibleUpcomingPasses({
-        hours: visibilityHours,
-        minElevation: visibilityMinElevation,
-        observingCondition: 'any',
-        maxMagnitude: 8.0,
-        latitude: visibilityLatitude ?? undefined,
-        longitude: visibilityLongitude ?? undefined,
-        altitude: visibilityAltitude ?? undefined,
-      })
+      const normalizedCity = visibilityCity.trim()
+      const hasCity = normalizedCity.length > 0
+
+      const results = hasCity
+        ? (await fetchVisibleUpcomingPassesByCity({
+            city: normalizedCity,
+            hours: visibilityHours,
+            minElevation: visibilityMinElevation,
+            observingCondition: 'any',
+            maxMagnitude: 8.0,
+          })).passes
+        : await fetchVisibleUpcomingPasses({
+            hours: visibilityHours,
+            minElevation: visibilityMinElevation,
+            observingCondition: 'any',
+            maxMagnitude: 8.0,
+            latitude: visibilityLatitude ?? undefined,
+            longitude: visibilityLongitude ?? undefined,
+            altitude: visibilityAltitude ?? undefined,
+          })
+
+      setVisibilityAllResults(results)
       setVisibilityResults(results.slice(0, 30))
+      if (results.length === 0) {
+        setVisibilityOverlayOpen(false)
+      }
       setVisibilityInfo(
         results.length === 0
           ? 'Nessun passaggio visibile nei parametri selezionati.'
@@ -718,11 +767,72 @@ function App() {
         return
       }
 
+      setVisibilityAllResults([])
+      setVisibilityResults([])
+      setVisibilityOverlayOpen(false)
       setVisibilityError(extractAuthErrorMessage(error, 'Errore durante il calcolo della visibilita'))
     } finally {
       setVisibilityLoading(false)
     }
   }
+
+  const openVisibilityFullResultsOverlay = useCallback(() => {
+    if (visibilityAllResults.length === 0) {
+      setVisibilityError('Nessun risultato completo disponibile da mostrare.')
+      return
+    }
+    setVisibilityOverlayQuery('')
+    setVisibilityOverlayOpen(true)
+  }, [visibilityAllResults.length])
+
+  const exportVisibilityOverlayCsv = useCallback(() => {
+    if (visibilityOverlayFilteredResults.length === 0) {
+      setVisibilityError('Nessun risultato da esportare in CSV.')
+      return
+    }
+
+    const escapeCsv = (value: string | number) =>
+      `"${String(value).replaceAll('"', '""')}"`
+
+    const header = [
+      'index',
+      'satelliteName',
+      'satelliteId',
+      'riseTime',
+      'setTime',
+      'maxElevationDeg',
+      'estimatedMagnitude',
+      'observingCondition',
+      'visibility',
+    ]
+
+    const rows = visibilityOverlayFilteredResults.map((pass, index) => [
+      index + 1,
+      pass.satelliteName,
+      pass.satelliteId,
+      new Date(pass.riseTime).toLocaleString('it-IT'),
+      new Date(pass.setTime).toLocaleString('it-IT'),
+      pass.maxElevation.toFixed(1),
+      pass.estimatedMagnitude.toFixed(1),
+      pass.observingCondition,
+      pass.visibility,
+    ])
+
+    const csv = [header, ...rows]
+      .map((line) => line.map((cell) => escapeCsv(cell)).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const timestamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19)
+    link.href = url
+    link.download = `passaggi-visibili-${timestamp}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }, [visibilityOverlayFilteredResults])
 
   const handleFocusFromVisibility = (pass: UpcomingPass) => {
     const entityId = liveEntityIdBySatelliteId.get(pass.satelliteId)
@@ -1096,6 +1206,7 @@ function App() {
                   <VisibilityPanel
                     visibilityHours={visibilityHours}
                     visibilityMinElevation={visibilityMinElevation}
+                    visibilityCity={visibilityCity}
                     visibilityLocatingBrowser={visibilityLocatingBrowser}
                     visibilityLoading={visibilityLoading}
                     visibilityLatitude={visibilityLatitude}
@@ -1103,12 +1214,15 @@ function App() {
                     visibilityInfo={visibilityInfo}
                     visibilityError={visibilityError}
                     visibilityResults={visibilityResults}
+                    visibilityResultsTotal={visibilityAllResults.length}
                     onVisibilityHoursChange={setVisibilityHours}
                     onVisibilityMinElevationChange={setVisibilityMinElevation}
+                    onVisibilityCityChange={setVisibilityCity}
                     onUseBrowserLocation={handleUseBrowserLocationForVisibility}
                     onCalculateVisibility={() => {
                       void handleCalculateVisibility()
                     }}
+                    onOpenFullResults={openVisibilityFullResultsOverlay}
                     onFocusFromVisibility={handleFocusFromVisibility}
                   />
                 ) : null}
@@ -1246,6 +1360,70 @@ function App() {
           onCompassChange={handleCompassChange}
         />
       </section>
+
+      {visibilityOverlayOpen ? (
+        <section className="visibility-overlay" role="dialog" aria-modal="true" aria-label="Lista completa passaggi visibili">
+          <div className="visibility-overlay-backdrop" onClick={() => setVisibilityOverlayOpen(false)} />
+          <article className="visibility-overlay-card">
+            <header className="visibility-overlay-header">
+              <h2>Passaggi visibili - Lista completa</h2>
+              <div className="visibility-overlay-header-actions">
+                <button type="button" onClick={exportVisibilityOverlayCsv}>
+                  Export CSV
+                </button>
+                <button type="button" onClick={() => setVisibilityOverlayOpen(false)}>
+                  Chiudi
+                </button>
+              </div>
+            </header>
+            <p className="visibility-overlay-meta">
+              Totale risultati: {visibilityAllResults.length} | Mostrati: {visibilityOverlayFilteredResults.length} | Filtri: {visibilityHours}h, elevazione minima {visibilityMinElevation}deg
+            </p>
+            <p className="visibility-overlay-meta">{visibilityQueryLocationLabel}</p>
+            <label className="visibility-overlay-filter-row">
+              Cerca nella lista completa
+              <input
+                type="text"
+                value={visibilityOverlayQuery}
+                onChange={(event) => setVisibilityOverlayQuery(event.target.value)}
+                placeholder="Nome satellite, NORAD, condizione..."
+              />
+            </label>
+            <div className="visibility-overlay-table-wrap">
+              <table className="visibility-overlay-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Satellite</th>
+                    <th>NORAD ID</th>
+                    <th>Rise</th>
+                    <th>Set</th>
+                    <th>Elev. max</th>
+                    <th>Magnitudine</th>
+                    <th>Condizione</th>
+                    <th>Visibilita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibilityOverlayFilteredResults.map((pass, index) => (
+                    <tr key={`${pass.satelliteId}-${pass.riseTime}-${pass.setTime}-${index}`}>
+                      <td>{index + 1}</td>
+                      <td>{pass.satelliteName}</td>
+                      <td>{pass.satelliteId}</td>
+                      <td>{new Date(pass.riseTime).toLocaleString('it-IT')}</td>
+                      <td>{new Date(pass.setTime).toLocaleString('it-IT')}</td>
+                      <td>{pass.maxElevation.toFixed(1)}deg</td>
+                      <td>{pass.estimatedMagnitude.toFixed(1)}</td>
+                      <td>{pass.observingCondition}</td>
+                      <td>{pass.visibility}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      ) : null}
     </main>
   )
 }

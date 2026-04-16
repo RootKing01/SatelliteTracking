@@ -515,6 +515,116 @@
   font-size: 0.74rem;
 }
 
+.visibility-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.visibility-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 10, 22, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.visibility-overlay-card {
+  position: absolute;
+  inset: 4vh 4vw;
+  background: linear-gradient(180deg, rgba(9, 23, 45, 0.98), rgba(6, 14, 30, 0.98));
+  border: 1px solid rgba(89, 240, 255, 0.34);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 8px;
+}
+
+.visibility-overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.visibility-overlay-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.visibility-overlay-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #dff5ff;
+}
+
+.visibility-overlay-header button {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.42);
+  background: rgba(10, 27, 51, 0.84);
+  color: #e3f8ff;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.visibility-overlay-meta {
+  margin: 0;
+  color: #9ec6e8;
+  font-size: 0.78rem;
+}
+
+.visibility-overlay-filter-row {
+  display: grid;
+  gap: 5px;
+  color: #9ec6e8;
+  font-size: 0.78rem;
+}
+
+.visibility-overlay-filter-row input {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.36);
+  background: rgba(9, 24, 45, 0.85);
+  color: #e2f7ff;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+}
+
+.visibility-overlay-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(86, 212, 242, 0.22);
+  border-radius: 8px;
+}
+
+.visibility-overlay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.visibility-overlay-table th,
+.visibility-overlay-table td {
+  border-bottom: 1px solid rgba(64, 126, 178, 0.35);
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.visibility-overlay-table th {
+  position: sticky;
+  top: 0;
+  background: rgba(16, 49, 79, 0.96);
+  color: #cfe9ff;
+}
+
+.visibility-overlay-table td {
+  color: #e7f4ff;
+}
+
+.visibility-overlay-table tbody tr:nth-child(even) {
+  background: rgba(12, 34, 58, 0.65);
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -553,5 +663,10 @@
     min-height: auto;
     padding: 7px 10px;
     flex: 1;
+  }
+
+  .visibility-overlay-card {
+    inset: 2vh 2vw;
+    padding: 8px;
   }
 }

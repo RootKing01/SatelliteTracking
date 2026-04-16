@@ -27,6 +27,23 @@
   gap: 8px;
 }
 
+.visibility-city-row {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  color: #a6c8e8;
+  font-size: 0.78rem;
+}
+
+.visibility-city-row input {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.36);
+  background: rgba(9, 24, 45, 0.85);
+  color: #e2f7ff;
+  padding: 6px 7px;
+  font-size: 0.8rem;
+}
+
 .visibility-note {
   margin-top: 8px;
   display: block;
@@ -41,6 +58,17 @@
   max-height: 48vh;
   overflow: auto;
   scrollbar-width: none;
+}
+
+.visibility-full-list-actions {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.visibility-full-list-actions small {
+  color: #9ecff0;
+  font-size: 0.74rem;
 }
 
 .visibility-list::-webkit-scrollbar {

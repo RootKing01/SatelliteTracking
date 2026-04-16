@@ -4,6 +4,7 @@ import '../../styles/panels/visibility-panel.css'
 type VisibilityPanelProps = {
   visibilityHours: number
   visibilityMinElevation: number
+  visibilityCity: string
   visibilityLocatingBrowser: boolean
   visibilityLoading: boolean
   visibilityLatitude: number | null
@@ -11,16 +12,20 @@ type VisibilityPanelProps = {
   visibilityInfo: string
   visibilityError: string
   visibilityResults: UpcomingPass[]
+  visibilityResultsTotal: number
   onVisibilityHoursChange: (value: number) => void
   onVisibilityMinElevationChange: (value: number) => void
+  onVisibilityCityChange: (value: string) => void
   onUseBrowserLocation: () => void
   onCalculateVisibility: () => void
+  onOpenFullResults: () => void
   onFocusFromVisibility: (pass: UpcomingPass) => void
 }
 
 export function VisibilityPanel({
   visibilityHours,
   visibilityMinElevation,
+  visibilityCity,
   visibilityLocatingBrowser,
   visibilityLoading,
   visibilityLatitude,
@@ -28,10 +33,13 @@ export function VisibilityPanel({
   visibilityInfo,
   visibilityError,
   visibilityResults,
+  visibilityResultsTotal,
   onVisibilityHoursChange,
   onVisibilityMinElevationChange,
+  onVisibilityCityChange,
   onUseBrowserLocation,
   onCalculateVisibility,
+  onOpenFullResults,
   onFocusFromVisibility,
 }: VisibilityPanelProps) {
   return (
@@ -65,6 +73,16 @@ export function VisibilityPanel({
           />
         </label>
       </div>
+
+      <label className="visibility-city-row">
+        Citta (opzionale, prioritaria)
+        <input
+          type="text"
+          value={visibilityCity}
+          onChange={(event) => onVisibilityCityChange(event.target.value)}
+          placeholder="Es. Napoli, Roma, Milano"
+        />
+      </label>
 
       <div className="visibility-actions">
         <button
@@ -100,6 +118,17 @@ export function VisibilityPanel({
 
       {visibilityInfo ? <p className="sighting-info">{visibilityInfo}</p> : null}
       {visibilityError ? <p className="sighting-error">{visibilityError}</p> : null}
+
+      {visibilityResultsTotal > 0 ? (
+        <div className="visibility-full-list-actions">
+          <small>
+            Anteprima: {visibilityResults.length} / Totale: {visibilityResultsTotal}
+          </small>
+          <button type="button" onClick={onOpenFullResults}>
+            Apri lista completa in nuova pagina
+          </button>
+        </div>
+      ) : null}
 
       {visibilityResults.length > 0 ? (
         <div className="visibility-list">

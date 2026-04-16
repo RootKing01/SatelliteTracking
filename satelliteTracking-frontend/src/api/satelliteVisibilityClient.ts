@@ -29,6 +29,33 @@ export type UpcomingPassQuery = {
   altitude?: number
 }
 
+export type UpcomingPassesByCityResponse = {
+  timestamp: string
+  city: {
+    name: string
+    displayName: string
+    latitude: number
+    longitude: number
+    altitude: number
+  }
+  query: {
+    hours: number
+    minElevation: string
+    observingCondition: string
+    maxMagnitude: number
+  }
+  totalPasses: number
+  passes: UpcomingPass[]
+}
+
+export type UpcomingPassesByCityQuery = {
+  city: string
+  hours: number
+  minElevation: number
+  observingCondition?: 'any' | 'night' | 'twilight' | 'daylight'
+  maxMagnitude?: number
+}
+
 export async function fetchVisibleUpcomingPasses(query: UpcomingPassQuery): Promise<UpcomingPass[]> {
   const observingCondition = query.observingCondition ?? 'any'
   const maxMagnitude = query.maxMagnitude ?? 6.0
@@ -52,6 +79,29 @@ export async function fetchVisibleUpcomingPasses(query: UpcomingPassQuery): Prom
       altitude: query.altitude,
     },
   })
+
+  return response.data
+}
+
+export async function fetchVisibleUpcomingPassesByCity(
+  query: UpcomingPassesByCityQuery,
+): Promise<UpcomingPassesByCityResponse> {
+  const observingCondition = query.observingCondition ?? 'any'
+  const maxMagnitude = query.maxMagnitude ?? 6.0
+
+  const response = await httpClient.get<UpcomingPassesByCityResponse>(
+    '/api/satellites/upcoming-passes/by-city',
+    {
+      timeout: 60000,
+      params: {
+        city: query.city,
+        hours: query.hours,
+        minElevation: query.minElevation,
+        observingCondition,
+        maxMagnitude,
+      },
+    },
+  )
 
   return response.data
 }
