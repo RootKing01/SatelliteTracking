@@ -23,11 +23,15 @@ type SelectedSatelliteState = {
   satellite: SatellitePosition
 }
 
+type SidebarPane = 'groups' | 'satellites'
+
 const defaultEnabledGroups = Object.fromEntries(
   satelliteGroupSources.map((group) => [group.key, group.key === 'stations']),
 ) as Record<SatelliteGroupKey, boolean>
 
 const fixedRefreshIntervalSec = 0.8
+
+type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 
 function App() {
   const allGroups = satelliteGroupSources as readonly SatelliteGroupSource[]
@@ -40,6 +44,9 @@ function App() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [enabledGroups, setEnabledGroups] =
     useState<Record<SatelliteGroupKey, boolean>>(defaultEnabledGroups)
+  const [selectedPreset, setSelectedPreset] = useState<GroupPreset>('stations')
+  const [openPane, setOpenPane] = useState<SidebarPane | null>('groups')
+  const [focusGlobeMode, setFocusGlobeMode] = useState(false)
   const [selectedSatellite, setSelectedSatellite] = useState<SelectedSatelliteState | null>(null)
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
@@ -129,6 +136,10 @@ function App() {
     },
     [satelliteLookupByEntityId],
   )
+
+  const closeSelectedSatellite = useCallback(() => {
+    handlePickEntityId(null)
+  }, [handlePickEntityId])
 
   const handleCompassChange = useCallback((nextCompass: CompassState) => {
     setCompass(nextCompass)
@@ -238,6 +249,7 @@ function App() {
   }, [activeGroups, refreshIntervalMs])
 
   const toggleGroup = (key: SatelliteGroupKey) => {
+    setSelectedPreset('custom')
     setEnabledGroups((prev) => ({
       ...prev,
       [key]: !prev[key],
@@ -246,12 +258,39 @@ function App() {
 
   const toggleAllGroups = () => {
     const nextValue = !allSelected
+    setSelectedPreset('custom')
     setEnabledGroups(
       Object.fromEntries(allGroups.map((group) => [group.key, nextValue])) as Record<
         SatelliteGroupKey,
         boolean
       >,
     )
+  }
+
+  const applyGroupPreset = (preset: GroupPreset) => {
+    if (preset === 'custom') {
+      return
+    }
+
+    const navigationKeys = new Set(['gpsOps', 'galileo', 'glonassOps', 'beidou', 'sbas'])
+    const leoKeys = new Set(['starlink', 'oneweb', 'iridiumNext', 'planet', 'spire', 'cubesat'])
+
+    const nextEnabled = Object.fromEntries(
+      allGroups.map((group) => {
+        if (preset === 'all') {
+          return [group.key, true]
+        }
+        if (preset === 'stations') {
+          return [group.key, group.key === 'stations']
+        }
+        if (preset === 'navigation') {
+          return [group.key, navigationKeys.has(group.key)]
+        }
+        return [group.key, leoKeys.has(group.key)]
+      }),
+    ) as Record<SatelliteGroupKey, boolean>
+
+    setEnabledGroups(nextEnabled)
   }
 
   if (!ionToken) {
@@ -272,9 +311,10 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="panel-section">
-        <header className="panel">
+    <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
+      {!focusGlobeMode ? (
+        <aside className="panel-section">
+          <header className="panel">
           <div className="panel-header">
             <span className="panel-badge">
               <span className="live-dot" />
@@ -288,99 +328,150 @@ function App() {
               <p className="updated-at">Live feed /api/satellites/positions</p>
               <p className="updated-at">Visibili: {totalVisibleCount} satelliti</p>
 
-              <section className="collapsible" aria-label="Gruppi satelliti">
-                <h3>Gruppi satelliti</h3>
-                <label className="select-all">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAllGroups} />
-                  <span>Seleziona tutti i gruppi</span>
-                </label>
-                <div className="group-list">
-                  {allGroups.map((group) => {
-                    const count = groupPositions[group.key]?.length ?? 0
-                    const loading = groupLoading[group.key]
-                    const error = groupErrors[group.key]
+              <div className="sidebar-split">
+                <nav className="sidebar-tabs" aria-label="Pannelli laterali">
+                  <button
+                    type="button"
+                    className={openPane === 'groups' ? 'tab-active' : ''}
+                    onClick={() => setOpenPane((prev) => (prev === 'groups' ? null : 'groups'))}
+                  >
+                    <span className="tab-icon tab-icon-constellation" aria-hidden="true" />
+                    <span>Costellazioni</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={openPane === 'satellites' ? 'tab-active' : ''}
+                    onClick={() => setOpenPane((prev) => (prev === 'satellites' ? null : 'satellites'))}
+                  >
+                    <span className="tab-icon tab-icon-view" aria-hidden="true" />
+                    <span>Gestione vista</span>
+                  </button>
+                </nav>
 
-                    return (
-                      <label
-                        key={group.key}
-                        className={`group-item ${loading ? 'is-loading' : ''}`}
-                        aria-busy={loading ? 'true' : 'false'}
+                {openPane === 'groups' ? (
+                  <section className="collapsible side-drawer" aria-label="Gruppi satelliti">
+                    <h3>Gruppi satelliti</h3>
+                    <label className="select-all">
+                      <input type="checkbox" checked={allSelected} onChange={toggleAllGroups} />
+                      <span>Seleziona tutti i gruppi</span>
+                    </label>
+                    <div className="group-preset-row">
+                      <label htmlFor="group-preset">Preset gruppi</label>
+                      <select
+                        id="group-preset"
+                        value={selectedPreset}
+                        onChange={(event) => {
+                          const preset = event.target.value as GroupPreset
+                          setSelectedPreset(preset)
+                          applyGroupPreset(preset)
+                        }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={enabledGroups[group.key]}
-                          onChange={() => toggleGroup(group.key)}
-                        />
-                        <span
-                          className="group-color"
-                          style={{
-                            backgroundColor: group.color,
-                            boxShadow: `0 0 8px ${group.color}, 0 0 0 1px rgba(4, 10, 24, 0.85)`,
-                          }}
-                          aria-hidden="true"
-                        />
-                        <span className="group-name">{group.label}</span>
-                        <span className="group-meta">{`${count} sat`}</span>
-                        {error ? <span className="group-error">!</span> : null}
-                      </label>
-                    )
-                  })}
-                </div>
-              </section>
+                        <option value="custom">Personalizzato</option>
+                        <option value="stations">Solo stazioni</option>
+                        <option value="navigation">Navigazione GNSS</option>
+                        <option value="leo">LEO tracking</option>
+                        <option value="all">Tutti i gruppi</option>
+                      </select>
+                    </div>
+                    <div className="group-list">
+                      {allGroups.map((group) => {
+                        const count = groupPositions[group.key]?.length ?? 0
+                        const loading = groupLoading[group.key]
+                        const error = groupErrors[group.key]
 
-              <section className="collapsible" aria-label="Comandi vista">
-                <h3>Comandi vista</h3>
-                <div className="toolbar toolbar-left compact-toolbar">
-                  <button type="button" onClick={() => globeRef.current?.zoomIn()}>Zoom +</button>
-                  <button type="button" onClick={() => globeRef.current?.zoomOut()}>Zoom -</button>
-                  <button type="button" onClick={() => globeRef.current?.goToInitialView()}>Home</button>
-                  <button type="button" onClick={() => globeRef.current?.alignToEarthAxis()}>Asse N-S</button>
-                  <button
-                    type="button"
-                    className={autoRotate ? 'toggle-active' : ''}
-                    onClick={() => setAutoRotate((prev) => !prev)}
-                  >
-                    {autoRotate ? 'Stop rotazione' : 'Avvia rotazione'}
-                  </button>
-                  <button
-                    type="button"
-                    className={showBackSideSatellites ? 'toggle-active' : ''}
-                    onClick={() => setShowBackSideSatellites((prev) => !prev)}
-                  >
-                    {showBackSideSatellites ? 'Nascondi lato opposto' : 'Mostra lato opposto'}
-                  </button>
-                </div>
-              </section>
+                        return (
+                          <label
+                            key={group.key}
+                            className={`group-item ${loading ? 'is-loading' : ''}`}
+                            aria-busy={loading ? 'true' : 'false'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={enabledGroups[group.key]}
+                              onChange={() => toggleGroup(group.key)}
+                            />
+                            <span
+                              className="group-color"
+                              style={{
+                                backgroundColor: group.color,
+                                boxShadow: `0 0 8px ${group.color}, 0 0 0 1px rgba(4, 10, 24, 0.85)`,
+                              }}
+                              aria-hidden="true"
+                            />
+                            <span className="group-name">{group.label}</span>
+                            <span className="group-meta">{`${count} sat`}</span>
+                            {error ? <span className="group-error">!</span> : null}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ) : null}
 
-              <section className="sync-footer-card" aria-label="Stato sincronizzazione e camera">
-                <p className="sync-status">
-                  <span className={`sync-dot ${hasLoadedOnce ? 'ok blink' : ''} ${isRefreshing ? 'active' : ''}`} />
-                  Sincronizzazione live attiva
-                </p>
-                <p className="sync-status">
-                  <strong>Visibilita:</strong>{' '}
-                  {showBackSideSatellites ? 'anche lato opposto' : 'solo lato visibile'}
-                </p>
-                <p className="sync-status">
-                  <strong>Refresh:</strong> ogni {(refreshIntervalMs / 1000).toFixed(1)}s
-                </p>
-                <div className="compass-row"><span>Heading</span><strong>{compass.headingDeg.toFixed(1)}deg</strong></div>
-                <div className="compass-row"><span>Pitch</span><strong>{compass.pitchDeg.toFixed(1)}deg</strong></div>
-                <div className="compass-row"><span>Quota camera</span><strong>{compass.altitudeKm.toFixed(0)} km</strong></div>
-              </section>
+                {openPane === 'satellites' ? (
+                  <section className="collapsible side-drawer" aria-label="Comandi satelliti">
+                    <h3>Satelliti</h3>
+                    <div className="toolbar toolbar-left compact-toolbar">
+                      <button type="button" onClick={() => globeRef.current?.zoomIn()}>Zoom +</button>
+                      <button type="button" onClick={() => globeRef.current?.zoomOut()}>Zoom -</button>
+                      <button type="button" onClick={() => globeRef.current?.goToInitialView()}>Home</button>
+                      <button type="button" onClick={() => globeRef.current?.alignToEarthAxis()}>Asse N-S</button>
+                      <button
+                        type="button"
+                        className={autoRotate ? 'toggle-active' : ''}
+                        onClick={() => setAutoRotate((prev) => !prev)}
+                      >
+                        {autoRotate ? 'Stop rotazione' : 'Avvia rotazione'}
+                      </button>
+                      <button
+                        type="button"
+                        className={showBackSideSatellites ? 'toggle-active' : ''}
+                        onClick={() => setShowBackSideSatellites((prev) => !prev)}
+                      >
+                        {showBackSideSatellites ? 'Nascondi lato opposto' : 'Mostra lato opposto'}
+                      </button>
+                    </div>
+
+                    <section className="sync-footer-card" aria-label="Stato sincronizzazione e camera">
+                      <p className="sync-status">
+                        <span className={`sync-dot ${hasLoadedOnce ? 'ok blink' : ''} ${isRefreshing ? 'active' : ''}`} />
+                        Sincronizzazione live attiva
+                      </p>
+                      <p className="sync-status">
+                        <strong>Visibilita:</strong>{' '}
+                        {showBackSideSatellites ? 'anche lato opposto' : 'solo lato visibile'}
+                      </p>
+                      <p className="sync-status">
+                        <strong>Refresh:</strong> ogni {(refreshIntervalMs / 1000).toFixed(1)}s
+                      </p>
+                      <div className="compass-row"><span>Heading</span><strong>{compass.headingDeg.toFixed(1)}deg</strong></div>
+                      <div className="compass-row"><span>Pitch</span><strong>{compass.pitchDeg.toFixed(1)}deg</strong></div>
+                      <div className="compass-row"><span>Quota camera</span><strong>{compass.altitudeKm.toFixed(0)} km</strong></div>
+                    </section>
+                  </section>
+                ) : null}
+              </div>
             </section>
           </div>
-        </header>
-      </aside>
+          </header>
+        </aside>
+      ) : null}
 
       <section className="viewer-section">
+        <button
+          type="button"
+          className="focus-toggle"
+          onClick={() => setFocusGlobeMode((prev) => !prev)}
+        >
+          {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
+        </button>
         <aside className="viewer-hud">
           {selectedSatellite ? (
             <section className="details-card hud-details">
               <h3>Dettagli satellite</h3>
               <div className="details-head">
                 <strong>{selectedSatellite.satellite.satelliteName}</strong>
-                <button type="button" onClick={() => handlePickEntityId(null)}>Chiudi</button>
+                <button type="button" onClick={closeSelectedSatellite}>Chiudi</button>
               </div>
               <div className="details-grid">
                 <span>Gruppo</span>

@@ -6,9 +6,13 @@
   background: radial-gradient(circle at 10% 10%, #0b1f3f 0%, #050b18 55%, #02050c 100%);
 }
 
+.app-shell.focus-mode {
+  grid-template-columns: 1fr;
+}
+
 .panel-section {
   height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   border-right: 1px solid rgba(77, 214, 255, 0.25);
   background:
     linear-gradient(180deg, rgba(4, 10, 24, 0.96), rgba(5, 13, 29, 0.95)),
@@ -107,6 +111,88 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.sidebar-split {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 8px;
+  min-height: 0;
+  flex: 1;
+}
+
+.sidebar-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-tabs button {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  border: 1px solid rgba(96, 250, 255, 0.32);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(9, 23, 43, 0.9), rgba(7, 16, 30, 0.88));
+  color: #9ec8ea;
+  padding: 10px 6px;
+  min-height: 116px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tab-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.tab-icon-constellation {
+  background: #5cf2ff;
+  box-shadow: 0 0 8px rgba(92, 242, 255, 0.8);
+}
+
+.tab-icon-view {
+  background: #55e6a0;
+  box-shadow: 0 0 8px rgba(85, 230, 160, 0.78);
+}
+
+.sidebar-tabs button.tab-active {
+  color: #c9fbff;
+  border-color: rgba(127, 249, 255, 0.82);
+  box-shadow: 0 0 10px rgba(89, 240, 255, 0.28);
+}
+
+.side-drawer {
+  margin-top: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  animation: drawerReveal 0.2s ease;
+  scrollbar-width: none;
+}
+
+.side-drawer::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes drawerReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .toolbar {
@@ -268,13 +354,36 @@
   margin: 0;
 }
 
+.group-preset-row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-preset-row label {
+  color: #a6c8e8;
+  font-size: 0.8rem;
+}
+
+.group-preset-row select {
+  min-width: 148px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.36);
+  background: rgba(9, 24, 45, 0.85);
+  color: #e2f7ff;
+  padding: 5px 7px;
+  font-size: 0.8rem;
+}
+
 .group-list {
   margin-top: 10px;
   display: grid;
   gap: 5px;
-  max-height: 250px;
-  overflow: auto;
-  padding-right: 4px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .group-item {
@@ -328,7 +437,7 @@
 }
 
 .sync-footer-card {
-  margin-top: auto;
+  margin-top: 10px;
   border: 1px solid rgba(89, 240, 255, 0.3);
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(9, 23, 45, 0.72), rgba(6, 14, 30, 0.72));
@@ -394,6 +503,26 @@
   pointer-events: none;
 }
 
+.focus-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 16;
+  border: 1px solid rgba(96, 250, 255, 0.45);
+  background: linear-gradient(180deg, rgba(10, 28, 54, 0.9), rgba(7, 18, 34, 0.9));
+  color: #d8fcff;
+  border-radius: 10px;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-shadow: 0 0 6px rgba(77, 214, 255, 0.42);
+}
+
+.focus-toggle:hover {
+  border-color: rgba(140, 255, 249, 0.9);
+  box-shadow: 0 0 12px rgba(90, 236, 255, 0.34);
+}
+
 .viewer-hud .hud-card,
 .viewer-hud .hud-details {
   pointer-events: auto;
@@ -403,6 +532,11 @@
   margin-top: 0;
   max-height: 42vh;
   overflow: auto;
+  scrollbar-width: none;
+}
+
+.hud-details::-webkit-scrollbar {
+  display: none;
 }
 
 .compass-row {
@@ -471,6 +605,7 @@
 
   .panel-section {
     height: 340px;
+    overflow: auto;
     border-right: none;
     border-bottom: 1px solid rgba(216, 237, 255, 0.12);
   }
@@ -486,6 +621,23 @@
   }
 
   .group-list {
-    max-height: 180px;
+    max-height: none;
+  }
+
+  .sidebar-split {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .sidebar-tabs {
+    flex-direction: row;
+  }
+
+  .sidebar-tabs button {
+    writing-mode: horizontal-tb;
+    transform: none;
+    min-height: auto;
+    padding: 7px 10px;
+    flex: 1;
   }
 }
