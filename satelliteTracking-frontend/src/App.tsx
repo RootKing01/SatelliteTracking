@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Cartesian3,
   Color,
@@ -9,6 +9,9 @@ import {
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, ImageryLayer, Viewer, type CesiumComponentRef } from 'resium'
+import { satelliteGroupSources } from './api/groups'
+import type { SatelliteGroupKey } from './api/groups/types'
+import type { SatellitePosition } from './types/satellite'
 import './App.css'
 
 const ionToken =
@@ -18,11 +21,25 @@ if (ionToken) {
   Ion.defaultAccessToken = ionToken
 }
 
-const rome = Cartesian3.fromDegrees(12.4964, 41.9028, 250000)
-const madrid = Cartesian3.fromDegrees(-3.7038, 40.4168, 350000)
+const refreshIntervalMs = 20000
+
+type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]>>
+type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
+type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 
 function App() {
   const viewerRef = useRef<CesiumComponentRef<CesiumViewer>>(null)
+  const [groupPositions, setGroupPositions] = useState<GroupPositionsState>({})
+  const [groupLoading, setGroupLoading] = useState<GroupLoadingState>({})
+  const [groupErrors, setGroupErrors] = useState<GroupErrorState>({})
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
+  const [enabledGroups, setEnabledGroups] = useState<Record<SatelliteGroupKey, boolean>>({
+    stations: true,
+    starlink: true,
+    gpsOps: false,
+    weather: false,
+  })
+
   const terrainProvider = useMemo(() => new EllipsoidTerrainProvider(), [])
   const gridProvider = useMemo(
     () =>
@@ -32,6 +49,29 @@ function App() {
         glowColor: Color.fromCssColorString('rgba(9, 17, 31, 0.55)'),
       }),
     [],
+  )
+  const groupColorMap = useMemo(
+    () =>
+      Object.fromEntries(
+        satelliteGroupSources.map((group) => [group.key, Color.fromCssColorString(group.color)]),
+      ) as Record<SatelliteGroupKey, Color>,
+    [],
+  )
+
+  const activeGroups = useMemo(
+    () => satelliteGroupSources.filter((group) => enabledGroups[group.key]),
+    [enabledGroups],
+  )
+
+  const visibleSatellites = useMemo(
+    () =>
+      activeGroups.flatMap((group) =>
+        (groupPositions[group.key] ?? []).map((satellite) => ({
+          group,
+          satellite,
+        })),
+      ),
+    [activeGroups, groupPositions],
   )
 
   useEffect(() => {
@@ -65,6 +105,74 @@ function App() {
     })
   }, [])
 
+  useEffect(() => {
+    if (activeGroups.length === 0) {
+      setGroupPositions({})
+      setGroupErrors({})
+      setGroupLoading({})
+      return
+    }
+
+    let isMounted = true
+
+    const loadGroups = async (signal?: AbortSignal) => {
+      for (const group of activeGroups) {
+        if (!isMounted) {
+          return
+        }
+        setGroupLoading((prev) => ({ ...prev, [group.key]: true }))
+      }
+
+      const results = await Promise.allSettled(
+        activeGroups.map(async (group) => {
+          const positions = await group.loadPositions(signal)
+          return { key: group.key, positions }
+        }),
+      )
+
+      if (!isMounted || signal?.aborted) {
+        return
+      }
+
+      const nextPositions: GroupPositionsState = {}
+      const nextErrors: GroupErrorState = {}
+      const nextLoading: GroupLoadingState = {}
+
+      activeGroups.forEach((group, index) => {
+        const result = results[index]
+        nextLoading[group.key] = false
+
+        if (result.status === 'fulfilled') {
+          nextPositions[group.key] = result.value.positions
+          nextErrors[group.key] = ''
+          return
+        }
+
+        nextPositions[group.key] = []
+        nextErrors[group.key] = `Errore caricamento ${group.label}`
+      })
+
+      setGroupPositions(nextPositions)
+      setGroupErrors(nextErrors)
+      setGroupLoading(nextLoading)
+      setLastUpdatedAt(new Date().toLocaleTimeString())
+    }
+
+    const controller = new AbortController()
+    void loadGroups(controller.signal)
+
+    const refreshId = window.setInterval(() => {
+      const refreshController = new AbortController()
+      void loadGroups(refreshController.signal)
+    }, refreshIntervalMs)
+
+    return () => {
+      isMounted = false
+      controller.abort()
+      window.clearInterval(refreshId)
+    }
+  }, [activeGroups])
+
   const zoomIn = () => {
     const viewer = viewerRef.current?.cesiumElement
     if (!viewer) {
@@ -83,6 +191,13 @@ function App() {
 
     const currentHeight = viewer.camera.positionCartographic.height
     viewer.camera.zoomOut(Math.max(40000, currentHeight * 0.38))
+  }
+
+  const toggleGroup = (key: SatelliteGroupKey) => {
+    setEnabledGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
   }
 
   if (!ionToken) {
@@ -106,13 +221,34 @@ function App() {
           <span className="panel-badge">Live globe</span>
           <h1>Satellite Tracker</h1>
         </div>
-        <p>
-          Vista bilanciata: dettagli buoni, atmosfera più morbida e controlli zoom immediati.
-        </p>
+        <p>Caricamento asincrono per gruppo da /api/satellites/positions</p>
         <div className="toolbar">
           <button type="button" onClick={zoomIn}>Zoom +</button>
           <button type="button" onClick={zoomOut}>Zoom -</button>
         </div>
+        <div className="group-list">
+          {satelliteGroupSources.map((group) => {
+            const count = groupPositions[group.key]?.length ?? 0
+            const loading = groupLoading[group.key]
+            const error = groupErrors[group.key]
+
+            return (
+              <label key={group.key} className="group-item">
+                <input
+                  type="checkbox"
+                  checked={enabledGroups[group.key]}
+                  onChange={() => toggleGroup(group.key)}
+                />
+                <span className="group-name">{group.label}</span>
+                <span className="group-meta">
+                  {loading ? 'loading...' : `${count} sat`}
+                </span>
+                {error ? <span className="group-error">!</span> : null}
+              </label>
+            )
+          })}
+        </div>
+        {lastUpdatedAt ? <p className="updated-at">Ultimo update: {lastUpdatedAt}</p> : null}
       </header>
 
       <Viewer
@@ -129,16 +265,26 @@ function App() {
         sceneModePicker={false}
       >
         <ImageryLayer imageryProvider={gridProvider} />
-        <Entity
-          name="Demo Satellite 1"
-          position={rome}
-          point={{ pixelSize: 10, color: Color.CYAN }}
-        />
-        <Entity
-          name="Demo Satellite 2"
-          position={madrid}
-          point={{ pixelSize: 10, color: Color.YELLOW }}
-        />
+        {visibleSatellites.map(({ group, satellite }) => {
+          const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
+
+          return (
+            <Entity
+              key={`${group.key}-${satellite.satelliteId}`}
+              name={satellite.satelliteName}
+              description={`${group.label} | NORAD ${satellite.noradCatId}`}
+              position={Cartesian3.fromDegrees(
+                satellite.longitudeDeg,
+                satellite.latitudeDeg,
+                altitudeMeters,
+              )}
+              point={{
+                pixelSize: group.key === 'starlink' ? 4 : 7,
+                color: groupColorMap[group.key],
+              }}
+            />
+          )
+        })}
       </Viewer>
     </main>
   )

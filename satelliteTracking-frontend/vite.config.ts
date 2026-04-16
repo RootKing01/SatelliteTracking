@@ -15,6 +15,14 @@ export default defineConfig({
   define: {
     CESIUM_BASE_URL: JSON.stringify(`/${cesiumBaseUrl}`),
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+    },
+  },
   plugins: [
     react(),
     viteStaticCopy({
