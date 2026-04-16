@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -13,6 +14,8 @@ const cesiumPath = (subDir: string) =>
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
   const devProxyTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
+  const enableHttps =
+    env.VITE_DEV_USE_HTTPS === 'true' || process.env.VITE_DEV_USE_HTTPS === 'true'
 
   return {
     envDir: '..',
@@ -20,6 +23,7 @@ export default defineConfig(({ mode }) => {
       CESIUM_BASE_URL: JSON.stringify(`/${cesiumBaseUrl}`),
     },
     server: {
+      https: enableHttps ? {} : undefined,
       proxy: {
         '/api': {
           target: devProxyTarget,
@@ -29,6 +33,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      ...(enableHttps ? [basicSsl()] : []),
       viteStaticCopy({
         targets: [
           { src: cesiumPath('Workers'), dest: cesiumBaseUrl },

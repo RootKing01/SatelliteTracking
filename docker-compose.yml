@@ -46,6 +46,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      APP_SECURITY_ALLOWED_ORIGINS: ${APP_SECURITY_ALLOWED_ORIGINS}
     
     deploy:
        resources:
@@ -66,6 +67,7 @@ services:
       VITE_CESIUM_TOKEN: ${VITE_CESIUM_TOKEN}
       VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
       VITE_DEV_PROXY_TARGET: http://app:8080
+      VITE_DEV_USE_HTTPS: ${VITE_DEV_USE_HTTPS:-false}
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./satelliteTracking-frontend:/app

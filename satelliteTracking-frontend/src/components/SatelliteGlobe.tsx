@@ -1,9 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Fragment, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
+  BoundingSphere,
+  CallbackProperty,
   Cartesian3,
   Color,
   EllipsoidTerrainProvider,
   HeadingPitchRoll,
+  HeadingPitchRange,
   Math as CesiumMath,
   OpenStreetMapImageryProvider,
   PointPrimitiveCollection,
@@ -36,6 +39,12 @@ export type SatelliteGlobeHandle = {
   zoomOut: () => void
   goToInitialView: () => void
   alignToEarthAxis: () => void
+  focusOnSatellite: (
+    longitudeDeg: number,
+    latitudeDeg: number,
+    altitudeKm?: number,
+    entityId?: string,
+  ) => void
 }
 
 type SatelliteGlobeProps = {
@@ -66,8 +75,23 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
     const viewerRef = useRef<CesiumComponentRef<CesiumViewer>>(null)
     const starlinkPointsRef = useRef<PointPrimitiveCollection | null>(null)
     const autoRotateRef = useRef(autoRotate)
+    const pauseAutoRotateUntilRef = useRef(0)
     const [viewerReadyTick, setViewerReadyTick] = useState(0)
     const terrainProvider = useMemo(() => new EllipsoidTerrainProvider(), [])
+    const selectedStarlinkSatellite = useMemo(() => {
+      if (!selectedEntityId || !selectedEntityId.startsWith('starlink-')) {
+        return null
+      }
+
+      const parsedId = Number(selectedEntityId.replace('starlink-', ''))
+      if (!Number.isFinite(parsedId)) {
+        return null
+      }
+
+      return (
+        starlinkSatellites.find((satellite) => satellite.satelliteId === parsedId) ?? null
+      )
+    }, [selectedEntityId, starlinkSatellites])
     useEffect(() => {
       if (viewerReadyTick > 0) {
         return
@@ -144,7 +168,78 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
           duration: 0.9,
         })
       },
+      focusOnSatellite: (
+        longitudeDeg: number,
+        latitudeDeg: number,
+        altitudeKm = 500,
+        entityId?: string,
+      ) => {
+        const viewer = viewerRef.current?.cesiumElement
+        if (!viewer) {
+          return
+        }
+
+        if (!Number.isFinite(longitudeDeg) || !Number.isFinite(latitudeDeg)) {
+          return
+        }
+
+        const clampedLatitude = Math.max(-85, Math.min(85, latitudeDeg))
+        const normalizedLongitude = ((((longitudeDeg + 180) % 360) + 360) % 360) - 180
+
+        const safeAltitudeKm = Math.max(200, altitudeKm)
+        const targetPosition = Cartesian3.fromDegrees(
+          normalizedLongitude,
+          clampedLatitude,
+          safeAltitudeKm * 1000,
+        )
+
+        if (entityId) {
+          const entity = viewer.entities.getById(entityId)
+          if (entity) {
+            viewer.selectedEntity = entity
+            viewer.trackedEntity = entity
+          }
+        }
+
+        viewer.camera.cancelFlight()
+        pauseAutoRotateUntilRef.current = Date.now() + 1800
+
+        const focusSphere = new BoundingSphere(
+          targetPosition,
+          Math.max(110000, safeAltitudeKm * 320),
+        )
+        const focusRange = Math.max(780000, safeAltitudeKm * 1900)
+
+        viewer.camera.flyToBoundingSphere(focusSphere, {
+          offset: new HeadingPitchRange(viewer.camera.heading, CesiumMath.toRadians(-42), focusRange),
+          duration: 1.05,
+        })
+      },
     }))
+
+    useEffect(() => {
+      const viewer = viewerRef.current?.cesiumElement
+      if (!viewer) {
+        return
+      }
+
+      if (!selectedEntityId) {
+        viewer.trackedEntity = undefined
+      }
+    }, [selectedEntityId, viewerReadyTick])
+
+    useEffect(() => {
+      const viewer = viewerRef.current?.cesiumElement
+      if (!viewer || !selectedEntityId) {
+        return
+      }
+
+      const entity = viewer.entities.getById(selectedEntityId)
+      if (entity) {
+        viewer.selectedEntity = entity
+        viewer.trackedEntity = entity
+      }
+    }, [selectedEntityId, selectedStarlinkSatellite, viewerReadyTick])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement
@@ -226,6 +321,10 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
       }
 
       const rotateEarth = () => {
+        if (Date.now() < pauseAutoRotateUntilRef.current) {
+          return
+        }
+
         if (autoRotateRef.current) {
           viewer.scene.camera.rotateRight(earthRotationSpeed)
         }
@@ -270,7 +369,7 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
           color: starlinkColor,
           pixelSize: isSelected ? 6 : 4,
           outlineColor: Color.WHITE,
-          outlineWidth: isSelected ? 2 : 0,
+          outlineWidth: isSelected ? 3 : 0,
           disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
           id: {
             entityId,
@@ -352,30 +451,83 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         navigationHelpButton={false}
         sceneModePicker={false}
       >
+        {selectedStarlinkSatellite ? (
+          <Entity
+            id={`starlink-${selectedStarlinkSatellite.satelliteId}`}
+            name={selectedStarlinkSatellite.satelliteName}
+            description={`Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`}
+            position={Cartesian3.fromDegrees(
+              selectedStarlinkSatellite.longitudeDeg,
+              selectedStarlinkSatellite.latitudeDeg,
+              Math.max(0, selectedStarlinkSatellite.altitudeKm * 1000),
+            )}
+            point={{
+              pixelSize: 1,
+              color: Color.TRANSPARENT,
+              outlineColor: Color.TRANSPARENT,
+              outlineWidth: 0,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            }}
+          />
+        ) : null}
+
         {visibleEntitySatellites.map(({ group, satellite }) => {
           const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
           const entityId = `${group.key}-${satellite.satelliteId}`
           const isSelected = selectedEntityId === entityId
 
+          const pulsePixelSize = new CallbackProperty((time) => {
+            const elapsed = time?.secondsOfDay ?? 0
+            return 16 + Math.sin(elapsed * 4) * 3
+          }, false)
+
+          const pulseAlpha = new CallbackProperty((time) => {
+            const elapsed = time?.secondsOfDay ?? 0
+            return 0.18 + (Math.sin(elapsed * 4) + 1) * 0.12
+          }, false)
+
+          const pulseColor = new CallbackProperty((time) => {
+            const alpha = pulseAlpha.getValue(time) as number
+            return Color.fromAlpha(Color.WHITE, alpha)
+          }, false)
+
           return (
-            <Entity
-              key={entityId}
-              id={entityId}
-              name={satellite.satelliteName}
-              description={`${group.label} | NORAD ${satellite.noradCatId}`}
-              position={Cartesian3.fromDegrees(
-                satellite.longitudeDeg,
-                satellite.latitudeDeg,
-                altitudeMeters,
-              )}
-              point={{
-                pixelSize: isSelected ? 10 : 7,
-                color: groupColorMap[group.key],
-                outlineColor: Color.WHITE,
-                outlineWidth: isSelected ? 2 : 1,
-                disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
-              }}
-            />
+            <Fragment key={entityId}>
+              <Entity
+                id={entityId}
+                name={satellite.satelliteName}
+                description={`${group.label} | NORAD ${satellite.noradCatId}`}
+                position={Cartesian3.fromDegrees(
+                  satellite.longitudeDeg,
+                  satellite.latitudeDeg,
+                  altitudeMeters,
+                )}
+                point={{
+                  pixelSize: isSelected ? 13 : 7,
+                  color: groupColorMap[group.key],
+                  outlineColor: Color.WHITE,
+                  outlineWidth: isSelected ? 3 : 1,
+                  disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
+                }}
+              />
+              {isSelected ? (
+                <Entity
+                  key={`${entityId}-pulse`}
+                  position={Cartesian3.fromDegrees(
+                    satellite.longitudeDeg,
+                    satellite.latitudeDeg,
+                    altitudeMeters,
+                  )}
+                  point={{
+                    pixelSize: pulsePixelSize,
+                    color: pulseColor,
+                    outlineColor: Color.WHITE,
+                    outlineWidth: 1,
+                    disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
+                  }}
+                />
+              ) : null}
+            </Fragment>
           )
         })}
       </Viewer>
