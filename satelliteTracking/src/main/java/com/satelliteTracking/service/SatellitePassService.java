@@ -652,6 +652,26 @@ public class SatellitePassService {
         double meanMotion = latestParams.getMeanMotion();
         double orbitalPeriodMinutes = 1440.0 / meanMotion;
         double orbitalPeriodHours = orbitalPeriodMinutes / 60.0;
+        double velocityKmh = pv.getVelocity().getNorm() * 3.6;
+
+        double latRad = geodeticPoint.getLatitude();
+        double lonRad = geodeticPoint.getLongitude();
+        double sinLat = FastMath.sin(latRad);
+        double cosLat = FastMath.cos(latRad);
+        double sinLon = FastMath.sin(lonRad);
+        double cosLon = FastMath.cos(lonRad);
+
+        double vx = pv.getVelocity().getX();
+        double vy = pv.getVelocity().getY();
+        double vz = pv.getVelocity().getZ();
+
+        double eastVelocity = -sinLon * vx + cosLon * vy;
+        double northVelocity = -sinLat * cosLon * vx - sinLat * sinLon * vy + cosLat * vz;
+        double directionDeg = FastMath.toDegrees(FastMath.atan2(eastVelocity, northVelocity));
+        if (directionDeg < 0) {
+            directionDeg += 360.0;
+        }
+
         LocalDateTime calculatedAtUtc = passTimeService.toLocalDateTime(currentDate, ZoneId.of("UTC"));
 
         return Optional.of(new SatellitePositionDTO(
@@ -667,6 +687,8 @@ public class SatellitePassService {
             meanMotion,
             orbitalPeriodMinutes,
             orbitalPeriodHours,
+            velocityKmh,
+            directionDeg,
             OrbitalParametersDTO.fromEntity(latestParams)
         ));
     }

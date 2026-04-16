@@ -11,4 +11,6 @@ export interface SatellitePosition {
   meanMotion: number
   orbitalPeriodMinutes: number
   orbitalPeriodHours: number
+  velocityKmh?: number
+  directionDeg?: number
 }

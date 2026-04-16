@@ -51,6 +51,46 @@ services:
        resources:
         limits:
           memory: ${APP_MEMORY_LIMIT}
+
+  frontend-dev:
+    profiles: ["dev"]
+    image: node:20-alpine
+    container_name: ${FRONTEND_DEV_CONTAINER_NAME:-satellite-tracker-frontend-dev}
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port ${FRONTEND_DEV_PORT:-5173}"
+    ports:
+      - "${FRONTEND_DEV_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_DEV_PORT:-5173}:${FRONTEND_DEV_PORT:-5173}"
+    depends_on:
+      - app
+    environment:
+      VITE_CESIUM_TOKEN: ${VITE_CESIUM_TOKEN}
+      VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
+      VITE_DEV_PROXY_TARGET: http://app:8080
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./satelliteTracking-frontend:/app
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_DEV_MEMORY_LIMIT:-1g}
+
+  frontend:
+    profiles: ["prod"]
+    build:
+      context: satelliteTracking-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_CESIUM_TOKEN: ${VITE_CESIUM_TOKEN}
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
+    container_name: ${FRONTEND_CONTAINER_NAME:-satellite-tracker-frontend}
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-512m}
 volumes:
   orekit-data-volume:
   postgres-data:

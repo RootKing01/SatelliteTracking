@@ -15,6 +15,8 @@ public record SatellitePositionDTO(
     double meanMotion,
     double orbitalPeriodMinutes,
     double orbitalPeriodHours,
+    double velocityKmh,
+    double directionDeg,
     OrbitalParametersDTO latestOrbitalParameters
 ) {
 }

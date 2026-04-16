@@ -35,6 +35,8 @@ class SatellitePositionControllerTest {
             15.5,
             92.9,
             1.55,
+            27580.0,
+            124.3,
             null
         );
 
@@ -63,6 +65,8 @@ class SatellitePositionControllerTest {
             15.5,
             92.9,
             1.55,
+            27580.0,
+            124.3,
             null
         );
 
