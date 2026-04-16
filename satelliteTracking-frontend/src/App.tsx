@@ -8,7 +8,9 @@ import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/
 import { fetchVisibleUpcomingPasses, type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
+import { AuthPanel } from './components/auth/AuthPanel'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
+import { GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
 
@@ -226,6 +228,20 @@ function App() {
     }
     return map
   }, [allGroups, groupPositions])
+
+  const groupRows = useMemo(
+    () =>
+      allGroups.map((group) => ({
+        key: group.key,
+        label: group.label,
+        color: group.color,
+        count: groupPositions[group.key]?.length ?? 0,
+        loading: groupLoading[group.key] ?? false,
+        error: groupErrors[group.key] ?? '',
+        checked: enabledGroups[group.key],
+      })),
+    [allGroups, enabledGroups, groupErrors, groupLoading, groupPositions],
+  )
 
   useEffect(() => {
     latestGroupPositionsRef.current = groupPositions
@@ -914,121 +930,34 @@ function App() {
     setEnabledGroups(nextEnabled)
   }
 
-  if (authChecking) {
+  if (authChecking || !authUser) {
     return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <h1>Satellite Tracker</h1>
-          <p>Verifica sessione in corso...</p>
-        </section>
-      </main>
-    )
-  }
-
-  if (!authUser) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <h1>Satellite Tracker</h1>
-          <p className="auth-info">{authInfo}</p>
-
-          <div className="auth-tabs">
-            <button
-              type="button"
-              className={authMode === 'login' ? 'is-active' : ''}
-              onClick={() => {
-                setAuthMode('login')
-                setAuthError('')
-              }}
-            >
-              Accesso
-            </button>
-            <button
-              type="button"
-              className={authMode === 'register' ? 'is-active' : ''}
-              onClick={() => {
-                setAuthMode('register')
-                setAuthError('')
-              }}
-            >
-              Iscrizione
-            </button>
-          </div>
-
-          <form
-            className="auth-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (authMode === 'login') {
-                void submitLogin()
-                return
-              }
-              void submitRegister()
-            }}
-          >
-            {authMode === 'login' ? (
-              <label>
-                Username o email
-                <input
-                  value={authUsernameOrEmail}
-                  onChange={(event) => setAuthUsernameOrEmail(event.target.value)}
-                  autoComplete="username"
-                  required
-                />
-              </label>
-            ) : (
-              <>
-                <label>
-                  Username
-                  <input
-                    value={authUsername}
-                    onChange={(event) => setAuthUsername(event.target.value)}
-                    autoComplete="username"
-                    required
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={authEmail}
-                    onChange={(event) => setAuthEmail(event.target.value)}
-                    autoComplete="email"
-                    required
-                  />
-                </label>
-              </>
-            )}
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={authPassword}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                required
-              />
-            </label>
-
-            {authError ? <p className="auth-error">{authError}</p> : null}
-
-            <button type="submit" className="auth-submit" disabled={authSubmitting}>
-              {authSubmitting
-                ? 'Invio in corso...'
-                : authMode === 'login'
-                  ? 'Accedi'
-                  : 'Crea account'}
-            </button>
-          </form>
-
-          <div className="auth-hint">
-            <p>
-              Profilo base: <strong>demo</strong> / <strong>Demo123!</strong>
-            </p>
-          </div>
-        </section>
-      </main>
+      <AuthPanel
+        authChecking={authChecking}
+        authMode={authMode}
+        authInfo={authInfo}
+        authError={authError}
+        authSubmitting={authSubmitting}
+        authUsernameOrEmail={authUsernameOrEmail}
+        authUsername={authUsername}
+        authEmail={authEmail}
+        authPassword={authPassword}
+        onSwitchMode={(mode) => {
+          setAuthMode(mode)
+          setAuthError('')
+        }}
+        onAuthUsernameOrEmailChange={setAuthUsernameOrEmail}
+        onAuthUsernameChange={setAuthUsername}
+        onAuthEmailChange={setAuthEmail}
+        onAuthPasswordChange={setAuthPassword}
+        onSubmit={() => {
+          if (authMode === 'login') {
+            void submitLogin()
+            return
+          }
+          void submitRegister()
+        }}
+      />
     )
   }
 
@@ -1113,317 +1042,84 @@ function App() {
                 </nav>
 
                 {openPane === 'groups' ? (
-                  <section className="collapsible side-drawer" aria-label="Gruppi satelliti">
-                    <h3>Gruppi satelliti</h3>
-                    <label className="select-all">
-                      <input type="checkbox" checked={allSelected} onChange={toggleAllGroups} />
-                      <span>Seleziona tutti i gruppi</span>
-                    </label>
-                    <div className="group-preset-row">
-                      <label htmlFor="group-preset">Preset gruppi</label>
-                      <select
-                        id="group-preset"
-                        value={selectedPreset}
-                        onChange={(event) => {
-                          const preset = event.target.value as GroupPreset
-                          setSelectedPreset(preset)
-                          applyGroupPreset(preset)
-                        }}
-                      >
-                        <option value="custom">Personalizzato</option>
-                        <option value="stations">Solo stazioni</option>
-                        <option value="navigation">Navigazione GNSS</option>
-                        <option value="leo">LEO tracking</option>
-                        <option value="all">Tutti i gruppi</option>
-                      </select>
-                    </div>
-                    <div className="search-panel">
-                      <div className="group-preset-row">
-                        <label htmlFor="satellite-search-scope">Ambito ricerca</label>
-                        <select
-                          id="satellite-search-scope"
-                          value={searchScope}
-                          onChange={(event) =>
-                            setSearchScope(event.target.value as SatelliteSearchScope)
-                          }
-                        >
-                          <option value="enabled">Gruppi attivi</option>
-                          <option value="all">Tutti i gruppi</option>
-                          {allGroups.map((group) => (
-                            <option key={group.key} value={group.key}>
-                              {group.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <label htmlFor="satellite-search-input" className="search-label">
-                        Cerca satellite
-                      </label>
-                      <input
-                        id="satellite-search-input"
-                        className="search-input"
-                        type="text"
-                        value={searchQuery}
-                        onChange={(event) => setSearchQuery(event.target.value)}
-                        placeholder="Nome, NORAD o object id"
-                      />
-                      <div className="search-results-meta">
-                        {searchResultItems.length} risultati
-                      </div>
-                      <div className="search-results-list">
-                        {searchResultItems.map((item) => (
-                          <button
-                            key={item.entityId}
-                            type="button"
-                            className="search-result-item"
-                            onClick={() => handleSearchResultSelect(item)}
-                          >
-                            <span>{item.satelliteName}</span>
-                            <small>
-                              {item.groupLabel} | NORAD {item.noradCatId}
-                              {!item.hasLivePosition ? ' | in attesa posizione live' : ''}
-                            </small>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="group-list">
-                      {allGroups.map((group) => {
-                        const count = groupPositions[group.key]?.length ?? 0
-                        const loading = groupLoading[group.key]
-                        const error = groupErrors[group.key]
-
-                        return (
-                          <label
-                            key={group.key}
-                            className={`group-item ${loading ? 'is-loading' : ''}`}
-                            aria-busy={loading ? 'true' : 'false'}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={enabledGroups[group.key]}
-                              onChange={() => toggleGroup(group.key)}
-                            />
-                            <span
-                              className="group-color"
-                              style={{
-                                backgroundColor: group.color,
-                                boxShadow: `0 0 8px ${group.color}, 0 0 0 1px rgba(4, 10, 24, 0.85)`,
-                              }}
-                              aria-hidden="true"
-                            />
-                            <span className="group-name">{group.label}</span>
-                            <span className="group-meta">{`${count} sat`}</span>
-                            {error ? <span className="group-error">!</span> : null}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </section>
+                  <GroupsPanel
+                    allSelected={allSelected}
+                    selectedPreset={selectedPreset}
+                    searchScope={searchScope}
+                    searchQuery={searchQuery}
+                    searchResultItems={searchResultItems}
+                    searchScopeOptions={allGroups.map((group) => ({
+                      key: group.key,
+                      label: group.label,
+                    }))}
+                    groupRows={groupRows}
+                    onToggleAll={toggleAllGroups}
+                    onPresetChange={(presetValue) => {
+                      const preset = presetValue as GroupPreset
+                      setSelectedPreset(preset)
+                      applyGroupPreset(preset)
+                    }}
+                    onSearchScopeChange={(scopeValue) => {
+                      setSearchScope(scopeValue)
+                    }}
+                    onSearchQueryChange={setSearchQuery}
+                    onSearchResultSelect={(item) => {
+                      void handleSearchResultSelect(item)
+                    }}
+                    onToggleGroup={(groupKey) => {
+                      toggleGroup(groupKey)
+                    }}
+                  />
                 ) : null}
 
                 {openPane === 'satellites' ? (
-                  <section className="collapsible side-drawer" aria-label="Comandi satelliti">
-                    <h3>Satelliti</h3>
-                    <div className="toolbar toolbar-left compact-toolbar">
-                      <button type="button" onClick={() => globeRef.current?.zoomIn()}>Zoom +</button>
-                      <button type="button" onClick={() => globeRef.current?.zoomOut()}>Zoom -</button>
-                      <button type="button" onClick={() => globeRef.current?.goToInitialView()}>Home</button>
-                      <button type="button" onClick={() => globeRef.current?.alignToEarthAxis()}>Asse N-S</button>
-                      <button
-                        type="button"
-                        className={autoRotate ? 'toggle-active' : ''}
-                        onClick={() => setAutoRotate((prev) => !prev)}
-                      >
-                        {autoRotate ? 'Stop rotazione' : 'Avvia rotazione'}
-                      </button>
-                      <button
-                        type="button"
-                        className={showBackSideSatellites ? 'toggle-active' : ''}
-                        onClick={() => setShowBackSideSatellites((prev) => !prev)}
-                      >
-                        {showBackSideSatellites ? 'Nascondi lato opposto' : 'Mostra lato opposto'}
-                      </button>
-                    </div>
-
-                    <section className="sync-footer-card" aria-label="Stato sincronizzazione e camera">
-                      <p className="sync-status">
-                        <span className={`sync-dot ${hasLoadedOnce ? 'ok blink' : ''} ${isRefreshing ? 'active' : ''}`} />
-                        Sincronizzazione live attiva
-                      </p>
-                      <p className="sync-status">
-                        <strong>Visibilita:</strong>{' '}
-                        {showBackSideSatellites ? 'anche lato opposto' : 'solo lato visibile'}
-                      </p>
-                      <p className="sync-status">
-                        <strong>Refresh:</strong> ogni {(refreshIntervalMs / 1000).toFixed(1)}s
-                      </p>
-                      <div className="refresh-slider-block" aria-label="Profilo refresh live">
-                        <div className="refresh-slider-head">
-                          <span>Profilo refresh</span>
-                          <strong>{selectedRefreshTuning.label}</strong>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={2}
-                          step={1}
-                          value={refreshTuningIndex}
-                          onChange={(event) => {
-                            const parsed = Number.parseInt(event.target.value, 10)
-                            if (!Number.isFinite(parsed)) {
-                              return
-                            }
-                            setRefreshTuningIndex(Math.max(0, Math.min(2, parsed)))
-                          }}
-                        />
-                        <div className="refresh-slider-scale" aria-hidden="true">
-                          <span>Aggressivo</span>
-                          <span>Bilanciato</span>
-                          <span>Stabile</span>
-                        </div>
-                      </div>
-                      <div className="compass-row"><span>Heading</span><strong>{compass.headingDeg.toFixed(1)}deg</strong></div>
-                      <div className="compass-row"><span>Pitch</span><strong>{compass.pitchDeg.toFixed(1)}deg</strong></div>
-                      <div className="compass-row"><span>Quota camera</span><strong>{compass.altitudeKm.toFixed(0)} km</strong></div>
-                    </section>
-                  </section>
+                  <SatellitesPanel
+                    autoRotate={autoRotate}
+                    showBackSideSatellites={showBackSideSatellites}
+                    hasLoadedOnce={hasLoadedOnce}
+                    isRefreshing={isRefreshing}
+                    refreshIntervalMs={refreshIntervalMs}
+                    refreshProfileLabel={selectedRefreshTuning.label}
+                    refreshTuningIndex={refreshTuningIndex}
+                    compass={compass}
+                    onZoomIn={() => globeRef.current?.zoomIn()}
+                    onZoomOut={() => globeRef.current?.zoomOut()}
+                    onGoHome={() => globeRef.current?.goToInitialView()}
+                    onAlignAxis={() => globeRef.current?.alignToEarthAxis()}
+                    onToggleAutoRotate={() => setAutoRotate((prev) => !prev)}
+                    onToggleBackSideSatellites={() => setShowBackSideSatellites((prev) => !prev)}
+                    onRefreshTuningIndexChange={setRefreshTuningIndex}
+                  />
                 ) : null}
 
                 {openPane === 'visibility' ? (
-                  <section className="collapsible side-drawer" aria-label="Calcolo visibilita satelliti">
-                    <h3>Visibilita prossime ore</h3>
-                    <div className="visibility-grid">
-                      <label>
-                        Ore
-                        <input
-                          type="number"
-                          min={1}
-                          max={24}
-                          value={visibilityHours}
-                          onChange={(event) =>
-                            setVisibilityHours(
-                              Math.max(1, Math.min(24, Number(event.target.value) || 12)),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        Elev. min (deg)
-                        <input
-                          type="number"
-                          min={0}
-                          max={90}
-                          value={visibilityMinElevation}
-                          onChange={(event) =>
-                            setVisibilityMinElevation(
-                              Math.max(0, Math.min(90, Number(event.target.value) || 10)),
-                            )
-                          }
-                        />
-                      </label>
-                    </div>
-
-                    <div className="visibility-actions">
-                      <button
-                        type="button"
-                        className="sighting-pin-button"
-                        onClick={handleUseBrowserLocationForVisibility}
-                        disabled={visibilityLocatingBrowser}
-                        title="Usa posizione browser"
-                        aria-label="Usa posizione browser"
-                      >
-                        {visibilityLocatingBrowser ? (
-                          '...'
-                        ) : (
-                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                            <path d="M12 2C8.14 2 5 5.14 5 9c0 5.08 6.13 12.31 6.39 12.62a.8.8 0 0 0 1.22 0C12.87 21.31 19 14.08 19 9c0-3.86-3.14-7-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
-                          </svg>
-                        )}
-                      </button>
-                      <button type="button" onClick={() => { void handleCalculateVisibility() }}>
-                        {visibilityLoading ? 'Calcolo...' : 'Calcola visibilita'}
-                      </button>
-                    </div>
-
-                    {visibilityLatitude !== null && visibilityLongitude !== null ? (
-                      <small className="visibility-note">
-                        Posizione browser: {visibilityLatitude.toFixed(4)}, {visibilityLongitude.toFixed(4)}
-                      </small>
-                    ) : (
-                      <small className="visibility-note">
-                        Posizione default backend (San Marcellino) se non usi il pin.
-                      </small>
-                    )}
-
-                    {visibilityInfo ? <p className="sighting-info">{visibilityInfo}</p> : null}
-                    {visibilityError ? <p className="sighting-error">{visibilityError}</p> : null}
-
-                    {visibilityResults.length > 0 ? (
-                      <div className="visibility-list">
-                        {visibilityResults.map((pass) => (
-                          <article
-                            key={`${pass.satelliteId}-${pass.riseTime}-${pass.setTime}`}
-                            className="visibility-item"
-                          >
-                            <strong>{pass.satelliteName}</strong>
-                            <small>{new Date(pass.riseTime).toLocaleString('it-IT')} {'->'} {new Date(pass.setTime).toLocaleTimeString('it-IT')}</small>
-                            <small>
-                              Elev. max {pass.maxElevation.toFixed(1)}deg | Mag {pass.estimatedMagnitude.toFixed(1)}
-                            </small>
-                            <small>
-                              Condizione: {pass.observingCondition} | Visibilita: {pass.visibility}
-                            </small>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleFocusFromVisibility(pass)
-                              }}
-                            >
-                              Focus satellite
-                            </button>
-                          </article>
-                        ))}
-                      </div>
-                    ) : null}
-                  </section>
+                  <VisibilityPanel
+                    visibilityHours={visibilityHours}
+                    visibilityMinElevation={visibilityMinElevation}
+                    visibilityLocatingBrowser={visibilityLocatingBrowser}
+                    visibilityLoading={visibilityLoading}
+                    visibilityLatitude={visibilityLatitude}
+                    visibilityLongitude={visibilityLongitude}
+                    visibilityInfo={visibilityInfo}
+                    visibilityError={visibilityError}
+                    visibilityResults={visibilityResults}
+                    onVisibilityHoursChange={setVisibilityHours}
+                    onVisibilityMinElevationChange={setVisibilityMinElevation}
+                    onUseBrowserLocation={handleUseBrowserLocationForVisibility}
+                    onCalculateVisibility={() => {
+                      void handleCalculateVisibility()
+                    }}
+                    onFocusFromVisibility={handleFocusFromVisibility}
+                  />
                 ) : null}
 
                 {openPane === 'sightings' ? (
-                  <section className="collapsible side-drawer" aria-label="Avvistamenti utente">
-                    <h3>Avvistamenti</h3>
-                    <p className="updated-at">Storico personale validato dal backend.</p>
-
-                    {sightingInfo ? <p className="sighting-info">{sightingInfo}</p> : null}
-                    {sightingsError ? <p className="sighting-error">{sightingsError}</p> : null}
-
-                    {sightingsLoading ? (
-                      <p className="updated-at">Caricamento avvistamenti...</p>
-                    ) : mySightings.length === 0 ? (
-                      <p className="updated-at">Nessun avvistamento registrato.</p>
-                    ) : (
-                      <div className="sighting-list">
-                        {mySightings.map((item) => (
-                          <article key={item.id} className="sighting-item">
-                            <strong>{item.satelliteName}</strong>
-                            <small>NORAD {item.noradCatId}</small>
-                            <small>{new Date(item.sightedAt).toLocaleString('it-IT')}</small>
-                            <small>{item.observerLocationName}</small>
-                            <small className={item.valid ? 'sighting-valid' : 'sighting-invalid'}>
-                              {item.valid ? 'Valido' : 'Non valido'}
-                            </small>
-                            {item.estimatedMagnitude !== null ? (
-                              <small>Magnitudine stimata: {item.estimatedMagnitude.toFixed(1)}</small>
-                            ) : null}
-                            {item.maxElevationDeg !== null ? (
-                              <small>Elevazione max: {item.maxElevationDeg.toFixed(1)}deg</small>
-                            ) : null}
-                            <small>{item.validationMessage}</small>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </section>
+                  <SightingsPanel
+                    sightingInfo={sightingInfo}
+                    sightingsError={sightingsError}
+                    sightingsLoading={sightingsLoading}
+                    mySightings={mySightings}
+                  />
                 ) : null}
               </div>
             </section>

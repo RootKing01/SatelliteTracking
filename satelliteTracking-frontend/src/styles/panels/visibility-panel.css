@@ -1,0 +1,70 @@
+.visibility-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.visibility-grid label {
+  display: grid;
+  gap: 4px;
+  color: #a6c8e8;
+  font-size: 0.78rem;
+}
+
+.visibility-grid input {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.36);
+  background: rgba(9, 24, 45, 0.85);
+  color: #e2f7ff;
+  padding: 6px 7px;
+  font-size: 0.8rem;
+}
+
+.visibility-actions {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+
+.visibility-note {
+  margin-top: 8px;
+  display: block;
+  color: #8fc4e8;
+  font-size: 0.74rem;
+}
+
+.visibility-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  max-height: 48vh;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.visibility-list::-webkit-scrollbar {
+  display: none;
+}
+
+.visibility-item {
+  border: 1px solid rgba(96, 250, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(10, 27, 51, 0.7);
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.visibility-item strong {
+  color: #d9f4ff;
+}
+
+.visibility-item small {
+  color: #8fc4e8;
+  font-size: 0.74rem;
+}
+
+.visibility-item button {
+  margin-top: 3px;
+}

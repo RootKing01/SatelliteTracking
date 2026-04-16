@@ -1,0 +1,122 @@
+.toolbar-left {
+  display: grid;
+  gap: 6px;
+}
+
+.compact-toolbar {
+  margin-top: 8px;
+}
+
+.sync-status {
+  margin-top: 8px;
+  font-size: 0.77rem;
+  color: #b4d4f2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sync-status strong {
+  color: #edf7ff;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(139, 185, 224, 0.6);
+  box-shadow: 0 0 0 0 rgba(139, 185, 224, 0.3);
+  transition: background-color 220ms ease, box-shadow 220ms ease;
+}
+
+.sync-dot.ok {
+  background: #50fa9e;
+  box-shadow: 0 0 0 6px rgba(80, 250, 158, 0.12);
+}
+
+.sync-dot.active {
+  background: #5ff7ff;
+}
+
+.sync-dot.blink {
+  animation: pulse-dot 1.1s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+.sync-footer-card {
+  margin-top: 10px;
+  border: 1px solid rgba(89, 240, 255, 0.3);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(9, 23, 45, 0.72), rgba(6, 14, 30, 0.72));
+  padding: 8px;
+  box-shadow: inset 0 0 18px rgba(41, 130, 255, 0.1);
+}
+
+.sync-footer-card .sync-status:first-child {
+  margin-top: 0;
+}
+
+.sync-footer-card .compass-row:first-of-type {
+  margin-top: 8px;
+}
+
+.refresh-slider-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(116, 236, 255, 0.2);
+  display: grid;
+  gap: 6px;
+}
+
+.refresh-slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #c7ddf4;
+}
+
+.refresh-slider-head strong {
+  color: #eef9ff;
+}
+
+.refresh-slider-block input[type='range'] {
+  width: 100%;
+  accent-color: #66e9ff;
+}
+
+.refresh-slider-scale {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  font-size: 0.68rem;
+  color: #8cb1d5;
+}
+
+.refresh-slider-scale span:nth-child(2) {
+  text-align: center;
+}
+
+.refresh-slider-scale span:last-child {
+  text-align: right;
+}
+
+.compass-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #c0d8ef;
+}
+
+.compass-row + .compass-row {
+  margin-top: 4px;
+}
+
+.compass-row strong {
+  color: #f2f8ff;
+}
