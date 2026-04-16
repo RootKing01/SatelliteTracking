@@ -757,6 +757,11 @@ public class SatellitePassService {
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
+                if (entry.passes.isEmpty()) {
+                    log.debug("Cache hit: returning cached empty result");
+                    return Collections.emptyList();
+                }
+
                 LocalDateTime now = passTimeService.nowForObserver(observerLocation);
                 List<SatellitePassDTO> filtered = new ArrayList<>();
                 for (SatellitePassDTO pass : entry.passes) {
@@ -844,10 +849,8 @@ public class SatellitePassService {
             // Ordina per tempo di rise
             allPasses.sort((p1, p2) -> p1.riseTime().compareTo(p2.riseTime()));
             
-            // Salva in cache solo se ci sono risultati
-            if (!allPasses.isEmpty()) {
-                passesCache.put(cacheKey, new CacheEntry(allPasses));
-            }
+            // Salva in cache anche i risultati vuoti per evitare ricalcoli continui
+            passesCache.put(cacheKey, new CacheEntry(new ArrayList<>(allPasses)));
 
             log.info("Found {} passes after filters (minElevation={}, condition={}, maxMagnitude={}). Rejected: notVisible={}, elevation={}, condition={}, magnitude={}",
                 allPasses.size(), minElevation, observingCondition, maxMagnitude,

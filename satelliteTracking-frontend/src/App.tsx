@@ -48,7 +48,15 @@ const defaultEnabledGroups = Object.fromEntries(
   satelliteGroupSources.map((group) => [group.key, group.key === 'stations']),
 ) as Record<SatelliteGroupKey, boolean>
 
-const fixedRefreshIntervalSec = 0.8
+const defaultRefreshIntervalSec = 0.8
+const mediumRefreshIntervalSec = 1.4
+const heavyRefreshIntervalSec = 2.1
+const veryHeavyRefreshIntervalSec = 3
+const refreshTuningProfiles = [
+  { label: 'Aggressivo', multiplier: 0.72 },
+  { label: 'Bilanciato', multiplier: 1 },
+  { label: 'Stabile', multiplier: 1.28 },
+] as const
 
 type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 type AuthMode = 'login' | 'register'
@@ -85,8 +93,10 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [showBackSideSatellites, setShowBackSideSatellites] = useState(false)
+  const [refreshTuningIndex, setRefreshTuningIndex] = useState(1)
   const latestRequestIdRef = useRef(0)
   const inFlightRequestRef = useRef(false)
+  const latestGroupPositionsRef = useRef<GroupPositionsState>({})
   const [compass, setCompass] = useState<CompassState>({
     headingDeg: 0,
     pitchDeg: 0,
@@ -112,8 +122,8 @@ function App() {
   const [sightingLongitude, setSightingLongitude] = useState<number | null>(null)
   const [sightingAltitude, setSightingAltitude] = useState<number | null>(null)
   const [locatingBrowser, setLocatingBrowser] = useState(false)
-  const [visibilityHours, setVisibilityHours] = useState(6)
-  const [visibilityMinElevation, setVisibilityMinElevation] = useState(30)
+  const [visibilityHours, setVisibilityHours] = useState(12)
+  const [visibilityMinElevation, setVisibilityMinElevation] = useState(10)
   const [visibilityLoading, setVisibilityLoading] = useState(false)
   const [visibilityError, setVisibilityError] = useState('')
   const [visibilityInfo, setVisibilityInfo] = useState('')
@@ -122,8 +132,6 @@ function App() {
   const [visibilityLongitude, setVisibilityLongitude] = useState<number | null>(null)
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
-
-  const refreshIntervalMs = Math.round(fixedRefreshIntervalSec * 1000)
 
   const groupColorMap = useMemo(
     () =>
@@ -151,6 +159,29 @@ function App() {
       ),
     [activeGroups, groupPositions],
   )
+
+  const selectedRefreshTuning =
+    refreshTuningProfiles[refreshTuningIndex] ?? refreshTuningProfiles[1]
+
+  const refreshIntervalMs = useMemo(() => {
+    let baseIntervalSec = defaultRefreshIntervalSec
+
+    if (totalVisibleCount >= 2500) {
+      baseIntervalSec = veryHeavyRefreshIntervalSec
+    } else if (totalVisibleCount >= 1200) {
+      baseIntervalSec = heavyRefreshIntervalSec
+    } else if (totalVisibleCount >= 500) {
+      baseIntervalSec = mediumRefreshIntervalSec
+    } else if (activeGroups.length >= 8) {
+      baseIntervalSec = heavyRefreshIntervalSec
+    } else if (activeGroups.length >= 4) {
+      baseIntervalSec = mediumRefreshIntervalSec
+    }
+
+    const tunedIntervalSec = baseIntervalSec * selectedRefreshTuning.multiplier
+    const clampedIntervalSec = Math.max(0.55, Math.min(4.2, tunedIntervalSec))
+    return Math.round(clampedIntervalSec * 1000)
+  }, [activeGroups.length, selectedRefreshTuning.multiplier, totalVisibleCount])
 
   const visibleEntitySatellites = useMemo<VisibleSatelliteItem[]>(
     () =>
@@ -195,6 +226,10 @@ function App() {
     }
     return map
   }, [allGroups, groupPositions])
+
+  useEffect(() => {
+    latestGroupPositionsRef.current = groupPositions
+  }, [groupPositions])
 
   const searchResultItems = useMemo(() => {
     const groupsToSearch =
@@ -648,12 +683,11 @@ function App() {
         hours: visibilityHours,
         minElevation: visibilityMinElevation,
         observingCondition: 'any',
-        maxMagnitude: 6.0,
+        maxMagnitude: 8.0,
         latitude: visibilityLatitude ?? undefined,
         longitude: visibilityLongitude ?? undefined,
         altitude: visibilityAltitude ?? undefined,
       })
-
       setVisibilityResults(results.slice(0, 30))
       setVisibilityInfo(
         results.length === 0
@@ -763,7 +797,7 @@ function App() {
           return
         }
 
-        nextPositions[group.key] = []
+        nextPositions[group.key] = latestGroupPositionsRef.current[group.key] ?? []
         const reason = result.reason
         if (isAxiosError(reason) && reason.response?.status === 401) {
           unauthorizedDetected = true
@@ -1224,6 +1258,31 @@ function App() {
                       <p className="sync-status">
                         <strong>Refresh:</strong> ogni {(refreshIntervalMs / 1000).toFixed(1)}s
                       </p>
+                      <div className="refresh-slider-block" aria-label="Profilo refresh live">
+                        <div className="refresh-slider-head">
+                          <span>Profilo refresh</span>
+                          <strong>{selectedRefreshTuning.label}</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={2}
+                          step={1}
+                          value={refreshTuningIndex}
+                          onChange={(event) => {
+                            const parsed = Number.parseInt(event.target.value, 10)
+                            if (!Number.isFinite(parsed)) {
+                              return
+                            }
+                            setRefreshTuningIndex(Math.max(0, Math.min(2, parsed)))
+                          }}
+                        />
+                        <div className="refresh-slider-scale" aria-hidden="true">
+                          <span>Aggressivo</span>
+                          <span>Bilanciato</span>
+                          <span>Stabile</span>
+                        </div>
+                      </div>
                       <div className="compass-row"><span>Heading</span><strong>{compass.headingDeg.toFixed(1)}deg</strong></div>
                       <div className="compass-row"><span>Pitch</span><strong>{compass.pitchDeg.toFixed(1)}deg</strong></div>
                       <div className="compass-row"><span>Quota camera</span><strong>{compass.altitudeKm.toFixed(0)} km</strong></div>
@@ -1244,7 +1303,7 @@ function App() {
                           value={visibilityHours}
                           onChange={(event) =>
                             setVisibilityHours(
-                              Math.max(1, Math.min(24, Number(event.target.value) || 6)),
+                              Math.max(1, Math.min(24, Number(event.target.value) || 12)),
                             )
                           }
                         />
@@ -1258,7 +1317,7 @@ function App() {
                           value={visibilityMinElevation}
                           onChange={(event) =>
                             setVisibilityMinElevation(
-                              Math.max(0, Math.min(90, Number(event.target.value) || 30)),
+                              Math.max(0, Math.min(90, Number(event.target.value) || 10)),
                             )
                           }
                         />
