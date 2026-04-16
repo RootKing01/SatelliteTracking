@@ -14,9 +14,10 @@ import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
 import { AuthPanel } from './components/auth/AuthPanel'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
-import { GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
+import { CompassPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
+import './styles/mobile-smartphone.css'
 
 const ionToken =
   import.meta.env.VITE_CESIUM_TOKEN ?? import.meta.env.VITE_CESIUM_ION_TOKEN
@@ -78,6 +79,30 @@ function extractAuthErrorMessage(error: unknown, fallbackMessage: string) {
     }
   }
   return fallbackMessage
+}
+
+function extractGeolocationErrorMessage(error: GeolocationPositionError | null | undefined) {
+  if (!window.isSecureContext) {
+    return 'Geolocalizzazione bloccata: apri il sito in HTTPS (su smartphone HTTP non e consentito).'
+  }
+
+  if (!error) {
+    return 'Impossibile acquisire la posizione browser.'
+  }
+
+  if (error.code === error.PERMISSION_DENIED) {
+    return 'Permesso geolocalizzazione negato. Abilitalo nelle impostazioni del browser.'
+  }
+
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return 'Posizione non disponibile. Verifica GPS/rete e riprova.'
+  }
+
+  if (error.code === error.TIMEOUT) {
+    return 'Timeout geolocalizzazione. Riprova con segnale GPS migliore.'
+  }
+
+  return error.message || 'Impossibile acquisire la posizione browser.'
 }
 
 function App() {
@@ -661,8 +686,19 @@ function App() {
   }
 
   const handleUseBrowserLocation = () => {
-    if (!navigator.geolocation || locatingBrowser) {
+    if (locatingBrowser) {
+      return
+    }
+
+    if (!navigator.geolocation) {
       setSightingsError('Geolocalizzazione non disponibile nel browser.')
+      return
+    }
+
+    if (!window.isSecureContext) {
+      setSightingsError(
+        'Geolocalizzazione bloccata: usa HTTPS o localhost (su smartphone HTTP non funziona).',
+      )
       return
     }
 
@@ -677,8 +713,8 @@ function App() {
         setSightingInfo('Posizione browser acquisita.')
         setLocatingBrowser(false)
       },
-      () => {
-        setSightingsError('Impossibile acquisire la posizione browser.')
+      (error) => {
+        setSightingsError(extractGeolocationErrorMessage(error))
         setLocatingBrowser(false)
       },
       {
@@ -690,8 +726,19 @@ function App() {
   }
 
   const handleUseBrowserLocationForVisibility = () => {
-    if (!navigator.geolocation || visibilityLocatingBrowser) {
+    if (visibilityLocatingBrowser) {
+      return
+    }
+
+    if (!navigator.geolocation) {
       setVisibilityError('Geolocalizzazione non disponibile nel browser.')
+      return
+    }
+
+    if (!window.isSecureContext) {
+      setVisibilityError(
+        'Geolocalizzazione bloccata: usa HTTPS o localhost (su smartphone HTTP non funziona).',
+      )
       return
     }
 
@@ -706,8 +753,8 @@ function App() {
         setVisibilityInfo('Posizione browser attiva per il calcolo visibilita.')
         setVisibilityLocatingBrowser(false)
       },
-      () => {
-        setVisibilityError('Impossibile acquisire la posizione browser.')
+      (error) => {
+        setVisibilityError(extractGeolocationErrorMessage(error))
         setVisibilityLocatingBrowser(false)
       },
       {
@@ -1243,6 +1290,8 @@ function App() {
       ) : null}
 
       <section className="viewer-section">
+        <CompassPanel headingDeg={compass.headingDeg} hideOnMobile={!selectedSatellite} />
+
         <button
           type="button"
           className="focus-toggle"
@@ -1250,8 +1299,8 @@ function App() {
         >
           {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
         </button>
-        <aside className="viewer-hud">
-          {selectedSatellite ? (
+        {selectedSatellite ? (
+          <aside className="viewer-hud">
             <section className="details-card hud-details">
               <h3>Dettagli satellite</h3>
               <div className="details-head">
@@ -1345,8 +1394,8 @@ function App() {
                 </button>
               </div>
             </section>
-          ) : null}
-        </aside>
+          </aside>
+        ) : null}
 
         <SatelliteGlobe
           ref={globeRef}

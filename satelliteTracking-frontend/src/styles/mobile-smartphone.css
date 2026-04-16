@@ -1,0 +1,799 @@
+/* Smartphone-only overrides: keep desktop/tablet untouched. */
+@media (max-width: 760px), (max-width: 900px) and (pointer: coarse) and (orientation: portrait) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, 46vh) 1fr;
+    min-height: 100dvh;
+  }
+
+  .panel-section {
+    height: auto;
+    min-height: 320px;
+    overflow: hidden;
+  }
+
+  .panel {
+    padding: 10px 8px;
+  }
+
+  .panel,
+  .collapsible,
+  .details-card,
+  .search-panel,
+  .sync-footer-card,
+  .visibility-item,
+  .sighting-item,
+  .group-item {
+    border-radius: 8px;
+  }
+
+  .panel h1 {
+    font-size: 1.02rem;
+  }
+
+  .panel p {
+    font-size: 0.82rem;
+  }
+
+  .panel-layout,
+  .panel-left,
+  .sidebar-split {
+    min-height: 0;
+  }
+
+  .sidebar-split {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .sidebar-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .sidebar-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-tabs button {
+    writing-mode: horizontal-tb;
+    transform: none;
+    min-height: auto;
+    min-width: max-content;
+    padding: 6px 9px;
+    font-size: 0.68rem;
+  }
+
+  .side-drawer {
+    padding-right: 2px;
+    max-height: 34vh;
+  }
+
+  .collapsible,
+  .details-card,
+  .search-panel,
+  .sync-footer-card {
+    padding: 7px;
+  }
+
+  .panel-logout,
+  .toolbar button,
+  .sighting-actions button,
+  .details-head button,
+  .visibility-overlay-header button,
+  .visibility-full-list-actions button,
+  .auth-submit,
+  .auth-tabs button,
+  .search-result-item,
+  .group-preset-row select,
+  .refresh-controls select,
+  .refresh-controls input,
+  .visibility-grid input,
+  .visibility-city-row input,
+  .sighting-city-input,
+  .auth-form input {
+    font-size: 16px;
+    min-height: 36px;
+  }
+
+  .panel-logout,
+  .toolbar button,
+  .sighting-actions button,
+  .details-head button,
+  .visibility-overlay-header button,
+  .visibility-full-list-actions button,
+  .auth-submit,
+  .auth-tabs button {
+    padding: 7px 9px;
+  }
+
+  .panel-badge {
+    font-size: 0.66rem;
+    padding: 3px 8px;
+    letter-spacing: 0.08em;
+  }
+
+  .tab-icon {
+    width: 7px;
+    height: 7px;
+  }
+
+  .search-label,
+  .group-preset-row label,
+  .refresh-controls label,
+  .visibility-grid label,
+  .visibility-city-row,
+  .auth-form label {
+    font-size: 0.74rem;
+  }
+
+  .search-input,
+  .search-result-item,
+  .group-name,
+  .group-meta,
+  .sighting-item small,
+  .visibility-item small,
+  .sync-status,
+  .refresh-slider-head,
+  .refresh-guard-note,
+  .visibility-note,
+  .auth-info,
+  .auth-error,
+  .auth-hint {
+    font-size: 0.73rem;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .refresh-controls {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .group-preset-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .group-preset-row select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .group-item {
+    grid-template-columns: 18px 8px 1fr auto;
+    gap: 6px;
+    padding: 6px 7px;
+  }
+
+  .group-color {
+    width: 7px;
+    height: 7px;
+  }
+
+  .group-meta {
+    display: none;
+  }
+
+  .search-results-list,
+  .group-list,
+  .visibility-list,
+  .sighting-list {
+    max-height: 20vh;
+  }
+
+  .search-result-item {
+    gap: 1px;
+  }
+
+  .visibility-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .visibility-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .sighting-location-row {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-section {
+    height: auto;
+    min-height: 56vh;
+  }
+
+  .viewer-section .cesium-viewer-fullscreenContainer {
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  .viewer-section .cesium-viewer-toolbar {
+    top: 8px;
+    right: 8px;
+  }
+
+  .focus-toggle {
+    top: 8px;
+    left: 8px;
+    padding: 6px 9px;
+    font-size: 0.72rem;
+  }
+
+  .viewer-hud {
+    top: 56px;
+    right: 6px;
+    width: min(88vw, 340px);
+    gap: 6px;
+    max-height: calc(100% - 170px);
+    overflow: hidden;
+  }
+
+  .hud-details {
+    max-height: calc(100% - 8px);
+  }
+
+  .details-card {
+    margin-top: 8px;
+    padding: 8px;
+  }
+
+  .details-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .details-head-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .details-head button {
+    width: 100%;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .details-grid span:nth-child(odd) {
+    color: #8db4d7;
+    font-weight: 700;
+    margin-top: 5px;
+  }
+
+  .visibility-overlay-card {
+    inset: 1vh 1vw;
+    padding: 7px;
+    border-radius: 10px;
+  }
+
+  .visibility-overlay-meta {
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .visibility-overlay-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .visibility-overlay-header h2 {
+    font-size: 0.9rem;
+  }
+
+  .visibility-overlay-header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .visibility-overlay-header-actions button {
+    width: 100%;
+  }
+
+  .visibility-overlay-filter-row {
+    font-size: 0.73rem;
+    gap: 4px;
+  }
+
+  .visibility-overlay-filter-row input {
+    font-size: 16px;
+  }
+
+  .visibility-overlay-table {
+    font-size: 0.69rem;
+  }
+
+  .visibility-overlay-table th,
+  .visibility-overlay-table td {
+    padding: 6px;
+    white-space: nowrap;
+  }
+
+  .viewer-compass {
+    left: 8px;
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    width: 112px;
+    padding: 5px 5px 4px;
+  }
+
+  .viewer-compass svg {
+    width: 94px;
+    height: 94px;
+  }
+
+  .viewer-compass-readout {
+    font-size: 0.7rem;
+  }
+
+  .viewer-compass-mobile-hidden {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+
+  .auth-shell {
+    padding: 10px;
+  }
+
+  .auth-card {
+    width: min(420px, 96vw);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .auth-card h1 {
+    font-size: 1.02rem;
+  }
+
+  .auth-tabs {
+    gap: 6px;
+  }
+
+  .auth-form {
+    gap: 7px;
+  }
+}
+
+@media (max-width: 390px) {
+  .app-shell {
+    grid-template-rows: minmax(290px, 44vh) 1fr;
+  }
+
+  .panel {
+    padding: 8px 6px;
+  }
+
+  .panel h1 {
+    font-size: 0.96rem;
+  }
+
+  .panel p,
+  .search-input,
+  .search-result-item,
+  .group-name,
+  .sync-status,
+  .refresh-slider-head,
+  .visibility-item small,
+  .sighting-item small,
+  .auth-info,
+  .auth-hint {
+    font-size: 0.69rem;
+  }
+
+  .panel-badge {
+    font-size: 0.61rem;
+    padding: 2px 7px;
+  }
+
+  .sidebar-tabs button {
+    font-size: 0.63rem;
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .side-drawer {
+    max-height: 32vh;
+  }
+
+  .toolbar {
+    gap: 6px;
+  }
+
+  .toolbar button,
+  .sighting-actions button,
+  .details-head button,
+  .auth-submit,
+  .auth-tabs button,
+  .visibility-overlay-header button,
+  .visibility-full-list-actions button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+
+  .group-list,
+  .search-results-list,
+  .visibility-list,
+  .sighting-list {
+    max-height: 18vh;
+  }
+
+  .group-item,
+  .search-result-item,
+  .visibility-item,
+  .sighting-item,
+  .collapsible,
+  .details-card,
+  .search-panel,
+  .sync-footer-card {
+    padding: 6px;
+    border-radius: 7px;
+  }
+
+  .viewer-hud {
+    top: 52px;
+    right: 4px;
+    width: min(90vw, 320px);
+  }
+
+  .hud-details {
+    max-height: 29vh;
+  }
+
+  .focus-toggle {
+    padding: 5px 8px;
+    font-size: 0.68rem;
+  }
+
+  .details-grid {
+    gap: 2px;
+    font-size: 0.74rem;
+  }
+
+  .visibility-overlay-card {
+    inset: 0.5vh 0.5vw;
+    padding: 6px;
+  }
+
+  .visibility-overlay-header h2 {
+    font-size: 0.84rem;
+  }
+
+  .visibility-overlay-meta,
+  .visibility-overlay-filter-row {
+    font-size: 0.68rem;
+  }
+
+  .visibility-overlay-table {
+    font-size: 0.64rem;
+  }
+
+  .visibility-overlay-table th,
+  .visibility-overlay-table td {
+    padding: 5px;
+  }
+
+  .viewer-compass {
+    width: 96px;
+    left: 6px;
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    padding: 4px 4px 3px;
+  }
+
+  .viewer-compass svg {
+    width: 80px;
+    height: 80px;
+  }
+
+  .viewer-compass-readout {
+    font-size: 0.64rem;
+  }
+
+  .viewer-compass-mobile-hidden {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+
+  .auth-shell {
+    padding: 8px;
+  }
+
+  .auth-card {
+    width: 97vw;
+    padding: 10px;
+    border-radius: 9px;
+  }
+
+  .auth-card h1 {
+    font-size: 0.94rem;
+  }
+
+  .auth-tabs {
+    gap: 5px;
+  }
+
+  .auth-form {
+    gap: 6px;
+  }
+
+  .auth-form input,
+  .visibility-grid input,
+  .visibility-city-row input,
+  .sighting-city-input,
+  .group-preset-row select,
+  .refresh-controls input,
+  .refresh-controls select,
+  .visibility-overlay-filter-row input {
+    min-height: 34px;
+    font-size: 14px;
+    padding: 5px 7px;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .app-shell {
+    grid-template-columns: minmax(280px, 38vw) 1fr;
+    grid-template-rows: 1fr;
+    min-height: 100dvh;
+  }
+
+  .panel-section {
+    height: 100dvh;
+    overflow: hidden;
+    border-right: 1px solid rgba(216, 237, 255, 0.12);
+    border-bottom: none;
+  }
+
+  .panel {
+    padding: 8px 7px;
+  }
+
+  .panel h1 {
+    font-size: 0.95rem;
+  }
+
+  .panel p,
+  .search-input,
+  .group-name,
+  .sync-status,
+  .refresh-slider-head,
+  .visibility-item small,
+  .sighting-item small {
+    font-size: 0.69rem;
+  }
+
+  .panel-badge {
+    font-size: 0.62rem;
+    padding: 2px 7px;
+  }
+
+  .sidebar-split {
+    margin-top: 4px;
+    grid-template-columns: 38px 1fr;
+    gap: 6px;
+  }
+
+  .sidebar-tabs {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sidebar-tabs button {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    min-height: 84px;
+    padding: 7px 4px;
+    font-size: 0.62rem;
+  }
+
+  .side-drawer {
+    max-height: calc(100dvh - 120px);
+    padding-right: 1px;
+  }
+
+  .toolbar,
+  .refresh-controls,
+  .group-preset-row,
+  .visibility-grid,
+  .visibility-actions,
+  .sighting-location-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .toolbar button,
+  .sighting-actions button,
+  .details-head button,
+  .visibility-overlay-header button,
+  .visibility-full-list-actions button,
+  .auth-submit,
+  .auth-tabs button,
+  .group-preset-row select,
+  .refresh-controls input,
+  .refresh-controls select,
+  .visibility-grid input,
+  .visibility-city-row input,
+  .sighting-city-input,
+  .auth-form input,
+  .visibility-overlay-filter-row input {
+    min-height: 32px;
+    font-size: 14px;
+  }
+
+  .viewer-section {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .viewer-section .cesium-viewer-fullscreenContainer {
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  }
+
+  .viewer-section .cesium-viewer-toolbar {
+    top: 6px;
+    right: 6px;
+  }
+
+  .viewer-hud {
+    top: 48px;
+    right: 4px;
+    width: min(42vw, 280px);
+    gap: 5px;
+    max-height: calc(100% - 120px);
+    overflow: hidden;
+  }
+
+  .hud-details {
+    max-height: calc(100% - 6px);
+  }
+
+  .focus-toggle {
+    top: 6px;
+    left: 6px;
+    padding: 5px 7px;
+    font-size: 0.66rem;
+  }
+
+  .details-card,
+  .collapsible,
+  .search-panel,
+  .sync-footer-card,
+  .visibility-item,
+  .sighting-item,
+  .group-item,
+  .search-result-item {
+    padding: 6px;
+    border-radius: 7px;
+  }
+
+  .details-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .details-head-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    font-size: 0.72rem;
+  }
+
+  .search-results-list,
+  .group-list,
+  .visibility-list,
+  .sighting-list {
+    max-height: 24vh;
+  }
+
+  .group-meta {
+    display: none;
+  }
+
+  .visibility-overlay-card {
+    inset: 1vh 1vw;
+    padding: 6px;
+    border-radius: 9px;
+  }
+
+  .visibility-overlay-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .visibility-overlay-header h2 {
+    font-size: 0.86rem;
+  }
+
+  .visibility-overlay-header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+
+  .visibility-overlay-meta,
+  .visibility-overlay-filter-row {
+    font-size: 0.69rem;
+  }
+
+  .visibility-overlay-table {
+    font-size: 0.65rem;
+  }
+
+  .visibility-overlay-table th,
+  .visibility-overlay-table td {
+    padding: 5px;
+    white-space: nowrap;
+  }
+
+  .viewer-compass {
+    width: 94px;
+    left: 6px;
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    padding: 4px 4px 3px;
+  }
+
+  .viewer-compass svg {
+    width: 78px;
+    height: 78px;
+  }
+
+  .viewer-compass-readout {
+    font-size: 0.62rem;
+  }
+
+  .viewer-compass-mobile-hidden {
+    opacity: 0;
+    transform: translateY(6px) scale(0.9);
+  }
+
+  .auth-shell {
+    padding: 8px;
+  }
+
+  .auth-card {
+    width: min(560px, 96vw);
+    padding: 10px;
+    border-radius: 9px;
+  }
+
+  .auth-card h1 {
+    font-size: 0.95rem;
+  }
+
+  .auth-tabs {
+    gap: 5px;
+  }
+
+  .auth-form {
+    gap: 6px;
+  }
+}
