@@ -288,14 +288,23 @@ Controllers are split by use case:
 
 ## 🧪 Testing
 
+Guida completa e aggiornata:
+
+- `TESTING.md`
+
+Quick commands:
+
 ```bash
-./mvnw test
+./run-tests.sh all
+./run-tests.sh unit
+./run-tests.sh e2e:dev-local
 ```
 
 Includes:
 
-* Unit tests (services)
-* Controller tests (Mockito)
+* Backend unit tests
+* Frontend unit tests
+* E2E tests
 
 ---
 
