@@ -1,18 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from 'react'
-
-type ImportedTrack = {
-  id: string
-  name: string
-  fileName: string
-  relativePath: string
-  url: string
-}
-
-type ImportedPlaylist = {
-  id: string
-  label: string
-  tracks: ImportedTrack[]
-}
+import {
+  buildPlaylistsFromFiles,
+  persistMusicStateToLocalStorage,
+  persistPlaylistsToLocalStorage,
+  restoreMusicStateFromLocalStorage,
+  restorePlaylistsFromLocalStorage,
+  revokePlaylistUrls,
+  type ImportedPlaylist,
+  type ImportedTrack,
+} from '../../helpers/musicPlayerHelpers'
 
 type MusicPlayerContextValue = {
   playlists: ImportedPlaylist[]
@@ -40,14 +36,6 @@ type MusicPlayerContextValue = {
 
 const MusicPlayerContext = createContext<MusicPlayerContextValue | null>(null)
 
-function buildPlaylistId(label: string, index: number) {
-  return `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`
-}
-
-function getDisplayName(fileName: string) {
-  return fileName.replace(/\.[^.]+$/, '')
-}
-
 export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playlists, setPlaylists] = useState<ImportedPlaylist[]>([])
@@ -59,6 +47,23 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0)
   const [statusMessage, setStatusMessage] = useState('Seleziona una cartella di playlist con mp3.')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const restoredPlaylists = restorePlaylistsFromLocalStorage()
+    const restoredState = restoreMusicStateFromLocalStorage()
+
+    if (restoredPlaylists.length > 0) {
+      setPlaylists(restoredPlaylists)
+      setSelectedPlaylistId(restoredState?.selectedPlaylistId ?? restoredPlaylists[0]?.id ?? '')
+      setSelectedTrackIndex(Math.max(0, restoredState?.selectedTrackIndex ?? 0))
+      setVolumeState(
+        restoredState && Number.isFinite(restoredState.volume)
+          ? Math.max(0, Math.min(1, restoredState.volume))
+          : 0.85,
+      )
+      setStatusMessage('Playlist ripristinate dalla sessione precedente.')
+    }
+  }, [])
 
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0] ?? null,
@@ -72,13 +77,17 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
-      playlists.forEach((playlist) => {
-        playlist.tracks.forEach((track) => {
-          URL.revokeObjectURL(track.url)
-        })
-      })
+      revokePlaylistUrls(playlists)
     }
   }, [playlists])
+
+  useEffect(() => {
+    persistMusicStateToLocalStorage({
+      selectedPlaylistId,
+      selectedTrackIndex,
+      volume,
+    })
+  }, [selectedPlaylistId, selectedTrackIndex, volume])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -113,76 +122,31 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const mp3Files = files.filter((file) => {
-        const lowerName = file.name.toLowerCase()
-        return file.type.startsWith('audio/') || lowerName.endsWith('.mp3') || lowerName.endsWith('.m4a') || lowerName.endsWith('.ogg')
-      })
-
-      if (mp3Files.length === 0) {
+      const result = buildPlaylistsFromFiles(files)
+      if (result.importedAudioCount === 0) {
         setError('Nessun file audio trovato nella cartella selezionata.')
         setStatusMessage('Importa una cartella che contenga mp3.')
         return
       }
 
-      const folderNames = new Set<string>()
-      const trackEntries = mp3Files.map((file) => {
-        const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-        const parts = relativePath.split('/').filter(Boolean)
-        const folderName = parts.length > 1 ? parts[0] : ''
-        if (folderName) {
-          folderNames.add(folderName)
-        }
-
-        return {
-          relativePath,
-          folderName,
-          file,
-        }
-      })
-
-      const groupedTracks = new Map<string, ImportedTrack[]>()
-      const useFlatPlaylist = folderNames.size === 0
-      const fallbackPlaylistLabel = 'Brani trovati'
-
-      for (const { relativePath, folderName, file } of trackEntries) {
-        const playlistLabel = useFlatPlaylist ? fallbackPlaylistLabel : folderName || fallbackPlaylistLabel
-        const trackName = getDisplayName(file.name)
-        const track: ImportedTrack = {
-          id: `${relativePath}-${file.size}-${file.lastModified}`,
-          name: trackName,
-          fileName: file.name,
-          relativePath,
-          url: URL.createObjectURL(file),
-        }
-
-        const currentTracks = groupedTracks.get(playlistLabel)
-        if (currentTracks) {
-          currentTracks.push(track)
-        } else {
-          groupedTracks.set(playlistLabel, [track])
-        }
-      }
-
-      const nextPlaylists = Array.from(groupedTracks.entries())
-        .sort(([leftLabel], [rightLabel]) => leftLabel.localeCompare(rightLabel))
-        .map(([label, tracks], index) => ({
-          id: buildPlaylistId(label, index),
-          label,
-          tracks: tracks.sort((leftTrack, rightTrack) => leftTrack.relativePath.localeCompare(rightTrack.relativePath)),
-        }))
-
-      setPlaylists(nextPlaylists)
-      setSelectedPlaylistId(nextPlaylists[0]?.id ?? '')
+      setPlaylists(result.playlists)
+      setSelectedPlaylistId(result.playlists[0]?.id ?? '')
       setSelectedTrackIndex(0)
       setCurrentTime(0)
       setDuration(0)
       setError('')
       setIsPlaying(false)
       setStatusMessage(
-        useFlatPlaylist
-          ? `Importati ${mp3Files.length} brani in una playlist unica.`
-          : `Importate ${nextPlaylists.length} playlist da ${files.length} file.`,
+        result.useFlatPlaylist
+          ? `Importati ${result.importedAudioCount} brani in una playlist unica.`
+          : `Importate ${result.playlists.length} playlist da ${result.totalFileCount} file.`,
       )
+
+      void persistPlaylistsToLocalStorage(result.playlists).then((persisted) => {
+        if (!persisted) {
+          setStatusMessage((previous) => `${previous} Cache locale non disponibile per questa libreria.`)
+        }
+      })
     } catch {
       setError('Impossibile importare la cartella musicale selezionata.')
       setStatusMessage('Controlla che la cartella contenga file audio leggibili.')
