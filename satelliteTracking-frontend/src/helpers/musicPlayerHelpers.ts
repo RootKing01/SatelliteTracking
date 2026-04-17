@@ -53,9 +53,18 @@ type StoredMusicCacheManifestPlaylist = {
 }
 
 type StoredMusicCacheManifest = {
-  version: 2
+  version: 3
   savedAtUtc: string
+  storage: 'indexeddb'
   playlists: StoredMusicCacheManifestPlaylist[]
+}
+
+type StoredIndexedDbTrack = {
+  id: string
+  name: string
+  fileName: string
+  relativePath: string
+  blob: Blob
 }
 
 type StoredMusicState = {
@@ -80,8 +89,9 @@ export type MusicImportBuildResult = {
 }
 
 export const MUSIC_CACHE_KEY = 'satelliteTracker.music.cache.v1'
-const MUSIC_CACHE_MANIFEST_KEY = 'satelliteTracker.music.cache.manifest.v2'
-const MUSIC_CACHE_ENTRY_PREFIX = 'satelliteTracker.music.cache.entry.v2'
+const MUSIC_CACHE_MANIFEST_KEY = 'satelliteTracker.music.cache.manifest.v3'
+const MUSIC_CACHE_DB_NAME = 'satelliteTracker.music.db.v1'
+const MUSIC_CACHE_STORE_NAME = 'tracks'
 export const MUSIC_STATE_KEY = 'satelliteTracker.music.state.v1'
 export const MUSIC_FLOATING_WIDGET_FIXED_POSITION = {
   left: 10,
@@ -191,52 +201,89 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-function buildCacheEntryKey(libraryId: string, playlistIndex: number, trackIndex: number) {
-  return `${MUSIC_CACHE_ENTRY_PREFIX}.${libraryId}.${playlistIndex}.${trackIndex}`
+function buildCacheTrackKey(libraryId: string, playlistIndex: number, trackIndex: number) {
+  return `${MUSIC_CACHE_DB_NAME}.${libraryId}.${playlistIndex}.${trackIndex}`
 }
 
 function buildCacheManifestKey() {
   return MUSIC_CACHE_MANIFEST_KEY
 }
 
-function parseStoredPlaylistEntry(rawValue: string | null) {
-  if (!rawValue) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue) as StoredTrack
-    if (
-      typeof parsed.id !== 'string' ||
-      typeof parsed.name !== 'string' ||
-      typeof parsed.fileName !== 'string' ||
-      typeof parsed.relativePath !== 'string' ||
-      typeof parsed.dataUrl !== 'string'
-    ) {
-      return null
-    }
-
-    return parsed
-  } catch {
-    return null
-  }
+function hasIndexedDbSupport() {
+  return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined'
 }
 
-function removeStoredMusicLibraryKeys(keys: string[]) {
-  if (typeof window === 'undefined') {
+function openMusicCacheDatabase() {
+  return new Promise<IDBDatabase | null>((resolve) => {
+    if (!hasIndexedDbSupport()) {
+      resolve(null)
+      return
+    }
+
+    const request = window.indexedDB.open(MUSIC_CACHE_DB_NAME, 1)
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(MUSIC_CACHE_STORE_NAME)
+    }
+    request.onerror = () => resolve(null)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+function getTransactionCompletion(transaction: IDBTransaction) {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
+    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'))
+  })
+}
+
+function getIndexedDbRecord(database: IDBDatabase, key: string) {
+  return new Promise<StoredIndexedDbTrack | null>((resolve, reject) => {
+    const transaction = database.transaction(MUSIC_CACHE_STORE_NAME, 'readonly')
+    const store = transaction.objectStore(MUSIC_CACHE_STORE_NAME)
+    const request = store.get(key)
+    request.onsuccess = () => resolve((request.result as StoredIndexedDbTrack | undefined) ?? null)
+    request.onerror = () => reject(request.error ?? new Error('Unable to read indexed music cache entry'))
+  })
+}
+
+async function removeIndexedDbRecords(keys: string[]) {
+  const database = await openMusicCacheDatabase()
+  if (!database) {
     return
   }
 
+  const transaction = database.transaction(MUSIC_CACHE_STORE_NAME, 'readwrite')
+  const store = transaction.objectStore(MUSIC_CACHE_STORE_NAME)
   for (const key of keys) {
-    try {
-      window.localStorage.removeItem(key)
-    } catch {
-      // Ignore storage failures.
+    store.delete(key)
+  }
+
+  await getTransactionCompletion(transaction)
+  database.close()
+}
+
+async function writeIndexedDbRecords(records: Array<{ key: string; track: StoredIndexedDbTrack }>) {
+  const database = await openMusicCacheDatabase()
+  if (!database) {
+    return false
+  }
+
+  try {
+    const transaction = database.transaction(MUSIC_CACHE_STORE_NAME, 'readwrite')
+    const store = transaction.objectStore(MUSIC_CACHE_STORE_NAME)
+    for (const record of records) {
+      store.put(record.track, record.key)
     }
+
+    await getTransactionCompletion(transaction)
+    return true
+  } finally {
+    database.close()
   }
 }
 
-function restoreMusicCacheFromManifest(): ImportedPlaylist[] {
+async function restoreMusicCacheFromManifest(): Promise<ImportedPlaylist[]> {
   if (typeof window === 'undefined') {
     return []
   }
@@ -248,34 +295,43 @@ function restoreMusicCacheFromManifest(): ImportedPlaylist[] {
     }
 
     const parsedManifest = JSON.parse(rawManifest) as StoredMusicCacheManifest
-    if (parsedManifest.version !== 2 || !Array.isArray(parsedManifest.playlists)) {
+    if (parsedManifest.version !== 3 || parsedManifest.storage !== 'indexeddb' || !Array.isArray(parsedManifest.playlists)) {
       return []
     }
 
-    return parsedManifest.playlists
-      .map((playlist) => {
-        const storedTracks = playlist.trackKeys.map((trackKey) =>
-          parseStoredPlaylistEntry(window.localStorage.getItem(trackKey)),
-        )
+    const database = await openMusicCacheDatabase()
+    if (!database) {
+      return []
+    }
 
-        const validTracks = storedTracks.filter((track): track is StoredTrack => track !== null)
-        if (validTracks.length !== playlist.trackKeys.length) {
-          return null
+    const playlists: ImportedPlaylist[] = []
+    for (const playlist of parsedManifest.playlists) {
+      const tracks: ImportedTrack[] = []
+      for (const trackKey of playlist.trackKeys) {
+        const storedTrack = await getIndexedDbRecord(database, trackKey)
+        if (!storedTrack) {
+          database.close()
+          return []
         }
 
-        return {
-          id: playlist.id,
-          label: playlist.label,
-          tracks: validTracks.map((track) => ({
-            id: track.id,
-            name: track.name,
-            fileName: track.fileName,
-            relativePath: track.relativePath,
-            url: track.dataUrl,
-          })),
-        }
+        tracks.push({
+          id: storedTrack.id,
+          name: storedTrack.name,
+          fileName: storedTrack.fileName,
+          relativePath: storedTrack.relativePath,
+          url: URL.createObjectURL(storedTrack.blob),
+        })
+      }
+
+      playlists.push({
+        id: playlist.id,
+        label: playlist.label,
+        tracks,
       })
-      .filter((playlist): playlist is ImportedPlaylist => playlist !== null)
+    }
+
+    database.close()
+    return playlists
   } catch {
     return []
   }
@@ -388,58 +444,94 @@ export async function replaceMusicLibraryInLocalStorageFromFiles(files: File[]) 
 
   const { drafts } = buildPlaylistDrafts(audioFiles)
   const storedPlaylists: StoredPlaylist[] = []
-  const previousKeys = [MUSIC_CACHE_KEY, buildCacheManifestKey()]
-  const writtenKeys: string[] = []
-
-  try {
-    const rawManifest = window.localStorage.getItem(buildCacheManifestKey())
-    if (rawManifest) {
-      const parsedManifest = JSON.parse(rawManifest) as StoredMusicCacheManifest
-      if (parsedManifest.version === 2 && Array.isArray(parsedManifest.playlists)) {
-        for (const playlist of parsedManifest.playlists) {
-          previousKeys.push(...playlist.trackKeys)
-        }
-      }
-    }
-  } catch {
-    // Ignore malformed cache data and continue with a clean write.
-  }
-
-  removeStoredMusicLibraryKeys(previousKeys)
 
   for (const draft of drafts) {
     storedPlaylists.push(await toStoredPlaylist(draft))
   }
 
+  let previousManifest: StoredMusicCacheManifest | StoredMusicCache | null = null
   try {
-    const libraryId = Date.now().toString(36)
+    const previousManifestRaw = window.localStorage.getItem(buildCacheManifestKey())
+    previousManifest = previousManifestRaw ? JSON.parse(previousManifestRaw) as StoredMusicCacheManifest | StoredMusicCache : null
+  } catch {
+    previousManifest = null
+  }
+
+  if (hasIndexedDbSupport()) {
+    const libraryId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const indexedDbRecords: Array<{ key: string; track: StoredIndexedDbTrack }> = []
     const manifestPlaylists: StoredMusicCacheManifestPlaylist[] = []
 
-    storedPlaylists.forEach((playlist, playlistIndex) => {
-      const trackKeys = playlist.tracks.map((track, trackIndex) => {
-        const trackKey = buildCacheEntryKey(libraryId, playlistIndex, trackIndex)
-        window.localStorage.setItem(trackKey, JSON.stringify(track))
-        writtenKeys.push(trackKey)
-        return trackKey
-      })
+    for (const [playlistIndex, draft] of drafts.entries()) {
+      const trackKeys: string[] = []
+      for (const [trackIndex, track] of draft.tracks.entries()) {
+        const trackKey = buildCacheTrackKey(libraryId, playlistIndex, trackIndex)
+        const blob = await track.file.arrayBuffer().then((buffer) => new Blob([buffer], { type: track.file.type || 'audio/mpeg' }))
+        indexedDbRecords.push({
+          key: trackKey,
+          track: {
+            id: track.id,
+            name: track.name,
+            fileName: track.fileName,
+            relativePath: track.relativePath,
+            blob,
+          },
+        })
+        trackKeys.push(trackKey)
+      }
 
       manifestPlaylists.push({
-        id: playlist.id,
-        label: playlist.label,
+        id: draft.id,
+        label: draft.label,
         trackKeys,
       })
-    })
+    }
+
+    const databaseWriteSucceeded = await writeIndexedDbRecords(indexedDbRecords)
+    if (!databaseWriteSucceeded) {
+      return false
+    }
 
     const payload: StoredMusicCacheManifest = {
-      version: 2,
+      version: 3,
       savedAtUtc: new Date().toISOString(),
+      storage: 'indexeddb',
       playlists: manifestPlaylists,
     }
 
-    window.localStorage.setItem(buildCacheManifestKey(), JSON.stringify(payload))
+    try {
+      window.localStorage.setItem(buildCacheManifestKey(), JSON.stringify(payload))
+      window.localStorage.removeItem(MUSIC_CACHE_KEY)
+    } catch {
+      await removeIndexedDbRecords(indexedDbRecords.map((record) => record.key))
+      return false
+    }
+
+    if (previousManifest && 'version' in previousManifest) {
+      if (previousManifest.version === 3 && previousManifest.storage === 'indexeddb') {
+        await removeIndexedDbRecords(previousManifest.playlists.flatMap((playlist) => playlist.trackKeys))
+      } else if (previousManifest.version === 1) {
+        try {
+          window.localStorage.removeItem(MUSIC_CACHE_KEY)
+        } catch {
+          // Ignore storage failures.
+        }
+      }
+    }
+
+    return true
+  }
+
+  try {
+    const payload: StoredMusicCache = {
+      version: 1,
+      savedAtUtc: new Date().toISOString(),
+      playlists: storedPlaylists,
+    }
+
+    window.localStorage.setItem(MUSIC_CACHE_KEY, JSON.stringify(payload))
     return true
   } catch {
-    removeStoredMusicLibraryKeys([buildCacheManifestKey(), ...writtenKeys])
     return false
   }
 }
@@ -458,13 +550,13 @@ export async function replaceMusicLibraryInLocalStorage(playlists: ImportedPlayl
   return persistPlaylistsToLocalStorage(playlists)
 }
 
-export function restorePlaylistsFromLocalStorage(): ImportedPlaylist[] {
+export async function restorePlaylistsFromLocalStorage(): Promise<ImportedPlaylist[]> {
   if (typeof window === 'undefined') {
     return []
   }
 
   try {
-    const manifestRestoredPlaylists = restoreMusicCacheFromManifest()
+    const manifestRestoredPlaylists = await restoreMusicCacheFromManifest()
     if (manifestRestoredPlaylists.length > 0) {
       return manifestRestoredPlaylists
     }

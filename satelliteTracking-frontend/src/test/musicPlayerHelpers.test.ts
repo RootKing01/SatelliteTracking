@@ -32,7 +32,7 @@ describe('musicPlayerHelpers cache', () => {
 
     expect(persisted).toBe(true)
 
-    const restoredPlaylists = restorePlaylistsFromLocalStorage()
+    const restoredPlaylists = await restorePlaylistsFromLocalStorage()
     expect(restoredPlaylists).toHaveLength(1)
     expect(restoredPlaylists[0]?.tracks).toHaveLength(1)
     expect(restoredPlaylists[0]?.tracks[0]?.fileName).toBe('track.mp3')
@@ -46,7 +46,7 @@ describe('musicPlayerHelpers cache', () => {
     await replaceMusicLibraryInLocalStorageFromFiles([firstFile])
     await replaceMusicLibraryInLocalStorageFromFiles([secondFile])
 
-    const restoredPlaylists = restorePlaylistsFromLocalStorage()
+    const restoredPlaylists = await restorePlaylistsFromLocalStorage()
     expect(restoredPlaylists).toHaveLength(1)
     expect(restoredPlaylists[0]?.tracks).toHaveLength(1)
     expect(restoredPlaylists[0]?.tracks[0]?.fileName).toBe('second.mp3')

@@ -57,17 +57,19 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const [floatingWidgetCollapsed, setFloatingWidgetCollapsed] = useState(false)
 
   useEffect(() => {
-    const restoredPlaylists = restorePlaylistsFromLocalStorage()
-    const restoredState = toMusicUiState(restoreMusicStateFromLocalStorage())
+    void (async () => {
+      const restoredPlaylists = await restorePlaylistsFromLocalStorage()
+      const restoredState = toMusicUiState(restoreMusicStateFromLocalStorage())
 
-    if (restoredPlaylists.length > 0) {
-      setPlaylists(restoredPlaylists)
-      setSelectedPlaylistId(restoredState?.selectedPlaylistId ?? restoredPlaylists[0]?.id ?? '')
-      setSelectedTrackIndex(restoredState?.selectedTrackIndex ?? 0)
-      setVolumeState(restoredState?.volume ?? 0.85)
-      setFloatingWidgetCollapsed(restoredState?.floatingWidgetCollapsed ?? false)
-      setStatusMessage('Playlist ripristinate dalla sessione precedente.')
-    }
+      if (restoredPlaylists.length > 0) {
+        setPlaylists(restoredPlaylists)
+        setSelectedPlaylistId(restoredState?.selectedPlaylistId ?? restoredPlaylists[0]?.id ?? '')
+        setSelectedTrackIndex(restoredState?.selectedTrackIndex ?? 0)
+        setVolumeState(restoredState?.volume ?? 0.85)
+        setFloatingWidgetCollapsed(restoredState?.floatingWidgetCollapsed ?? false)
+        setStatusMessage('Playlist ripristinate dalla sessione precedente.')
+      }
+    })()
   }, [])
 
   const selectedPlaylist = useMemo(

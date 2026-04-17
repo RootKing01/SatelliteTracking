@@ -64,7 +64,12 @@ export function MusicPanel() {
           Seleziona una cartella con sottocartelle playlist e file audio. Se non ci sono sottocartelle, i brani trovati finiscono in una playlist unica.
         </p>
         <label className="music-folder-picker">
-          <span>Importa cartella musica</span>
+          <span className="music-folder-picker-label-sr">Importa cartella musica</span>
+          <span className="music-folder-picker-trigger" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M10 4 12 6h8v10H4V4h6Zm10 4V6h-7.17l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8Z" />
+            </svg>
+          </span>
           <input
             type="file"
             multiple
