@@ -40,6 +40,13 @@ orekit-data-volume/
 logs/
 *.log
 
+# Generated test and report artifacts
+**/playwright-report/
+**/test-results/
+**/coverage/
+**/.nyc_output/
+**/.vite/
+
 # Documentation
 /docs/
 TELEGRAM_NOTIFICATIONS.md
