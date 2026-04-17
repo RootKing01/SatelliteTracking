@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useMemo } from 'react'
 import { useMusicPlayer } from './MusicPlayerContext'
+import { MUSIC_FLOATING_WIDGET_FIXED_POSITION } from '../../helpers/musicPlayerHelpers'
 import '../../styles/panels/music-panel.css'
 
 function formatTime(totalSeconds: number) {
@@ -25,9 +26,11 @@ export function MusicPanel() {
     statusMessage,
     error,
     currentTrack,
+    floatingWidgetCollapsed,
     handleImportFolder,
     setSelectedPlaylistId,
     setSelectedTrackIndex,
+    setFloatingWidgetCollapsed,
     setVolume,
     togglePlay,
     previousTrack,
@@ -46,6 +49,15 @@ export function MusicPanel() {
   return (
     <section className="collapsible side-drawer music-panel" aria-label="Lettore musicale">
       <h3>Musica</h3>
+
+      <button
+        type="button"
+        className={`music-panel-widget-tab ${floatingWidgetCollapsed ? 'is-highlighted' : ''}`}
+        onClick={() => setFloatingWidgetCollapsed(false)}
+        disabled={!floatingWidgetCollapsed}
+      >
+        {floatingWidgetCollapsed ? 'Riapri widget radio' : 'Widget radio aperto'}
+      </button>
 
       <div className="music-import-card">
         <p className="music-note">
@@ -178,6 +190,10 @@ export function MusicFloatingPlayer() {
     statusMessage,
     error,
     currentTrack,
+    currentTrackTitle,
+    currentTrackTitleIsLong,
+    floatingWidgetCollapsed,
+    setFloatingWidgetCollapsed,
     setVolume,
     togglePlay,
     previousTrack,
@@ -185,88 +201,51 @@ export function MusicFloatingPlayer() {
     seekTo,
   } = useMusicPlayer()
 
-  const floatingWidth = 266
-  const floatingHeight = 188
-  const dragStateRef = useRef<{ offsetX: number; offsetY: number } | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [position, setPosition] = useState(() => {
-    if (typeof window === 'undefined') {
-      return { left: 10, top: 58 }
-    }
-
-    return {
-      left: 10,
-      top: 58,
-    }
-  })
-
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0
 
-  useEffect(() => {
-    if (!isDragging) {
-      return
-    }
-
-    const handleMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState) {
-        return
-      }
-
-      const nextLeft = Math.min(
-        Math.max(12, event.clientX - dragState.offsetX),
-        window.innerWidth - floatingWidth - 12,
-      )
-      const nextTop = Math.min(
-        Math.max(12, event.clientY - dragState.offsetY),
-        window.innerHeight - floatingHeight - 12,
-      )
-
-      setPosition({ left: nextLeft, top: nextTop })
-    }
-
-    const handleUp = () => {
-      dragStateRef.current = null
-      setIsDragging(false)
-    }
-
-    window.addEventListener('pointermove', handleMove)
-    window.addEventListener('pointerup', handleUp)
-
-    return () => {
-      window.removeEventListener('pointermove', handleMove)
-      window.removeEventListener('pointerup', handleUp)
-    }
-  }, [isDragging])
-
-  const handleDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
-      return
-    }
-
-    const target = event.target as HTMLElement
-    if (target.closest('button, select, input, option')) {
-      return
-    }
-
-    dragStateRef.current = {
-      offsetX: event.clientX - position.left,
-      offsetY: event.clientY - position.top,
-    }
-    setIsDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
+  if (floatingWidgetCollapsed) {
+    return (
+      <aside
+        className="music-float-player is-collapsed"
+        style={MUSIC_FLOATING_WIDGET_FIXED_POSITION}
+        aria-label="Widget radio socchiuso"
+      >
+        <button
+          type="button"
+          className="music-float-peek-tab"
+          onClick={() => setFloatingWidgetCollapsed(false)}
+        >
+          Radio
+        </button>
+      </aside>
+    )
   }
 
   return (
-    <aside className={`music-float-player ${isDragging ? 'is-dragging' : ''}`} style={position} aria-label="Controllo musicale flottante">
-      <div className="music-float-grip" onPointerDown={handleDragStart}>
+    <aside className="music-float-player" style={MUSIC_FLOATING_WIDGET_FIXED_POSITION} aria-label="Controllo musicale flottante">
+      <div className="music-float-grip">
         <span className="music-float-label">RADIO LINK</span>
-        <span className="music-float-drag-hint">drag</span>
+        <button
+          type="button"
+          className="music-float-collapse-tab"
+          onClick={() => setFloatingWidgetCollapsed(true)}
+        >
+          Socchiudi
+        </button>
       </div>
 
       <div className="music-float-header">
         <div className="music-float-now">
-          <strong>{currentTrack ? currentTrack.name : 'No signal'}</strong>
+          <strong className={currentTrackTitleIsLong ? 'is-marquee' : ''}>
+            {currentTrackTitleIsLong ? (
+              <span>
+                <span>{currentTrackTitle}</span>
+                <span aria-hidden="true">{currentTrackTitle}</span>
+              </span>
+            ) : (
+              currentTrackTitle
+            )}
+          </strong>
           <p>
             {selectedPlaylist ? `${selectedPlaylist.label} · ${selectedPlaylist.tracks.length} brani` : 'Sidebar per scegliere la playlist'}
           </p>

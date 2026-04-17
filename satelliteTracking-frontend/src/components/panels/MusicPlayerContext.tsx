@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from 'react'
 import {
   buildPlaylistsFromFiles,
+  normalizeTrackTitle,
   persistMusicStateToLocalStorage,
-  persistPlaylistsToLocalStorage,
+  replaceMusicLibraryInLocalStorageFromFiles,
+  shouldUseMarqueeTitle,
+  toMusicUiState,
   restoreMusicStateFromLocalStorage,
   restorePlaylistsFromLocalStorage,
   revokePlaylistUrls,
@@ -22,11 +25,15 @@ type MusicPlayerContextValue = {
   error: string
   selectedPlaylist: ImportedPlaylist | null
   currentTrack: ImportedTrack | null
+  currentTrackTitle: string
+  currentTrackTitleIsLong: boolean
   hasPlaylists: boolean
+  floatingWidgetCollapsed: boolean
   handleImportFolder: (event: ChangeEvent<HTMLInputElement>) => void
   setSelectedPlaylistId: (value: string) => void
   setSelectedTrackIndex: (value: number) => void
   setVolume: (value: number) => void
+  setFloatingWidgetCollapsed: (value: boolean) => void
   togglePlay: () => Promise<void>
   previousTrack: () => void
   nextTrack: () => void
@@ -47,20 +54,18 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0)
   const [statusMessage, setStatusMessage] = useState('Seleziona una cartella di playlist con mp3.')
   const [error, setError] = useState('')
+  const [floatingWidgetCollapsed, setFloatingWidgetCollapsed] = useState(false)
 
   useEffect(() => {
     const restoredPlaylists = restorePlaylistsFromLocalStorage()
-    const restoredState = restoreMusicStateFromLocalStorage()
+    const restoredState = toMusicUiState(restoreMusicStateFromLocalStorage())
 
     if (restoredPlaylists.length > 0) {
       setPlaylists(restoredPlaylists)
       setSelectedPlaylistId(restoredState?.selectedPlaylistId ?? restoredPlaylists[0]?.id ?? '')
-      setSelectedTrackIndex(Math.max(0, restoredState?.selectedTrackIndex ?? 0))
-      setVolumeState(
-        restoredState && Number.isFinite(restoredState.volume)
-          ? Math.max(0, Math.min(1, restoredState.volume))
-          : 0.85,
-      )
+      setSelectedTrackIndex(restoredState?.selectedTrackIndex ?? 0)
+      setVolumeState(restoredState?.volume ?? 0.85)
+      setFloatingWidgetCollapsed(restoredState?.floatingWidgetCollapsed ?? false)
       setStatusMessage('Playlist ripristinate dalla sessione precedente.')
     }
   }, [])
@@ -75,6 +80,16 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
     [selectedPlaylist, selectedTrackIndex],
   )
 
+  const currentTrackTitle = useMemo(
+    () => normalizeTrackTitle(currentTrack?.name),
+    [currentTrack?.name],
+  )
+
+  const currentTrackTitleIsLong = useMemo(
+    () => shouldUseMarqueeTitle(currentTrackTitle),
+    [currentTrackTitle],
+  )
+
   useEffect(() => {
     return () => {
       revokePlaylistUrls(playlists)
@@ -86,8 +101,9 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
       selectedPlaylistId,
       selectedTrackIndex,
       volume,
+      floatingWidgetCollapsed,
     })
-  }, [selectedPlaylistId, selectedTrackIndex, volume])
+  }, [floatingWidgetCollapsed, selectedPlaylistId, selectedTrackIndex, volume])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -113,7 +129,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedPlaylist, selectedTrackIndex])
 
-  const handleImportFolder = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleImportFolder = async (event: ChangeEvent<HTMLInputElement>) => {
     try {
       const files = Array.from(event.target.files ?? [])
       event.target.value = ''
@@ -142,11 +158,10 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
           : `Importate ${result.playlists.length} playlist da ${result.totalFileCount} file.`,
       )
 
-      void persistPlaylistsToLocalStorage(result.playlists).then((persisted) => {
-        if (!persisted) {
-          setStatusMessage((previous) => `${previous} Cache locale non disponibile per questa libreria.`)
-        }
-      })
+      const persisted = await replaceMusicLibraryInLocalStorageFromFiles(files)
+      if (persisted) {
+        setStatusMessage((previous) => `${previous} Cache locale aggiornata.`)
+      }
     } catch {
       setError('Impossibile importare la cartella musicale selezionata.')
       setStatusMessage('Controlla che la cartella contenga file audio leggibili.')
@@ -219,11 +234,15 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
     error,
     selectedPlaylist,
     currentTrack,
+    currentTrackTitle,
+    currentTrackTitleIsLong,
     hasPlaylists: playlists.length > 0,
+    floatingWidgetCollapsed,
     handleImportFolder,
     setSelectedPlaylistId,
     setSelectedTrackIndex,
     setVolume,
+    setFloatingWidgetCollapsed,
     togglePlay,
     previousTrack,
     nextTrack,
