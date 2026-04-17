@@ -6,6 +6,20 @@
   background: radial-gradient(circle at 10% 10%, #0b1f3f 0%, #050b18 55%, #02050c 100%);
 }
 
+.app-shell.focus-mode {
+  grid-template-columns: 1fr;
+}
+
+.app-shell.focus-mode .viewer-section {
+  grid-column: 1;
+  height: 100vh;
+}
+
+.app-shell.focus-mode .viewer-hud {
+  width: min(360px, calc(100vw - 24px));
+  right: 8px;
+}
+
 .auth-shell {
   width: 100vw;
   height: 100vh;
