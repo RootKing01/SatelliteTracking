@@ -6,8 +6,9 @@ import com.satelliteTracking.dto.AuthResponseDTO;
 import com.satelliteTracking.dto.AuthUserDTO;
 import com.satelliteTracking.model.AppUser;
 import com.satelliteTracking.repository.AppUserRepository;
-import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,19 +20,20 @@ import java.util.Optional;
 @Service
 public class AuthService {
 
-    public static final String SESSION_USER_ID = "AUTH_USER_ID";
-    public static final String SESSION_USERNAME = "AUTH_USERNAME";
-
     private final AppUserRepository appUserRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthService(AppUserRepository appUserRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(AppUserRepository appUserRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtService jwtService) {
         this.appUserRepository = appUserRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     @Transactional
-    public AuthResponseDTO register(AuthRegisterRequestDTO request, HttpSession session) {
+    public AuthResponseDTO register(AuthRegisterRequestDTO request) {
         String username = normalizeRequired(request.username(), "username");
         String email = normalizeRequired(request.email(), "email").toLowerCase(Locale.ROOT);
         String password = normalizeRequired(request.password(), "password");
@@ -61,13 +63,13 @@ public class AuthService {
         user.setEnabled(true);
 
         AppUser saved = appUserRepository.save(user);
-        attachUserToSession(saved, session);
+        String token = jwtService.generateToken(saved);
 
-        return new AuthResponseDTO(true, "Registrazione completata", toUserDTO(saved));
+        return new AuthResponseDTO(true, "Registrazione completata", toUserDTO(saved), token);
     }
 
     @Transactional(readOnly = true)
-    public AuthResponseDTO login(AuthLoginRequestDTO request, HttpSession session) {
+    public AuthResponseDTO login(AuthLoginRequestDTO request) {
         String usernameOrEmail = normalizeRequired(request.usernameOrEmail(), "usernameOrEmail");
         String password = normalizeRequired(request.password(), "password");
 
@@ -84,36 +86,45 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenziali non valide");
         }
 
-        attachUserToSession(user, session);
-        return new AuthResponseDTO(true, "Accesso eseguito", toUserDTO(user));
+        String token = jwtService.generateToken(user);
+        return new AuthResponseDTO(true, "Accesso eseguito", toUserDTO(user), token);
     }
 
     @Transactional(readOnly = true)
-    public AuthResponseDTO currentUser(HttpSession session) {
-        Object userIdObj = session.getAttribute(SESSION_USER_ID);
-        if (!(userIdObj instanceof Long userId)) {
-            return new AuthResponseDTO(false, "Sessione non autenticata", null);
+    public AuthResponseDTO currentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return new AuthResponseDTO(false, "Sessione non autenticata", null, null);
         }
 
-        return appUserRepository.findById(userId)
+        String username = authentication.getName();
+        if (username == null || username.isBlank()) {
+            return new AuthResponseDTO(false, "Sessione non autenticata", null, null);
+        }
+
+        return appUserRepository.findByUsernameIgnoreCase(username)
             .filter(AppUser::isEnabled)
-            .map(user -> new AuthResponseDTO(true, "Sessione attiva", toUserDTO(user)))
-            .orElseGet(() -> new AuthResponseDTO(false, "Sessione non autenticata", null));
+            .map(user -> new AuthResponseDTO(true, "Sessione attiva", toUserDTO(user), null))
+            .orElseGet(() -> new AuthResponseDTO(false, "Sessione non autenticata", null, null));
     }
 
-    public AuthResponseDTO logout(HttpSession session) {
-        session.invalidate();
-        return new AuthResponseDTO(false, "Logout eseguito", null);
+    public AuthResponseDTO logout() {
+        return new AuthResponseDTO(false, "Logout eseguito lato client", null, null);
     }
 
     @Transactional(readOnly = true)
-    public AppUser requireAuthenticatedUser(HttpSession session) {
-        Object userIdObj = session.getAttribute(SESSION_USER_ID);
-        if (!(userIdObj instanceof Long userId)) {
+    public AppUser requireAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessione non autenticata");
         }
 
-        return appUserRepository.findById(userId)
+        String username = authentication.getName();
+        if (username == null || username.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessione non autenticata");
+        }
+
+        return appUserRepository.findByUsernameIgnoreCase(username)
             .filter(AppUser::isEnabled)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessione non autenticata"));
     }
@@ -124,12 +135,6 @@ public class AuthService {
             return appUserRepository.findByEmailIgnoreCase(normalized);
         }
         return appUserRepository.findByUsernameIgnoreCase(normalized);
-    }
-
-    private void attachUserToSession(AppUser user, HttpSession session) {
-        session.setAttribute(SESSION_USER_ID, user.getId());
-        session.setAttribute(SESSION_USERNAME, user.getUsername());
-        session.setMaxInactiveInterval(60 * 60 * 8);
     }
 
     private String normalizeRequired(String value, String fieldName) {

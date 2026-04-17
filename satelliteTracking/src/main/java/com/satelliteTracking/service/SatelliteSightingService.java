@@ -9,7 +9,6 @@ import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.model.SatelliteSighting;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.repository.SatelliteSightingRepository;
-import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +46,7 @@ public class SatelliteSightingService {
     }
 
     @Transactional
-    public SatelliteSightingDTO registerSighting(SatelliteSightingCreateRequestDTO request, HttpSession session) {
+    public SatelliteSightingDTO registerSighting(SatelliteSightingCreateRequestDTO request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Errore, dati non compatibili");
         }
@@ -57,7 +56,7 @@ public class SatelliteSightingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Errore, dati non compatibili");
         }
 
-        AppUser user = authService.requireAuthenticatedUser(session);
+        AppUser user = authService.requireAuthenticatedUser();
         Satellite satellite = satelliteRepository.findById(satelliteId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Satellite non trovato"));
 
@@ -105,8 +104,8 @@ public class SatelliteSightingService {
     }
 
     @Transactional(readOnly = true)
-    public List<SatelliteSightingDTO> getMySightings(HttpSession session) {
-        AppUser user = authService.requireAuthenticatedUser(session);
+    public List<SatelliteSightingDTO> getMySightings() {
+        AppUser user = authService.requireAuthenticatedUser();
 
         return satelliteSightingRepository.findByUserIdOrderBySightedAtDesc(user.getId()).stream()
             .sorted(Comparator.comparing(SatelliteSighting::getSightedAt).reversed())

@@ -3,7 +3,6 @@ package com.satelliteTracking.controller;
 import com.satelliteTracking.dto.SatelliteSightingCreateRequestDTO;
 import com.satelliteTracking.dto.SatelliteSightingDTO;
 import com.satelliteTracking.service.SatelliteSightingService;
-import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,10 +26,9 @@ public class SatelliteSightingController {
     }
 
     @PostMapping
-    public ResponseEntity<?> createSighting(@RequestBody SatelliteSightingCreateRequestDTO request,
-                                            HttpSession session) {
+    public ResponseEntity<?> createSighting(@RequestBody SatelliteSightingCreateRequestDTO request) {
         try {
-            return ResponseEntity.ok(satelliteSightingService.registerSighting(request, session));
+            return ResponseEntity.ok(satelliteSightingService.registerSighting(request));
         } catch (ResponseStatusException ex) {
             HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
             return ResponseEntity.status(status).body(Map.of(
@@ -41,7 +39,7 @@ public class SatelliteSightingController {
     }
 
     @GetMapping("/mine")
-    public ResponseEntity<List<SatelliteSightingDTO>> getMySightings(HttpSession session) {
-        return ResponseEntity.ok(satelliteSightingService.getMySightings(session));
+    public ResponseEntity<List<SatelliteSightingDTO>> getMySightings() {
+        return ResponseEntity.ok(satelliteSightingService.getMySightings());
     }
 }
