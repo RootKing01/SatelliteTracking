@@ -2,12 +2,12 @@ import axios from 'axios'
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
-const isRemoteClient =
+const isLocalClient =
   typeof window !== 'undefined' &&
-  !['localhost', '127.0.0.1'].includes(window.location.hostname)
+  ['localhost', '127.0.0.1'].includes(window.location.hostname)
 
 const apiBaseUrl =
-  configuredApiBaseUrl && !(isRemoteClient && configuredApiBaseUrl.includes('localhost'))
+  isLocalClient && configuredApiBaseUrl
     ? configuredApiBaseUrl
     : ''
 

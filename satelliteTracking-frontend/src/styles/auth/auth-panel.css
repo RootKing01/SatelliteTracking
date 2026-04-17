@@ -44,9 +44,44 @@
   cursor: pointer;
 }
 
+.auth-tabs button,
+.auth-submit {
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .auth-tabs button:hover,
+  .auth-submit:hover:not(:disabled) {
+    border-color: rgba(141, 255, 249, 0.95);
+    color: #ecffff;
+    box-shadow:
+      0 0 8px rgba(95, 245, 255, 0.24),
+      0 0 14px rgba(95, 245, 255, 0.12);
+  }
+
+  .auth-tabs button:active,
+  .auth-submit:active:not(:disabled) {
+    box-shadow: none;
+  }
+}
+
+.auth-tabs button:focus-visible,
+.auth-submit:focus-visible {
+  outline: none;
+  border-color: rgba(141, 255, 249, 0.98);
+  box-shadow:
+    0 0 0 2px rgba(2, 12, 24, 0.9),
+    0 0 0 4px rgba(104, 245, 255, 0.42);
+}
+
 .auth-tabs button.is-active {
   background: linear-gradient(180deg, rgba(16, 53, 94, 0.95), rgba(8, 22, 42, 0.95));
   border-color: rgba(125, 244, 255, 0.9);
+  box-shadow: 0 0 10px rgba(95, 245, 255, 0.26);
 }
 
 .auth-form {

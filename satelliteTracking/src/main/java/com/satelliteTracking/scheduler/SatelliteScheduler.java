@@ -8,6 +8,7 @@ import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.service.CelestrakService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(value = "app.scheduler.enabled", havingValue = "true", matchIfMissing = true)
 public class SatelliteScheduler {
 
     private final CelestrakService celestrakService;

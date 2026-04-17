@@ -14,8 +14,9 @@ const cesiumPath = (subDir: string) =>
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
   const devProxyTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
+  const processHttps = process.env.VITE_DEV_USE_HTTPS
   const enableHttps =
-    env.VITE_DEV_USE_HTTPS === 'true' || process.env.VITE_DEV_USE_HTTPS === 'true'
+    processHttps !== undefined ? processHttps === 'true' : env.VITE_DEV_USE_HTTPS === 'true'
 
   return {
     envDir: '..',
@@ -24,6 +25,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       https: enableHttps ? {} : undefined,
+      allowedHosts: [
+        'localhost',
+        '127.0.0.1',
+        '192.168.1.18',
+        'vincenzonoviello.ddns.net',
+      ],
       proxy: {
         '/api': {
           target: devProxyTarget,

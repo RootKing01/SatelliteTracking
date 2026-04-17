@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.Duration;
 
@@ -39,18 +40,20 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponseDTO> register(@RequestBody AuthRegisterRequestDTO request) {
+    public ResponseEntity<AuthResponseDTO> register(@RequestBody AuthRegisterRequestDTO request,
+                                                    HttpServletRequest httpRequest) {
         AuthResponseDTO response = authService.register(request);
-        ResponseCookie cookie = buildAuthCookie(response.token());
+        ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
             .body(withoutToken(response));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponseDTO> login(@RequestBody AuthLoginRequestDTO request) {
+    public ResponseEntity<AuthResponseDTO> login(@RequestBody AuthLoginRequestDTO request,
+                                                 HttpServletRequest httpRequest) {
         AuthResponseDTO response = authService.login(request);
-        ResponseCookie cookie = buildAuthCookie(response.token());
+        ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
             .body(withoutToken(response));
@@ -62,8 +65,8 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<AuthResponseDTO> logout() {
-        ResponseCookie cookie = clearAuthCookie();
+    public ResponseEntity<AuthResponseDTO> logout(HttpServletRequest httpRequest) {
+        ResponseCookie cookie = clearAuthCookie(httpRequest);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
             .body(authService.logout());
@@ -73,23 +76,36 @@ public class AuthController {
         return new AuthResponseDTO(response.authenticated(), response.message(), response.user(), null);
     }
 
-    private ResponseCookie buildAuthCookie(String token) {
+    private ResponseCookie buildAuthCookie(String token, HttpServletRequest request) {
         return ResponseCookie.from(jwtCookieName, token == null ? "" : token)
             .httpOnly(true)
-            .secure(jwtCookieSecure)
+            .secure(isSecureRequest(request))
             .path("/")
             .sameSite(jwtCookieSameSite)
             .maxAge(Duration.ofMillis(jwtService.getJwtExpirationMs()))
             .build();
     }
 
-    private ResponseCookie clearAuthCookie() {
+    private ResponseCookie clearAuthCookie(HttpServletRequest request) {
         return ResponseCookie.from(jwtCookieName, "")
             .httpOnly(true)
-            .secure(jwtCookieSecure)
+            .secure(isSecureRequest(request))
             .path("/")
             .sameSite(jwtCookieSameSite)
             .maxAge(Duration.ZERO)
             .build();
+    }
+
+    private boolean isSecureRequest(HttpServletRequest request) {
+        if (request.isSecure()) {
+            return true;
+        }
+
+        String forwardedProto = request.getHeader("X-Forwarded-Proto");
+        if (forwardedProto != null && forwardedProto.equalsIgnoreCase("https")) {
+            return true;
+        }
+
+        return false;
     }
 }

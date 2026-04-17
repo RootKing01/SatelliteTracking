@@ -1,7 +1,9 @@
 package com.satelliteTracking.service;
 
 import com.satelliteTracking.model.ObserverLocation;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.orekit.errors.OrekitException;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.time.TimeScalesFactory;
 
@@ -34,6 +36,12 @@ class PassTimeServiceTest {
 
     @Test
     void shouldConvertAbsoluteDateToExpectedLocalTime() {
+        try {
+            TimeScalesFactory.getUTC();
+        } catch (OrekitException ex) {
+            Assumptions.assumeTrue(false, "Orekit UTC-TAI history data not available in test environment");
+        }
+
         AbsoluteDate absoluteDate = new AbsoluteDate(
             Date.from(Instant.parse("2026-01-15T12:00:00Z")),
             TimeScalesFactory.getUTC()

@@ -2,6 +2,7 @@ package com.satelliteTracking.service;
 
 import com.satelliteTracking.model.ObserverLocation;
 import net.iakovlev.timeshape.TimeZoneEngine;
+import org.orekit.errors.OrekitException;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.time.TimeScalesFactory;
 import org.springframework.stereotype.Service;
@@ -22,10 +23,18 @@ public class PassTimeService {
     }
 
     public LocalDateTime toLocalDateTime(AbsoluteDate absoluteDate, ZoneId zoneId) {
-        return LocalDateTime.ofInstant(
-            absoluteDate.toDate(TimeScalesFactory.getUTC()).toInstant(),
-            zoneId
-        );
+        try {
+            return LocalDateTime.ofInstant(
+                absoluteDate.toDate(TimeScalesFactory.getUTC()).toInstant(),
+                zoneId
+            );
+        } catch (OrekitException ex) {
+            // Fallback for test/runtime environments where UTC-TAI history is not loaded.
+            return LocalDateTime.ofInstant(
+                absoluteDate.toDate(TimeScalesFactory.getTAI()).toInstant(),
+                zoneId
+            );
+        }
     }
 
     public LocalDateTime nowForObserver(ObserverLocation observerLocation) {

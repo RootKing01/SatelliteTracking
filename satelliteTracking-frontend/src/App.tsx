@@ -1,22 +1,57 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { Color, Ion } from 'cesium'
-import { getCurrentUser, login, logout, register, type AuthUser } from './api/authClient'
+import { getCurrentUser, type AuthUser } from './api/authClient'
+import { type OrekitStatusResponse } from './api/orekitStatusClient'
+import { type SystemHealthResponse } from './api/systemHealthClient'
 import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
 import { fetchSatellitePositionById } from './api/satellitePositionsClient'
 import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/sightingsClient'
-import {
-  fetchVisibleUpcomingPasses,
-  fetchVisibleUpcomingPassesByCity,
-  type UpcomingPass,
-} from './api/satelliteVisibilityClient'
+import { type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
+import { extractAuthErrorMessage, extractGeolocationErrorMessage } from './helpers/appErrorHelpers'
+import {
+  getBrowserGeolocationPrecheckError,
+  requestBrowserLocation,
+} from './helpers/browserGeolocationHelpers'
+import {
+  executeLoginFlow,
+  executeLogoutFlow,
+  executeRegisterFlow,
+} from './helpers/authFlowHelpers'
+import { buildEnabledGroupsFromPreset, createDefaultEnabledGroups, type GroupPreset } from './helpers/groupHelpers'
+import { buildGroupRows } from './helpers/groupViewHelpers'
+import {
+  buildLiveEntityIdBySatelliteId,
+  buildSatelliteLookupByEntityId,
+  type SelectedSatelliteState,
+} from './helpers/satelliteSelectionHelpers'
+import {
+  buildSearchResultItems,
+  type SatelliteSearchScope,
+  type SearchResultItem,
+} from './helpers/searchHelpers'
+import {
+  loadOrekitStatus,
+  loadSystemHealth,
+} from './helpers/systemStatusHelpers'
+import {
+  buildVisibilityQueryLocationLabel,
+  downloadVisibilityResultsCsv,
+  filterVisibilityResults,
+} from './helpers/visibilityHelpers'
+import {
+  buildVisibilitySummaryInfo,
+  createVisibilityErrorResetState,
+  fetchVisibilityPasses,
+} from './helpers/visibilityFlowHelpers'
 import { AuthPanel } from './components/auth/AuthPanel'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
 import { CompassPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
+import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
 
 const ionToken =
@@ -30,30 +65,9 @@ type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]
 type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
 type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 
-type SelectedSatelliteState = {
-  groupLabel: string
-  groupKey: SatelliteGroupKey
-  satellite: SatellitePosition
-}
-
-type SatelliteSearchScope = 'enabled' | 'all' | SatelliteGroupKey
-
-type SearchResultItem = {
-  entityId: string
-  groupKey: SatelliteGroupKey
-  groupLabel: string
-  satelliteId: number
-  satelliteName: string
-  objectId: string
-  noradCatId: number
-  hasLivePosition: boolean
-}
-
 type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings'
 
-const defaultEnabledGroups = Object.fromEntries(
-  satelliteGroupSources.map((group) => [group.key, group.key === 'stations']),
-) as Record<SatelliteGroupKey, boolean>
+const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
 
 const defaultRefreshIntervalSec = 0.8
 const mediumRefreshIntervalSec = 1.4
@@ -65,45 +79,7 @@ const refreshTuningProfiles = [
   { label: 'Stabile', multiplier: 1.28 },
 ] as const
 
-type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 type AuthMode = 'login' | 'register'
-
-function extractAuthErrorMessage(error: unknown, fallbackMessage: string) {
-  if (isAxiosError(error)) {
-    const responseData = error.response?.data as { message?: string; error?: string } | undefined
-    if (responseData?.message) {
-      return responseData.message
-    }
-    if (responseData?.error) {
-      return responseData.error
-    }
-  }
-  return fallbackMessage
-}
-
-function extractGeolocationErrorMessage(error: GeolocationPositionError | null | undefined) {
-  if (!window.isSecureContext) {
-    return 'Geolocalizzazione bloccata: apri il sito in HTTPS (su smartphone HTTP non e consentito).'
-  }
-
-  if (!error) {
-    return 'Impossibile acquisire la posizione browser.'
-  }
-
-  if (error.code === error.PERMISSION_DENIED) {
-    return 'Permesso geolocalizzazione negato. Abilitalo nelle impostazioni del browser.'
-  }
-
-  if (error.code === error.POSITION_UNAVAILABLE) {
-    return 'Posizione non disponibile. Verifica GPS/rete e riprova.'
-  }
-
-  if (error.code === error.TIMEOUT) {
-    return 'Timeout geolocalizzazione. Riprova con segnale GPS migliore.'
-  }
-
-  return error.message || 'Impossibile acquisire la posizione browser.'
-}
 
 function App() {
   const allGroups = satelliteGroupSources as readonly SatelliteGroupSource[]
@@ -146,6 +122,12 @@ function App() {
   const [authPassword, setAuthPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [authInfo, setAuthInfo] = useState('Accedi con il profilo base oppure registrane uno nuovo.')
+  const [orekitStatus, setOrekitStatus] = useState<OrekitStatusResponse | null>(null)
+  const [orekitStatusLoading, setOrekitStatusLoading] = useState(false)
+  const [orekitStatusError, setOrekitStatusError] = useState('')
+  const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null)
+  const [systemHealthLoading, setSystemHealthLoading] = useState(false)
+  const [systemHealthError, setSystemHealthError] = useState('')
   const [mySightings, setMySightings] = useState<SatelliteSighting[]>([])
   const [sightingsLoading, setSightingsLoading] = useState(false)
   const [sightingsError, setSightingsError] = useState('')
@@ -239,65 +221,26 @@ function App() {
     [enabledGroups.starlink, groupPositions.starlink],
   )
 
-  const satelliteLookupByEntityId = useMemo(() => {
-    const map = new Map<string, SelectedSatelliteState>()
+  const satelliteLookupByEntityId = useMemo(
+    () => buildSatelliteLookupByEntityId(allGroups, groupPositions),
+    [allGroups, groupPositions],
+  )
 
-    for (const group of allGroups) {
-      for (const satellite of groupPositions[group.key] ?? []) {
-        map.set(`${group.key}-${satellite.satelliteId}`, {
-          groupLabel: group.label,
-          groupKey: group.key,
-          satellite,
-        })
-      }
-    }
-
-    return map
-  }, [allGroups, groupPositions])
-
-  const liveEntityIdBySatelliteId = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const group of allGroups) {
-      for (const satellite of groupPositions[group.key] ?? []) {
-        map.set(satellite.satelliteId, `${group.key}-${satellite.satelliteId}`)
-      }
-    }
-    return map
-  }, [allGroups, groupPositions])
+  const liveEntityIdBySatelliteId = useMemo(
+    () => buildLiveEntityIdBySatelliteId(allGroups, groupPositions),
+    [allGroups, groupPositions],
+  )
 
   const visibilityQueryLocationLabel = useMemo(() => {
-    if (visibilityCity.trim()) {
-      return `Citta: ${visibilityCity.trim()}`
-    }
-    if (visibilityLatitude !== null && visibilityLongitude !== null) {
-      return `Coordinate browser: ${visibilityLatitude.toFixed(4)}, ${visibilityLongitude.toFixed(4)}`
-    }
-    return 'Posizione default backend (San Marcellino)'
+    return buildVisibilityQueryLocationLabel(visibilityCity, visibilityLatitude, visibilityLongitude)
   }, [visibilityCity, visibilityLatitude, visibilityLongitude])
 
   const visibilityOverlayFilteredResults = useMemo(() => {
-    const normalized = visibilityOverlayQuery.trim().toLowerCase()
-    if (!normalized) {
-      return visibilityAllResults
-    }
-
-    return visibilityAllResults.filter((pass) => {
-      const text = `${pass.satelliteName} ${pass.satelliteId} ${pass.observingCondition} ${pass.visibility}`
-      return text.toLowerCase().includes(normalized)
-    })
+    return filterVisibilityResults(visibilityAllResults, visibilityOverlayQuery)
   }, [visibilityAllResults, visibilityOverlayQuery])
 
   const groupRows = useMemo(
-    () =>
-      allGroups.map((group) => ({
-        key: group.key,
-        label: group.label,
-        color: group.color,
-        count: groupPositions[group.key]?.length ?? 0,
-        loading: groupLoading[group.key] ?? false,
-        error: groupErrors[group.key] ?? '',
-        checked: enabledGroups[group.key],
-      })),
+    () => buildGroupRows(allGroups, enabledGroups, groupPositions, groupLoading, groupErrors),
     [allGroups, enabledGroups, groupErrors, groupLoading, groupPositions],
   )
 
@@ -305,66 +248,18 @@ function App() {
     latestGroupPositionsRef.current = groupPositions
   }, [groupPositions])
 
-  const searchResultItems = useMemo(() => {
-    const groupsToSearch =
-      searchScope === 'enabled'
-        ? allGroups.filter((group) => enabledGroups[group.key])
-        : searchScope === 'all'
-          ? allGroups
-          : allGroups.filter((group) => group.key === searchScope)
-
-    const liveItems = groupsToSearch.flatMap((group) =>
-      (groupPositions[group.key] ?? []).map((satellite) => ({
-        entityId: `${group.key}-${satellite.satelliteId}`,
-        groupKey: group.key,
-        groupLabel: group.label,
-        satelliteId: satellite.satelliteId,
-        satelliteName: satellite.satelliteName,
-        objectId: satellite.objectId,
-        noradCatId: satellite.noradCatId,
-        hasLivePosition: true,
-      })),
-    )
-
-    const mergedByEntityId = new Map<string, SearchResultItem>()
-    for (const item of liveItems) {
-      mergedByEntityId.set(item.entityId, item)
-    }
-
-    if (searchScope !== 'enabled') {
-      for (const group of groupsToSearch) {
-        for (const satellite of catalogByGroup[group.key] ?? []) {
-          const entityId = `${group.key}-${satellite.id}`
-          if (!mergedByEntityId.has(entityId)) {
-            mergedByEntityId.set(entityId, {
-              entityId,
-              groupKey: group.key,
-              groupLabel: group.label,
-              satelliteId: satellite.id,
-              satelliteName: satellite.objectName,
-              objectId: satellite.objectId,
-              noradCatId: satellite.noradCatId,
-              hasLivePosition: false,
-            })
-          }
-        }
-      }
-    }
-
-    const baseItems = Array.from(mergedByEntityId.values())
-
-    const normalizedQuery = searchQuery.trim().toLowerCase()
-    const filteredItems = normalizedQuery
-      ? baseItems.filter((item) => {
-          const searchableText = `${item.satelliteName} ${item.noradCatId} ${item.objectId}`
-          return searchableText.toLowerCase().includes(normalizedQuery)
-        })
-      : baseItems
-
-    return filteredItems
-      .sort((a, b) => a.satelliteName.localeCompare(b.satelliteName))
-      .slice(0, 90)
-  }, [allGroups, catalogByGroup, enabledGroups, groupPositions, searchQuery, searchScope])
+  const searchResultItems = useMemo(
+    () =>
+      buildSearchResultItems({
+        allGroups,
+        enabledGroups,
+        groupPositions,
+        catalogByGroup,
+        searchScope,
+        searchQuery,
+      }),
+    [allGroups, catalogByGroup, enabledGroups, groupPositions, searchQuery, searchScope],
+  )
 
   const handlePickEntityId = useCallback(
     (entityId: string | null) => {
@@ -514,6 +409,46 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!authUser) {
+      setOrekitStatus(null)
+      setOrekitStatusError('')
+      setOrekitStatusLoading(false)
+      setSystemHealth(null)
+      setSystemHealthError('')
+      setSystemHealthLoading(false)
+      return
+    }
+
+    const orekitController = new AbortController()
+    const healthController = new AbortController()
+    setOrekitStatusLoading(true)
+    setSystemHealthLoading(true)
+
+    void loadOrekitStatus(orekitController.signal)
+      .then(({ status, error }) => {
+        setOrekitStatus(status)
+        setOrekitStatusError(error)
+      })
+      .finally(() => {
+        setOrekitStatusLoading(false)
+      })
+
+    void loadSystemHealth(healthController.signal)
+      .then(({ status, error }) => {
+        setSystemHealth(status)
+        setSystemHealthError(error)
+      })
+      .finally(() => {
+        setSystemHealthLoading(false)
+      })
+
+    return () => {
+      orekitController.abort()
+      healthController.abort()
+    }
+  }, [authUser])
+
   const submitLogin = async () => {
     if (authSubmitting) {
       return
@@ -523,28 +458,20 @@ function App() {
     setAuthError('')
 
     try {
-      const response = await login({
+      const result = await executeLoginFlow({
         usernameOrEmail: authUsernameOrEmail,
         password: authPassword,
       })
-      if (!response.authenticated || !response.user) {
-        setAuthError(response.message || 'Accesso non riuscito')
-        return
-      }
 
-      // Verifica immediata della sessione per evitare stato UI "loggato" senza cookie valido.
-      const me = await getCurrentUser()
-      if (!me.authenticated || !me.user) {
+      if (!result.user) {
         setAuthUser(null)
-        setAuthError('Accesso effettuato ma sessione non valida. Riprova il login.')
+        setAuthError(result.error)
         return
       }
 
-      setAuthUser(me.user)
-      setAuthInfo(`Benvenuto ${me.user.username}`)
+      setAuthUser(result.user)
+      setAuthInfo(result.info)
       resetAuthFields()
-    } catch (error) {
-      setAuthError(extractAuthErrorMessage(error, 'Errore durante il login'))
     } finally {
       setAuthSubmitting(false)
     }
@@ -559,28 +486,21 @@ function App() {
     setAuthError('')
 
     try {
-      const response = await register({
+      const result = await executeRegisterFlow({
         username: authUsername,
         email: authEmail,
         password: authPassword,
       })
-      if (!response.authenticated || !response.user) {
-        setAuthError(response.message || 'Registrazione non riuscita')
-        return
-      }
 
-      const me = await getCurrentUser()
-      if (!me.authenticated || !me.user) {
+      if (!result.user) {
         setAuthUser(null)
-        setAuthError('Registrazione completata ma sessione non valida. Esegui l\'accesso.')
+        setAuthError(result.error)
         return
       }
 
-      setAuthUser(me.user)
-      setAuthInfo(`Registrazione completata: ${me.user.username}`)
+      setAuthUser(result.user)
+      setAuthInfo(result.info)
       resetAuthFields()
-    } catch (error) {
-      setAuthError(extractAuthErrorMessage(error, 'Errore durante la registrazione'))
     } finally {
       setAuthSubmitting(false)
     }
@@ -593,13 +513,17 @@ function App() {
 
     setAuthSubmitting(true)
     setAuthError('')
+
     try {
-      await logout()
+      const result = await executeLogoutFlow()
+      if (result.error) {
+        setAuthError(result.error)
+        return
+      }
+
       setAuthUser(null)
       setMySightings([])
       setAuthInfo('Sessione chiusa, esegui un nuovo accesso.')
-    } catch (error) {
-      setAuthError(extractAuthErrorMessage(error, 'Errore durante il logout'))
     } finally {
       setAuthSubmitting(false)
     }
@@ -690,39 +614,37 @@ function App() {
       return
     }
 
-    if (!navigator.geolocation) {
-      setSightingsError('Geolocalizzazione non disponibile nel browser.')
+    const precheckError = getBrowserGeolocationPrecheckError(
+      Boolean(navigator.geolocation),
+      window.isSecureContext,
+    )
+    if (precheckError) {
+      setSightingsError(precheckError)
       return
     }
 
-    if (!window.isSecureContext) {
-      setSightingsError(
-        'Geolocalizzazione bloccata: usa HTTPS o localhost (su smartphone HTTP non funziona).',
-      )
+    const geolocation = navigator.geolocation
+    if (!geolocation) {
+      setSightingsError('Geolocalizzazione non disponibile nel browser.')
       return
     }
 
     setLocatingBrowser(true)
     setSightingsError('')
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setSightingLatitude(position.coords.latitude)
-        setSightingLongitude(position.coords.longitude)
-        setSightingAltitude(position.coords.altitude ?? 30)
+    void requestBrowserLocation(geolocation)
+      .then((location) => {
+        setSightingLatitude(location.latitude)
+        setSightingLongitude(location.longitude)
+        setSightingAltitude(location.altitude)
         setSightingInfo('Posizione browser acquisita.')
+      })
+      .catch((error) => {
+        setSightingsError(extractGeolocationErrorMessage(error as GeolocationPositionError))
+      })
+      .finally(() => {
         setLocatingBrowser(false)
-      },
-      (error) => {
-        setSightingsError(extractGeolocationErrorMessage(error))
-        setLocatingBrowser(false)
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 120000,
-        timeout: 10000,
-      },
-    )
+      })
   }
 
   const handleUseBrowserLocationForVisibility = () => {
@@ -730,39 +652,37 @@ function App() {
       return
     }
 
-    if (!navigator.geolocation) {
-      setVisibilityError('Geolocalizzazione non disponibile nel browser.')
+    const precheckError = getBrowserGeolocationPrecheckError(
+      Boolean(navigator.geolocation),
+      window.isSecureContext,
+    )
+    if (precheckError) {
+      setVisibilityError(precheckError)
       return
     }
 
-    if (!window.isSecureContext) {
-      setVisibilityError(
-        'Geolocalizzazione bloccata: usa HTTPS o localhost (su smartphone HTTP non funziona).',
-      )
+    const geolocation = navigator.geolocation
+    if (!geolocation) {
+      setVisibilityError('Geolocalizzazione non disponibile nel browser.')
       return
     }
 
     setVisibilityLocatingBrowser(true)
     setVisibilityError('')
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setVisibilityLatitude(position.coords.latitude)
-        setVisibilityLongitude(position.coords.longitude)
-        setVisibilityAltitude(position.coords.altitude ?? 30)
+    void requestBrowserLocation(geolocation)
+      .then((location) => {
+        setVisibilityLatitude(location.latitude)
+        setVisibilityLongitude(location.longitude)
+        setVisibilityAltitude(location.altitude)
         setVisibilityInfo('Posizione browser attiva per il calcolo visibilita.')
+      })
+      .catch((error) => {
+        setVisibilityError(extractGeolocationErrorMessage(error as GeolocationPositionError))
+      })
+      .finally(() => {
         setVisibilityLocatingBrowser(false)
-      },
-      (error) => {
-        setVisibilityError(extractGeolocationErrorMessage(error))
-        setVisibilityLocatingBrowser(false)
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 120000,
-        timeout: 10000,
-      },
-    )
+      })
   }
 
   const handleCalculateVisibility = async () => {
@@ -775,37 +695,21 @@ function App() {
     setVisibilityInfo('')
 
     try {
-      const normalizedCity = visibilityCity.trim()
-      const hasCity = normalizedCity.length > 0
-
-      const results = hasCity
-        ? (await fetchVisibleUpcomingPassesByCity({
-            city: normalizedCity,
-            hours: visibilityHours,
-            minElevation: visibilityMinElevation,
-            observingCondition: 'any',
-            maxMagnitude: 8.0,
-          })).passes
-        : await fetchVisibleUpcomingPasses({
-            hours: visibilityHours,
-            minElevation: visibilityMinElevation,
-            observingCondition: 'any',
-            maxMagnitude: 8.0,
-            latitude: visibilityLatitude ?? undefined,
-            longitude: visibilityLongitude ?? undefined,
-            altitude: visibilityAltitude ?? undefined,
-          })
+      const results = await fetchVisibilityPasses({
+        city: visibilityCity,
+        hours: visibilityHours,
+        minElevation: visibilityMinElevation,
+        latitude: visibilityLatitude,
+        longitude: visibilityLongitude,
+        altitude: visibilityAltitude,
+      })
 
       setVisibilityAllResults(results)
       setVisibilityResults(results.slice(0, 30))
       if (results.length === 0) {
         setVisibilityOverlayOpen(false)
       }
-      setVisibilityInfo(
-        results.length === 0
-          ? 'Nessun passaggio visibile nei parametri selezionati.'
-          : `Trovati ${results.length} passaggi visibili.`,
-      )
+      setVisibilityInfo(buildVisibilitySummaryInfo(results.length))
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 401) {
         setAuthUser(null)
@@ -814,9 +718,10 @@ function App() {
         return
       }
 
-      setVisibilityAllResults([])
-      setVisibilityResults([])
-      setVisibilityOverlayOpen(false)
+      const resetState = createVisibilityErrorResetState()
+      setVisibilityAllResults(resetState.allResults)
+      setVisibilityResults(resetState.previewResults)
+      setVisibilityOverlayOpen(!resetState.closeOverlay)
       setVisibilityError(extractAuthErrorMessage(error, 'Errore durante il calcolo della visibilita'))
     } finally {
       setVisibilityLoading(false)
@@ -838,47 +743,7 @@ function App() {
       return
     }
 
-    const escapeCsv = (value: string | number) =>
-      `"${String(value).replaceAll('"', '""')}"`
-
-    const header = [
-      'index',
-      'satelliteName',
-      'satelliteId',
-      'riseTime',
-      'setTime',
-      'maxElevationDeg',
-      'estimatedMagnitude',
-      'observingCondition',
-      'visibility',
-    ]
-
-    const rows = visibilityOverlayFilteredResults.map((pass, index) => [
-      index + 1,
-      pass.satelliteName,
-      pass.satelliteId,
-      new Date(pass.riseTime).toLocaleString('it-IT'),
-      new Date(pass.setTime).toLocaleString('it-IT'),
-      pass.maxElevation.toFixed(1),
-      pass.estimatedMagnitude.toFixed(1),
-      pass.observingCondition,
-      pass.visibility,
-    ])
-
-    const csv = [header, ...rows]
-      .map((line) => line.map((cell) => escapeCsv(cell)).join(','))
-      .join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    const timestamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19)
-    link.href = url
-    link.download = `passaggi-visibili-${timestamp}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadVisibilityResultsCsv(visibilityOverlayFilteredResults)
   }, [visibilityOverlayFilteredResults])
 
   const handleFocusFromVisibility = (pass: UpcomingPass) => {
@@ -1062,27 +927,10 @@ function App() {
   }
 
   const applyGroupPreset = (preset: GroupPreset) => {
-    if (preset === 'custom') {
+    const nextEnabled = buildEnabledGroupsFromPreset(allGroups, preset)
+    if (!nextEnabled) {
       return
     }
-
-    const navigationKeys = new Set(['gpsOps', 'galileo', 'glonassOps', 'beidou', 'sbas'])
-    const leoKeys = new Set(['starlink', 'oneweb', 'iridiumNext', 'planet', 'spire', 'cubesat'])
-
-    const nextEnabled = Object.fromEntries(
-      allGroups.map((group) => {
-        if (preset === 'all') {
-          return [group.key, true]
-        }
-        if (preset === 'stations') {
-          return [group.key, group.key === 'stations']
-        }
-        if (preset === 'navigation') {
-          return [group.key, navigationKeys.has(group.key)]
-        }
-        return [group.key, leoKeys.has(group.key)]
-      }),
-    ) as Record<SatelliteGroupKey, boolean>
 
     setEnabledGroups(nextEnabled)
   }
@@ -1139,12 +987,8 @@ function App() {
     <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
       {!focusGlobeMode ? (
         <aside className="panel-section">
-          <header className="panel">
+          <div className="panel">
           <div className="panel-header">
-            <span className="panel-badge">
-              <span className="live-dot" />
-              Live globe
-            </span>
             <h1>Satellite Tracker</h1>
             <button
               type="button"
@@ -1155,6 +999,65 @@ function App() {
             >
               Logout ({authUser.username})
             </button>
+          </div>
+
+          <div className="panel-status-row">
+            <span className="panel-badge">
+              <span className="live-dot" />
+              Live
+            </span>
+            <span
+              className={`orekit-badge ${
+                orekitStatus?.orekitDataLoaded
+                  ? 'orekit-badge-loaded'
+                  : orekitStatusError
+                    ? 'orekit-badge-error'
+                    : orekitStatusLoading
+                      ? 'orekit-badge-pending'
+                      : 'orekit-badge-fallback'
+              }`}
+              title={
+                orekitStatus
+                  ? `Path: ${orekitStatus.orekitDataPath}`
+                  : orekitStatusError || 'Stato Orekit non disponibile'
+              }
+            >
+              <span className="orekit-dot" />
+              {orekitStatus?.orekitDataLoaded
+                ? 'Orekit ON'
+                : orekitStatusError
+                  ? 'Orekit N/A'
+                  : orekitStatusLoading
+                    ? 'Orekit ...'
+                    : 'Orekit OFF'}
+            </span>
+            <span
+              className={`system-health-badge ${
+                systemHealth?.status === 'UP'
+                  ? 'system-health-up'
+                  : systemHealth?.status === 'DEGRADED'
+                    ? 'system-health-degraded'
+                    : systemHealthError
+                      ? 'system-health-error'
+                      : systemHealthLoading
+                        ? 'system-health-pending'
+                        : 'system-health-down'
+              }`}
+              title={
+                systemHealth
+                  ? `API: ${systemHealth.components.api}, DB: ${systemHealth.components.database}, Orekit: ${systemHealth.components.orekit}`
+                  : systemHealthError || 'Stato sistema non disponibile'
+              }
+            >
+              <span className="system-health-dot" />
+              {systemHealth?.status
+                ? `System ${systemHealth.status}`
+                : systemHealthError
+                  ? 'System N/A'
+                  : systemHealthLoading
+                    ? 'System ...'
+                    : 'System DOWN'}
+            </span>
           </div>
 
           <div className="panel-layout">
@@ -1285,7 +1188,7 @@ function App() {
               </div>
             </section>
           </div>
-          </header>
+          </div>
         </aside>
       ) : null}
 

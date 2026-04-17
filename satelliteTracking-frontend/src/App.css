@@ -57,12 +57,20 @@
 .panel-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-bottom: 6px;
 }
 
+.panel-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .panel-logout {
-  margin-left: auto;
   border: 1px solid rgba(96, 250, 255, 0.42);
   background: rgba(9, 24, 45, 0.88);
   color: #d4f6ff;
@@ -70,6 +78,69 @@
   padding: 6px 9px;
   font-size: 0.75rem;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.panel-logout,
+.sidebar-tabs button,
+.toolbar button,
+.focus-toggle,
+.details-head button,
+.sighting-actions button,
+.visibility-overlay-header button {
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .panel-logout:hover,
+  .sidebar-tabs button:hover,
+  .toolbar button:hover,
+  .focus-toggle:hover,
+  .details-head button:hover,
+  .sighting-actions button:hover,
+  .visibility-overlay-header button:hover {
+    border-color: rgba(141, 255, 249, 0.95);
+    color: #ecffff;
+    box-shadow:
+      0 0 9px rgba(95, 245, 255, 0.26),
+      0 0 16px rgba(95, 245, 255, 0.14);
+  }
+
+  .panel-logout:active,
+  .sidebar-tabs button:active,
+  .toolbar button:active,
+  .focus-toggle:active,
+  .details-head button:active,
+  .sighting-actions button:active,
+  .visibility-overlay-header button:active {
+    box-shadow: none;
+  }
+}
+
+.panel-logout:focus-visible,
+.sidebar-tabs button:focus-visible,
+.toolbar button:focus-visible,
+.focus-toggle:focus-visible,
+.details-head button:focus-visible,
+.sighting-actions button:focus-visible,
+.visibility-overlay-header button:focus-visible {
+  outline: none;
+  border-color: rgba(141, 255, 249, 0.98);
+  box-shadow:
+    0 0 0 2px rgba(2, 12, 24, 0.9),
+    0 0 0 4px rgba(104, 245, 255, 0.42);
+}
+
+.sighting-actions button:disabled,
+.visibility-overlay-header button:disabled,
+.details-head button:disabled,
+.toolbar button:disabled,
+.panel-logout:disabled {
+  box-shadow: none;
 }
 
 .panel-badge {
@@ -81,10 +152,11 @@
   background: rgba(86, 233, 255, 0.1);
   border: 1px solid rgba(86, 233, 255, 0.45);
   color: #9ff8ff;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   box-shadow: 0 0 18px rgba(30, 222, 255, 0.22);
+  white-space: nowrap;
 }
 
 .live-dot {

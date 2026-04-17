@@ -54,6 +54,7 @@ class PassPhotometryServiceTest {
     void starlinkShouldUseAReasonableFallback() {
         Satellite starlink = new Satellite();
         starlink.setObjectName("STARLINK-1234");
+        starlink.setSatelliteType("starlink");
 
         Satellite generic = new Satellite();
         generic.setObjectName("GENERIC SAT");

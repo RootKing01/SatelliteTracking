@@ -20,8 +20,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "${DB_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     deploy:
@@ -34,8 +32,6 @@ services:
       context: satelliteTracking
       dockerfile: Dockerfile
     container_name: ${APP_CONTAINER_NAME}
-    ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT}:8080"
     depends_on:
       - db
       - orekit-data
@@ -47,6 +43,11 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       APP_SECURITY_ALLOWED_ORIGINS: ${APP_SECURITY_ALLOWED_ORIGINS}
+      APP_SECURITY_JWT_COOKIE_NAME: ${APP_SECURITY_JWT_COOKIE_NAME}
+      APP_SECURITY_JWT_COOKIE_SECURE: ${APP_SECURITY_JWT_COOKIE_SECURE}
+      APP_SECURITY_JWT_COOKIE_SAME_SITE: ${APP_SECURITY_JWT_COOKIE_SAME_SITE}
+      APP_SECURITY_JWT_SECRET: ${APP_SECURITY_JWT_SECRET}
+      APP_SECURITY_JWT_EXPIRATION_MS: ${APP_SECURITY_JWT_EXPIRATION_MS}
     
     deploy:
        resources:
@@ -85,6 +86,7 @@ services:
         VITE_CESIUM_TOKEN: ${VITE_CESIUM_TOKEN}
         VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
     container_name: ${FRONTEND_CONTAINER_NAME:-satellite-tracker-frontend}
+    command: ["nginx", "-g", "daemon off;"]
     ports:
       - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5173}:80"
     depends_on:
@@ -93,6 +95,25 @@ services:
       resources:
         limits:
           memory: ${FRONTEND_MEMORY_LIMIT:-512m}
+
+  nginx-proxy-manager:
+    profiles: ["proxy"]
+    image: ${NPM_IMAGE:-jc21/nginx-proxy-manager:latest}
+    container_name: ${NPM_CONTAINER_NAME:-satellite-nginx-proxy-manager}
+    restart: unless-stopped
+    ports:
+      - "${NPM_BIND_ADDRESS:-0.0.0.0}:80:80"
+      - "${NPM_BIND_ADDRESS:-0.0.0.0}:81:81"
+      - "${NPM_BIND_ADDRESS:-0.0.0.0}:443:443"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    deploy:
+      resources:
+        limits:
+          memory: ${NPM_MEMORY_LIMIT:-512m}
 volumes:
   orekit-data-volume:
   postgres-data:
+  npm-data:
+  npm-letsencrypt:

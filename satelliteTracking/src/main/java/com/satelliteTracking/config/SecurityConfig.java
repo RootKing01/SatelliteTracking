@@ -39,6 +39,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/system/orekit-status").permitAll()
+                .requestMatchers("/api/system/health").permitAll()
                 .requestMatchers("/api/telegram-webhook/**").permitAll()
                 .anyRequest().authenticated()
             )

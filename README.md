@@ -82,6 +82,48 @@ sudo docker compose logs -f
 sudo docker compose restart
 ```
 
+### Dev/Prod Local or Remote Modes
+
+Use the helper scripts under `scripts/` to switch quickly without editing `.env`:
+
+```bash
+# DEV only on localhost
+./scripts/up-dev-local.sh
+
+# DEV exposed on LAN/WAN (for remote tests)
+./scripts/up-dev-remote.sh
+./scripts/up-dev-remote.sh https
+./scripts/up-dev-remote.sh http
+
+# PROD only on localhost
+./scripts/up-prod-local.sh
+
+# PROD exposed on LAN/WAN (for reverse proxy)
+./scripts/up-prod-remote.sh
+
+# Stop profiles
+./scripts/down-dev.sh
+./scripts/down-prod.sh
+
+# Single command switcher
+./scripts/switch-mode.sh dev local
+./scripts/switch-mode.sh dev remote
+./scripts/switch-mode.sh dev remote https
+./scripts/switch-mode.sh dev remote http
+./scripts/switch-mode.sh prod local
+./scripts/switch-mode.sh prod remote
+./scripts/switch-mode.sh down
+
+# Single down helper
+./scripts/down.sh
+```
+
+Each `up-*` script automatically stops the opposite profile first to avoid port conflicts on `5173`.
+For `dev remote`, choose protocol per use case:
+- `https`: if your reverse proxy upstream is configured as HTTPS
+- `http`: if your reverse proxy upstream is configured as HTTP
+- no protocol argument: uses current `.env` value of `VITE_DEV_USE_HTTPS`
+
 ---
 
 ## ⚙️ Configuration
