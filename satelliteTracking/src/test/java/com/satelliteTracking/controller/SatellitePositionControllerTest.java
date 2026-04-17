@@ -25,6 +25,7 @@ class SatellitePositionControllerTest {
         SatellitePositionDTO position = new SatellitePositionDTO(
             25544L,
             "ISS (ZARYA)",
+            "stations",
             "1998-067A",
             25544L,
             LocalDateTime.of(2026, 4, 8, 19, 0),
@@ -55,6 +56,7 @@ class SatellitePositionControllerTest {
         SatellitePositionDTO position = new SatellitePositionDTO(
             25544L,
             "ISS (ZARYA)",
+            "stations",
             "1998-067A",
             25544L,
             LocalDateTime.of(2026, 4, 8, 19, 0),

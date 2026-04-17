@@ -274,6 +274,11 @@
   box-shadow: 0 0 8px rgba(255, 213, 107, 0.78);
 }
 
+.tab-icon-music {
+  background: #76f2c6;
+  box-shadow: 0 0 8px rgba(118, 242, 198, 0.82);
+}
+
 .tab-icon-visibility {
   background: #ff8f5a;
   box-shadow: 0 0 8px rgba(255, 143, 90, 0.78);

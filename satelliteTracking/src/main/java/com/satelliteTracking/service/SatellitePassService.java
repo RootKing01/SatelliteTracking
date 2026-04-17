@@ -677,6 +677,7 @@ public class SatellitePassService {
         return Optional.of(new SatellitePositionDTO(
             satellite.getId(),
             satellite.getObjectName(),
+            satellite.getSatelliteType(),
             satellite.getObjectId(),
             satellite.getNoradCatId(),
             calculatedAtUtc,

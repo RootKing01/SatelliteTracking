@@ -5,7 +5,7 @@ import { getCurrentUser, type AuthUser } from './api/authClient'
 import { type OrekitStatusResponse } from './api/orekitStatusClient'
 import { type SystemHealthResponse } from './api/systemHealthClient'
 import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
-import { fetchSatellitePositionById } from './api/satellitePositionsClient'
+import { fetchAllSatellitePositions, fetchSatellitePositionById } from './api/satellitePositionsClient'
 import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/sightingsClient'
 import { type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
@@ -48,7 +48,7 @@ import {
 } from './helpers/visibilityFlowHelpers'
 import { AuthPanel } from './components/auth/AuthPanel'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
-import { CompassPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
+import { CompassPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
@@ -65,7 +65,7 @@ type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]
 type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
 type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 
-type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings'
+type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'music'
 
 const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
 
@@ -809,12 +809,51 @@ function App() {
         setGroupLoading((prev) => ({ ...prev, [group.key]: true }))
       }
 
-      const results = await Promise.allSettled(
-        activeGroups.map(async (group) => {
-          const positions = await group.loadPositions(signal)
-          return { key: group.key, positions }
-        }),
-      )
+      let results: PromiseSettledResult<{
+        key: SatelliteGroupKey
+        positions: SatellitePosition[]
+      }>[]
+
+      if (activeGroups.length > 1) {
+        try {
+          const allPositions = await fetchAllSatellitePositions(signal)
+          const positionsByType = new Map<string, SatellitePosition[]>()
+
+          for (const position of allPositions) {
+            const typeKey = (position.satelliteType ?? '').toLowerCase()
+            if (!typeKey) {
+              continue
+            }
+
+            const bucket = positionsByType.get(typeKey)
+            if (bucket) {
+              bucket.push(position)
+            } else {
+              positionsByType.set(typeKey, [position])
+            }
+          }
+
+          results = activeGroups.map((group) => ({
+            status: 'fulfilled',
+            value: {
+              key: group.key,
+              positions: positionsByType.get(group.type.toLowerCase()) ?? [],
+            },
+          }))
+        } catch (error) {
+          results = activeGroups.map(() => ({
+            status: 'rejected',
+            reason: error,
+          }))
+        }
+      } else {
+        results = await Promise.allSettled(
+          activeGroups.map(async (group) => {
+            const positions = await group.loadPositions(signal)
+            return { key: group.key, positions }
+          }),
+        )
+      }
 
       if (!isMounted || signal?.aborted) {
         return
@@ -841,6 +880,22 @@ function App() {
           unauthorizedDetected = true
           nextErrors[group.key] = 'Sessione scaduta'
           return
+        }
+
+        if (isAxiosError(reason)) {
+          const hasPreviousData = (latestGroupPositionsRef.current[group.key]?.length ?? 0) > 0
+          const isCanceled = reason.code === 'ERR_CANCELED'
+          const isTimeout = reason.code === 'ECONNABORTED'
+          const status = reason.response?.status
+          const isTransientUpstream = status === 429 || status === 502 || status === 503 || status === 504
+          const isNetworkError = !reason.response
+
+          // Con molti gruppi attivi, timeout/cancel/rete possono capitare: evitiamo falsi allarmi
+          // se abbiamo gia dati precedenti da mostrare.
+          if (isCanceled || ((isTimeout || isTransientUpstream || isNetworkError) && hasPreviousData)) {
+            nextErrors[group.key] = ''
+            return
+          }
         }
 
         nextErrors[group.key] = `Errore caricamento ${group.label}`
@@ -968,25 +1023,28 @@ function App() {
 
   if (!ionToken) {
     return (
-      <main className="app-shell">
-        <aside className="panel-section">
-          <div className="panel">
-            <h1>Cesium token mancante</h1>
-            <p>
-              Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
-              frontend.
-            </p>
-          </div>
-        </aside>
-        <section className="viewer-section" />
-      </main>
+      <MusicPlayerProvider>
+        <main className="app-shell">
+          <aside className="panel-section">
+            <div className="panel">
+              <h1>Cesium token mancante</h1>
+              <p>
+                Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
+                frontend.
+              </p>
+            </div>
+          </aside>
+          <section className="viewer-section" />
+        </main>
+      </MusicPlayerProvider>
     )
   }
 
   return (
-    <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
-      {!focusGlobeMode ? (
-        <aside className="panel-section">
+    <MusicPlayerProvider>
+      <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
+        {!focusGlobeMode ? (
+          <aside className="panel-section">
           <div className="panel">
           <div className="panel-header">
             <h1>Satellite Tracker</h1>
@@ -1099,6 +1157,14 @@ function App() {
                     <span className="tab-icon tab-icon-sighting" aria-hidden="true" />
                     <span>Avvistamenti</span>
                   </button>
+                  <button
+                    type="button"
+                    className={openPane === 'music' ? 'tab-active' : ''}
+                    onClick={() => setOpenPane((prev) => (prev === 'music' ? null : 'music'))}
+                  >
+                    <span className="tab-icon tab-icon-music" aria-hidden="true" />
+                    <span>Musica</span>
+                  </button>
                 </nav>
 
                 {openPane === 'groups' ? (
@@ -1185,25 +1251,28 @@ function App() {
                     mySightings={mySightings}
                   />
                 ) : null}
+
+                {openPane === 'music' ? <MusicPanel /> : null}
               </div>
             </section>
           </div>
           </div>
-        </aside>
-      ) : null}
+          </aside>
+        ) : null}
 
-      <section className="viewer-section">
-        <CompassPanel headingDeg={compass.headingDeg} hideOnMobile={!selectedSatellite} />
+        <section className="viewer-section">
+          <CompassPanel headingDeg={compass.headingDeg} hideOnMobile={!selectedSatellite} />
+          <MusicFloatingPlayer />
 
-        <button
-          type="button"
-          className="focus-toggle"
-          onClick={() => setFocusGlobeMode((prev) => !prev)}
-        >
-          {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
-        </button>
-        {selectedSatellite ? (
-          <aside className="viewer-hud">
+          <button
+            type="button"
+            className="focus-toggle"
+            onClick={() => setFocusGlobeMode((prev) => !prev)}
+          >
+            {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
+          </button>
+          {selectedSatellite ? (
+            <aside className="viewer-hud">
             <section className="details-card hud-details">
               <h3>Dettagli satellite</h3>
               <div className="details-head">
@@ -1298,85 +1367,86 @@ function App() {
               </div>
             </section>
           </aside>
-        ) : null}
+          ) : null}
 
-        <SatelliteGlobe
-          ref={globeRef}
-          autoRotate={autoRotate}
-          showBackSideSatellites={showBackSideSatellites}
-          groupColorMap={groupColorMap}
-          selectedEntityId={selectedEntityId}
-          starlinkSatellites={starlinkSatellites}
-          visibleEntitySatellites={visibleEntitySatellites}
-          onPickEntityId={handlePickEntityId}
-          onCompassChange={handleCompassChange}
-        />
-      </section>
-
-      {visibilityOverlayOpen ? (
-        <section className="visibility-overlay" role="dialog" aria-modal="true" aria-label="Lista completa passaggi visibili">
-          <div className="visibility-overlay-backdrop" onClick={() => setVisibilityOverlayOpen(false)} />
-          <article className="visibility-overlay-card">
-            <header className="visibility-overlay-header">
-              <h2>Passaggi visibili - Lista completa</h2>
-              <div className="visibility-overlay-header-actions">
-                <button type="button" onClick={exportVisibilityOverlayCsv}>
-                  Export CSV
-                </button>
-                <button type="button" onClick={() => setVisibilityOverlayOpen(false)}>
-                  Chiudi
-                </button>
-              </div>
-            </header>
-            <p className="visibility-overlay-meta">
-              Totale risultati: {visibilityAllResults.length} | Mostrati: {visibilityOverlayFilteredResults.length} | Filtri: {visibilityHours}h, elevazione minima {visibilityMinElevation}deg
-            </p>
-            <p className="visibility-overlay-meta">{visibilityQueryLocationLabel}</p>
-            <label className="visibility-overlay-filter-row">
-              Cerca nella lista completa
-              <input
-                type="text"
-                value={visibilityOverlayQuery}
-                onChange={(event) => setVisibilityOverlayQuery(event.target.value)}
-                placeholder="Nome satellite, NORAD, condizione..."
-              />
-            </label>
-            <div className="visibility-overlay-table-wrap">
-              <table className="visibility-overlay-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Satellite</th>
-                    <th>NORAD ID</th>
-                    <th>Rise</th>
-                    <th>Set</th>
-                    <th>Elev. max</th>
-                    <th>Magnitudine</th>
-                    <th>Condizione</th>
-                    <th>Visibilita</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibilityOverlayFilteredResults.map((pass, index) => (
-                    <tr key={`${pass.satelliteId}-${pass.riseTime}-${pass.setTime}-${index}`}>
-                      <td>{index + 1}</td>
-                      <td>{pass.satelliteName}</td>
-                      <td>{pass.satelliteId}</td>
-                      <td>{new Date(pass.riseTime).toLocaleString('it-IT')}</td>
-                      <td>{new Date(pass.setTime).toLocaleString('it-IT')}</td>
-                      <td>{pass.maxElevation.toFixed(1)}deg</td>
-                      <td>{pass.estimatedMagnitude.toFixed(1)}</td>
-                      <td>{pass.observingCondition}</td>
-                      <td>{pass.visibility}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
+          <SatelliteGlobe
+            ref={globeRef}
+            autoRotate={autoRotate}
+            showBackSideSatellites={showBackSideSatellites}
+            groupColorMap={groupColorMap}
+            selectedEntityId={selectedEntityId}
+            starlinkSatellites={starlinkSatellites}
+            visibleEntitySatellites={visibleEntitySatellites}
+            onPickEntityId={handlePickEntityId}
+            onCompassChange={handleCompassChange}
+          />
         </section>
-      ) : null}
-    </main>
+
+        {visibilityOverlayOpen ? (
+          <section className="visibility-overlay" role="dialog" aria-modal="true" aria-label="Lista completa passaggi visibili">
+            <div className="visibility-overlay-backdrop" onClick={() => setVisibilityOverlayOpen(false)} />
+            <article className="visibility-overlay-card">
+              <header className="visibility-overlay-header">
+                <h2>Passaggi visibili - Lista completa</h2>
+                <div className="visibility-overlay-header-actions">
+                  <button type="button" onClick={exportVisibilityOverlayCsv}>
+                    Export CSV
+                  </button>
+                  <button type="button" onClick={() => setVisibilityOverlayOpen(false)}>
+                    Chiudi
+                  </button>
+                </div>
+              </header>
+              <p className="visibility-overlay-meta">
+                Totale risultati: {visibilityAllResults.length} | Mostrati: {visibilityOverlayFilteredResults.length} | Filtri: {visibilityHours}h, elevazione minima {visibilityMinElevation}deg
+              </p>
+              <p className="visibility-overlay-meta">{visibilityQueryLocationLabel}</p>
+              <label className="visibility-overlay-filter-row">
+                Cerca nella lista completa
+                <input
+                  type="text"
+                  value={visibilityOverlayQuery}
+                  onChange={(event) => setVisibilityOverlayQuery(event.target.value)}
+                  placeholder="Nome satellite, NORAD, condizione..."
+                />
+              </label>
+              <div className="visibility-overlay-table-wrap">
+                <table className="visibility-overlay-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Satellite</th>
+                      <th>NORAD ID</th>
+                      <th>Rise</th>
+                      <th>Set</th>
+                      <th>Elev. max</th>
+                      <th>Magnitudine</th>
+                      <th>Condizione</th>
+                      <th>Visibilita</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibilityOverlayFilteredResults.map((pass, index) => (
+                      <tr key={`${pass.satelliteId}-${pass.riseTime}-${pass.setTime}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{pass.satelliteName}</td>
+                        <td>{pass.satelliteId}</td>
+                        <td>{new Date(pass.riseTime).toLocaleString('it-IT')}</td>
+                        <td>{new Date(pass.setTime).toLocaleString('it-IT')}</td>
+                        <td>{pass.maxElevation.toFixed(1)}deg</td>
+                        <td>{pass.estimatedMagnitude.toFixed(1)}</td>
+                        <td>{pass.observingCondition}</td>
+                        <td>{pass.visibility}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+        ) : null}
+      </main>
+    </MusicPlayerProvider>
   )
 }
 

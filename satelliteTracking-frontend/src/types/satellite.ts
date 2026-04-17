@@ -1,6 +1,7 @@
 export interface SatellitePosition {
   satelliteId: number
   satelliteName: string
+  satelliteType: string | null
   objectId: string
   noradCatId: number
   calculatedAtUtc: string
