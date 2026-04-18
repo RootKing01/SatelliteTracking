@@ -48,7 +48,7 @@ import {
 } from './helpers/visibilityFlowHelpers'
 import { AuthPanel } from './components/auth/AuthPanel'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
-import { CompassPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
+import { CommunityPanel, CompassPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
@@ -65,7 +65,7 @@ type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]
 type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
 type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 
-type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'music'
+type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'music' | 'community'
 
 const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
 
@@ -1165,6 +1165,14 @@ function App() {
                     <span className="tab-icon tab-icon-music" aria-hidden="true" />
                     <span>Musica</span>
                   </button>
+                  <button
+                    type="button"
+                    className={openPane === 'community' ? 'tab-active' : ''}
+                    onClick={() => setOpenPane((prev) => (prev === 'community' ? null : 'community'))}
+                  >
+                    <span className="tab-icon tab-icon-community" aria-hidden="true" />
+                    <span>Community</span>
+                  </button>
                 </nav>
 
                 {openPane === 'groups' ? (
@@ -1253,6 +1261,14 @@ function App() {
                 ) : null}
 
                 {openPane === 'music' ? <MusicPanel /> : null}
+
+                {openPane === 'community' ? (
+                  <CommunityPanel
+                    authUser={authUser}
+                    selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
+                    selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
+                  />
+                ) : null}
               </div>
             </section>
           </div>

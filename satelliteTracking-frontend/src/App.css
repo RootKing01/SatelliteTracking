@@ -231,6 +231,27 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y proximity;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 249, 255, 0.45) rgba(7, 16, 30, 0.35);
+}
+
+.sidebar-tabs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-tabs::-webkit-scrollbar-track {
+  background: rgba(7, 16, 30, 0.35);
+  border-radius: 999px;
+}
+
+.sidebar-tabs::-webkit-scrollbar-thumb {
+  background: rgba(127, 249, 255, 0.45);
+  border-radius: 999px;
 }
 
 .sidebar-tabs button {
@@ -241,7 +262,7 @@
   background: linear-gradient(180deg, rgba(9, 23, 43, 0.9), rgba(7, 16, 30, 0.88));
   color: #9ec8ea;
   padding: 10px 6px;
-  min-height: 116px;
+  min-height: 104px;
   font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -250,6 +271,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  scroll-snap-align: start;
 }
 
 .tab-icon {
@@ -277,6 +299,11 @@
 .tab-icon-music {
   background: #76f2c6;
   box-shadow: 0 0 8px rgba(118, 242, 198, 0.82);
+}
+
+.tab-icon-community {
+  background: #ff6fa0;
+  box-shadow: 0 0 8px rgba(255, 111, 160, 0.82);
 }
 
 .tab-icon-visibility {

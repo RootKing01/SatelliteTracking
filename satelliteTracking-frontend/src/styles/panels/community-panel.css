@@ -1,0 +1,124 @@
+.community-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.community-feed-card,
+.community-thread-card {
+  border: 1px solid rgba(96, 250, 255, 0.24);
+  border-radius: 10px;
+  background: rgba(10, 24, 42, 0.72);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.community-feed-card strong,
+.community-thread-card strong {
+  color: #d3f7ff;
+  font-size: 0.8rem;
+}
+
+.community-feed-list,
+.community-comment-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.community-feed-list::-webkit-scrollbar,
+.community-comment-list::-webkit-scrollbar {
+  display: none;
+}
+
+.community-feed-item,
+.community-comment-item {
+  border: 1px solid rgba(96, 250, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(7, 17, 31, 0.78);
+  padding: 7px;
+  display: grid;
+  gap: 4px;
+}
+
+.community-feed-item p,
+.community-comment-item p {
+  margin: 0;
+  color: #c7deef;
+  font-size: 0.78rem;
+  line-height: 1.32;
+}
+
+.community-comment-item.is-deleted {
+  opacity: 0.7;
+}
+
+.community-comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.community-comment-head small,
+.community-feed-item small,
+.community-feed-card small,
+.community-thread-card small {
+  color: #9bbad6;
+  font-size: 0.72rem;
+}
+
+.community-compose,
+.community-edit-box {
+  display: grid;
+  gap: 6px;
+}
+
+.community-compose textarea,
+.community-edit-box textarea {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.3);
+  background: rgba(5, 14, 26, 0.92);
+  color: #e5f5ff;
+  padding: 7px;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.community-compose input {
+  border-radius: 8px;
+  border: 1px solid rgba(96, 250, 255, 0.3);
+  background: rgba(5, 14, 26, 0.92);
+  color: #e5f5ff;
+  padding: 7px;
+  font-size: 0.8rem;
+}
+
+.community-inline-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.community-compose button,
+.community-inline-actions button {
+  border: 1px solid rgba(96, 250, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(10, 24, 42, 0.86);
+  color: #d8fcff;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.community-like-active {
+  border-color: rgba(255, 111, 160, 0.72) !important;
+  color: #ffd9e7 !important;
+  box-shadow: 0 0 10px rgba(255, 111, 160, 0.24);
+}
+
+.community-error {
+  color: #ff9ea9;
+}
