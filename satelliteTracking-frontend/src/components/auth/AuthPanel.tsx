@@ -1,4 +1,6 @@
+
 import '../../styles/auth/auth-panel.css'
+import logo from '../../assets/logo.svg'
 
 type AuthMode = 'login' | 'register'
 
@@ -37,11 +39,15 @@ export function AuthPanel({
   onAuthPasswordChange,
   onSubmit,
 }: AuthPanelProps) {
+
   if (authChecking) {
     return (
       <main className="auth-shell">
-        <section className="auth-card">
+        <div>
           <h1>Satellite Tracker</h1>
+        </div>
+        <section className="auth-card glass">
+          <img src={logo} alt="Satellite Tracker Logo" className="auth-logo" />
           <p>Verifica sessione in corso...</p>
         </section>
       </main>
@@ -50,11 +56,17 @@ export function AuthPanel({
 
   return (
     <main className="auth-shell">
-      <section className="auth-card">
+      <div>
         <h1>Satellite Tracker</h1>
+      </div>
+      <section className="auth-card glass">
+        <div className="auth-logo-glow-wrap">
+          <img src={logo} alt="Satellite Tracker Logo" className="auth-logo auth-logo-glow" />
+        </div>
+        <div className="auth-separator-glow"></div>
+        <p className="auth-welcome">Benvenuto! Accedi o crea un account per iniziare a tracciare i satelliti.</p>
         <p className="auth-info">{authInfo}</p>
-
-        <div className="auth-tabs">
+        <div className="auth-switcher">
           <button
             type="button"
             className={authMode === 'login' ? 'is-active' : ''}
@@ -70,7 +82,6 @@ export function AuthPanel({
             Iscrizione
           </button>
         </div>
-
         <form
           className="auth-form"
           onSubmit={(event) => {
@@ -123,13 +134,12 @@ export function AuthPanel({
             />
           </label>
 
-          {authError ? <p className="auth-error">{authError}</p> : null}
+          {authError ? <p className="auth-error highlight-error">{authError}</p> : null}
 
           <button type="submit" className="auth-submit" disabled={authSubmitting}>
-            {authSubmitting ? 'Invio in corso...' : authMode === 'login' ? 'Accedi' : 'Crea account'}
+            {authMode === 'login' ? 'Accedi' : 'Registrati'}
           </button>
         </form>
-
         <div className="auth-hint">
           <p>
             Profilo base: <strong>demo</strong> / <strong>Demo123!</strong>
@@ -137,5 +147,5 @@ export function AuthPanel({
         </div>
       </section>
     </main>
-  )
+  );
 }

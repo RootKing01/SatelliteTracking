@@ -21,7 +21,8 @@ export function PanelTopSection({
   systemHealthLoading,
   systemHealthError,
   onLogout,
-}: PanelTopSectionProps) {
+  onPingSystemHealth,
+}: PanelTopSectionProps & { onPingSystemHealth?: () => void }) {
   return (
     <section className="panel-top-shell">
       <div className="panel-header">
@@ -91,6 +92,27 @@ export function PanelTopSection({
               : systemHealthLoading
                 ? 'System ...'
                 : 'System DOWN'}
+        </span>
+        <span
+          className={`system-health-badge system-health-ping-minimal ${
+            systemHealthLoading
+              ? 'system-health-pending'
+              : systemHealth?.status === 'UP'
+                ? 'system-health-up'
+                : systemHealth?.status === 'DEGRADED'
+                  ? 'system-health-degraded'
+                  : systemHealth?.status === 'DOWN'
+                    ? 'system-health-down'
+                    : systemHealthError
+                      ? 'system-health-error'
+                      : 'system-health-pending'
+          }`}
+          title="Ping System Health"
+          onClick={systemHealthLoading ? undefined : onPingSystemHealth}
+          style={{ cursor: systemHealthLoading ? 'wait' : 'pointer', userSelect: 'none' }}
+        >
+          <span className="system-health-dot" />
+          Check Health
         </span>
       </div>
     </section>

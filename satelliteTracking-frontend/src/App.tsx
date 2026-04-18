@@ -1049,6 +1049,7 @@ function App() {
         {!focusGlobeMode ? (
           <aside className="panel-section">
 
+
             <section className="panel-component panel-component-top">
               <PanelTopSection
                 username={authUser.username}
@@ -1060,6 +1061,20 @@ function App() {
                 systemHealthError={systemHealthError}
                 onLogout={() => {
                   void handleLogout()
+                }}
+                onPingSystemHealth={() => {
+                  setSystemHealthLoading(true)
+                  setSystemHealthError('')
+                  void loadSystemHealth()
+                    .then(({ status, error }) => {
+                      setSystemHealth(status)
+                      setSystemHealthError(error)
+                      // Logga il risultato in console
+                      console.log('[HEALTH CHECK]', status, error)
+                    })
+                    .finally(() => {
+                      setSystemHealthLoading(false)
+                    })
                 }}
               />
             </section>

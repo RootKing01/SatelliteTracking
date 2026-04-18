@@ -1,3 +1,116 @@
+/* Ping badge stile coerente con gli altri badge di stato */
+.system-health-badge.system-health-ping-badge {
+  margin-left: 18px;
+  background: linear-gradient(90deg, #0ff 0%, #00ffe1 100%);
+  color: #0a2a3a;
+  border: 1.5px solid #00ffe1cc;
+  box-shadow: 0 0 12px #00ffe1a0, 0 2px 12px #0ff2;
+  font-weight: 700;
+  font-family: 'Orbitron', 'Share Tech Mono', 'Audiowide', Arial, sans-serif;
+  font-size: 1.04rem;
+  letter-spacing: 0.04em;
+  padding: 6px 18px 6px 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: box-shadow 0.18s, color 0.18s, border-color 0.18s, background 0.18s;
+  cursor: pointer;
+  user-select: none;
+}
+
+.system-health-badge.system-health-ping-badge:hover {
+  color: #fff;
+  border-color: #00ffe1;
+  box-shadow: 0 0 18px #00ffe1cc, 0 2px 16px #0ff2;
+}
+
+.system-health-badge.system-health-ping-badge.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.system-health-dot.system-health-ping-dot {
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, #00ffe1 60%, #0ff 100%);
+  box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
+  margin-right: 2px;
+  animation: pingDotPulse 1.2s infinite alternate;
+}
+
+.system-health-badge.system-health-ping-badge.loading .system-health-dot.system-health-ping-dot {
+  animation: pingDotSpin 0.7s linear infinite;
+}
+/* System Health Ping Button */
+.system-health-ping-btn {
+  margin-left: 18px;
+  padding: 6px 18px 6px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #00ffe1cc;
+  background: rgba(8, 24, 45, 0.55);
+  color: #aefcff;
+  font-family: 'Orbitron', 'Share Tech Mono', 'Audiowide', Arial, sans-serif;
+  font-size: 1.04rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 0 8px #00ffe1a0, 0 2px 8px #0ff2;
+  text-shadow: 0 0 8px #00ffe1, 0 1px 0 #0ff;
+  cursor: pointer;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: box-shadow 0.18s, color 0.18s, border-color 0.18s, background 0.18s;
+  position: relative;
+  z-index: 1;
+}
+
+.system-health-ping-btn:hover:not(:disabled) {
+  color: #fff;
+  border-color: #00ffe1;
+  box-shadow: 0 0 18px #00ffe1cc, 0 2px 16px #0ff2;
+}
+
+.system-health-ping-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.system-health-ping-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00ffe1 60%, #0ff 100%);
+  box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
+  margin-right: 2px;
+  animation: pingDotPulse 1.2s infinite alternate;
+}
+
+.system-health-ping-btn.loading .system-health-ping-dot {
+  animation: pingDotSpin 0.7s linear infinite;
+}
+
+@keyframes pingDotPulse {
+  0% {
+    box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
+  }
+  100% {
+    box-shadow: 0 0 18px #00ffe1, 0 0 32px #00ffe1cc;
+  }
+}
+
+@keyframes pingDotSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@import url('https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@700&family=Share+Tech+Mono&display=swap');
+
 .auth-shell {
   min-height: 100vh;
   display: grid;
@@ -7,13 +120,37 @@
   color: #e6f7ff;
 }
 
+.auth-logo {
+  display: block;
+  margin: 0 auto 12px auto;
+  width: 64px;
+  height: 64px;
+  filter: drop-shadow(0 2px 8px #1e2a3a88);
+}
+
+.auth-welcome {
+  margin: 0 0 10px 0;
+  font-size: 1.05rem;
+  color: #e6f7ff;
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.glass {
+  backdrop-filter: blur(12px) saturate(1.2);
+  background: rgba(8, 18, 34, 0.72) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1.5px rgba(41, 130, 255, 0.08);
+}
+
 .auth-card {
   width: min(420px, 92vw);
-  border-radius: 14px;
-  border: 1px solid rgba(108, 241, 255, 0.24);
+  border-radius: 18px;
+  border: 1.5px solid rgba(108, 241, 255, 0.24);
   background: rgba(8, 18, 34, 0.84);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), inset 0 0 18px rgba(41, 130, 255, 0.1);
-  padding: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1.5px rgba(41, 130, 255, 0.08);
+  padding: 28px 22px 22px 22px;
+  position: relative;
 }
 
 .auth-card h1 {
@@ -36,12 +173,90 @@
 }
 
 .auth-tabs button {
-  border-radius: 9px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
+  border-radius: 12px;
+  border: 1.5px solid rgba(96, 250, 255, 0.36);
   background: rgba(9, 24, 45, 0.85);
   color: #d8f8ff;
-  padding: 7px 8px;
+  padding: 10px 0;
+  font-size: 1rem;
+  font-weight: 500;
   cursor: pointer;
+
+}
+
+.auth-switcher {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
+.auth-switcher button {
+  background: rgba(12, 32, 48, 0.55);
+  border: 1.5px solid rgba(127, 249, 255, 0.38);
+  border-radius: 8px;
+  color: #aefcff;
+  font-family: 'Orbitron', 'Share Tech Mono', 'Audiowide', Arial, sans-serif;
+  font-size: 1.13rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 8px 22px;
+  box-shadow: 0 0 12px #00ffe1a0, 0 2px 12px #0ff2, 0 0 0 0 #00ffe1;
+  text-shadow: 0 0 8px #00ffe1, 0 1px 0 #0ff;
+  cursor: pointer;
+  transition: box-shadow 0.18s, color 0.18s, border-color 0.18s, background 0.18s;
+  outline: none;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-switcher button.is-active {
+  color: #fff;
+  border-color: #00ffe1;
+  background: rgba(0, 255, 225, 0.13);
+  box-shadow: 0 0 24px #00ffe1cc, 0 2px 16px #0ff2, 0 0 0 2px #00ffe1;
+  text-shadow: 0 0 16px #00ffe1, 0 1px 0 #0ff;
+  animation: neonPulse 1.2s infinite alternate;
+}
+
+.auth-switcher button:hover {
+  color: #fff;
+  border-color: #00ffe1;
+  box-shadow: 0 0 18px #00ffe1cc, 0 2px 16px #0ff2, 0 0 0 2px #00ffe1;
+}
+
+@keyframes neonPulse {
+  0% {
+    box-shadow: 0 0 24px #00ffe1cc, 0 2px 16px #0ff2, 0 0 0 2px #00ffe1;
+    text-shadow: 0 0 16px #00ffe1, 0 1px 0 #0ff;
+  }
+  100% {
+    box-shadow: 0 0 36px #00ffe1, 0 2px 24px #0ff2, 0 0 0 4px #00ffe1;
+    text-shadow: 0 0 32px #00ffe1, 0 1px 0 #0ff;
+  }
+}
+
+.auth-shell h1 {
+  font-size: 2.8rem !important;
+  text-shadow: 0 0 24px #00ffe1, 0 2px 0 #0ff, 0 0 48px #00ffe1cc;
+  color: #aefcff;
+  letter-spacing: 0.11em;
+  margin-bottom: 22px;
+  margin-top: 0;
+  text-align: center;
+  filter: brightness(1.25) drop-shadow(0 0 12px #00ffe1cc);
+  animation: neonTitlePulse 1.6s infinite alternate;
+}
+
+@keyframes neonTitlePulse {
+  0% {
+    text-shadow: 0 0 24px #00ffe1, 0 2px 0 #0ff, 0 0 48px #00ffe1cc;
+    filter: brightness(1.25) drop-shadow(0 0 12px #00ffe1cc);
+  }
+  100% {
+    text-shadow: 0 0 48px #00ffe1, 0 2px 0 #0ff, 0 0 72px #00ffe1cc;
+    filter: brightness(1.45) drop-shadow(0 0 24px #00ffe1cc);
+  }
 }
 
 .auth-tabs button,
@@ -51,6 +266,68 @@
     color 180ms ease,
     background-color 180ms ease,
     box-shadow 220ms ease;
+}
+
+.auth-form label {
+  display: block;
+  margin-top: 18px;
+  font-size: 0.98rem;
+  color: #b6e0ff;
+}
+
+.auth-form input {
+  width: 100%;
+  margin-top: 5px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #1e3a5c;
+  background: rgba(18, 28, 44, 0.92);
+  color: #e6f7ff;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.auth-form input:focus {
+  border-color: #6ff6ff;
+  background: rgba(18, 28, 44, 0.98);
+}
+
+.auth-submit {
+  margin-top: 22px;
+  width: 100%;
+  padding: 12px 0;
+  border-radius: 12px;
+  font-size: 1.08rem;
+  font-weight: 600;
+  background: linear-gradient(90deg, #1e90ff 0%, #00e6d0 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 12px #1e90ff33;
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-error,
+.highlight-error {
+  margin-top: 14px;
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.08);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-weight: 500;
+  font-size: 0.98rem;
+  text-align: center;
+}
+
+.auth-hint {
+  margin-top: 18px;
+  text-align: center;
+  color: #a8cae9;
+  font-size: 0.92rem;
 }
 
 @media (hover: hover) and (pointer: fine) {
