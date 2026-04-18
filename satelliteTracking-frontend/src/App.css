@@ -1,9 +1,12 @@
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(286px, 360px) 1fr;
+  grid-template-columns: 1fr;
   width: 100vw;
   height: 100vh;
-  background: radial-gradient(circle at 10% 10%, #0b1f3f 0%, #050b18 55%, #02050c 100%);
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(14, 33, 58, 0.34), transparent 44%),
+    linear-gradient(180deg, #050910 0%, #02050b 100%);
 }
 
 .app-shell.focus-mode {
@@ -33,19 +36,24 @@
 
 
 .panel-section {
-  height: 100vh;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  height: calc(100vh - 20px);
+  width: min(470px, calc(100vw - 20px));
   overflow: hidden;
-  border-right: 1px solid rgba(77, 214, 255, 0.25);
-  background:
-    linear-gradient(180deg, rgba(4, 10, 24, 0.96), rgba(5, 13, 29, 0.95)),
-    repeating-linear-gradient(
-      180deg,
-      rgba(96, 250, 255, 0.04) 0,
-      rgba(96, 250, 255, 0.04) 1px,
-      transparent 1px,
-      transparent 4px
-    );
-  box-shadow: inset -10px 0 30px rgba(15, 115, 255, 0.08);
+  border-right: none;
+  background: rgba(4, 12, 24, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(7, 24, 46, 0.26);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(96, 250, 255, 0.14);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px;
+  z-index: 20;
 }
 
 .viewer-section {
@@ -58,14 +66,17 @@
   height: 100%;
 }
 
-.panel {
+.panel-component {
   width: 100%;
-  height: 100%;
+  box-sizing: border-box;
+  font-family: 'Rajdhani', 'Segoe UI', Tahoma, sans-serif;
+}
+
+.panel-component-main {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  padding: 12px 12px;
-  font-family: 'Rajdhani', 'Segoe UI', Tahoma, sans-serif;
 }
 
 .panel-header {
@@ -82,6 +93,14 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.panel-top-shell {
+  margin-bottom: 6px;
+  border: 1px solid rgba(96, 250, 255, 0.16);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(7, 18, 34, 0.52), rgba(5, 12, 24, 0.46));
+  padding: 10px;
 }
 
 .panel-logout {
@@ -188,7 +207,7 @@
   100% { opacity: 1; }
 }
 
-.panel h1 {
+.panel-component h1 {
   margin: 0;
   font-size: 1.22rem;
   color: #b7f8ff;
@@ -198,7 +217,7 @@
     0 0 18px rgba(79, 233, 255, 0.25);
 }
 
-.panel p {
+.panel-component p {
   margin: 0;
   color: #c0d3e8;
   font-size: 0.9rem;
@@ -209,6 +228,8 @@
   margin-top: 6px;
   min-height: 0;
   flex: 1;
+  position: relative;
+  height: 100%;
 }
 
 .panel-left {
@@ -216,28 +237,53 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .sidebar-split {
   margin-top: 6px;
-  display: grid;
-  grid-template-columns: 44px 1fr;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   min-height: 0;
   flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.sidebar-buttons-shell {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  border: 1px solid rgba(96, 250, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(4, 10, 21, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(2, 8, 18, 0.42);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.sidebar-buttons-shell.expanded {
+  width: 100%;
 }
 
 .sidebar-tabs {
+  width: 84px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  height: 100%;
   max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-snap-type: y proximity;
-  padding-right: 2px;
+  padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(127, 249, 255, 0.45) rgba(7, 16, 30, 0.35);
+  z-index: 2;
 }
 
 .sidebar-tabs::-webkit-scrollbar {
@@ -255,66 +301,100 @@
 }
 
 .sidebar-tabs button {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
   border: 1px solid rgba(96, 250, 255, 0.32);
-  border-radius: 8px;
+  border-radius: 10px;
   background: linear-gradient(180deg, rgba(9, 23, 43, 0.9), rgba(7, 16, 30, 0.88));
   color: #9ec8ea;
-  padding: 10px 6px;
-  min-height: 104px;
-  font-size: 0.72rem;
+  padding: 15px 8px;
+  min-height: 136px;
+  font-family: 'Orbitron', 'Eurostile', 'Bank Gothic', 'Rajdhani', sans-serif;
+  font-size: 0.82rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   scroll-snap-align: start;
+  line-height: 1;
+  text-align: center;
+  overflow: hidden;
 }
 
 .tab-icon {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.tab-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .tab-icon-constellation {
-  background: #5cf2ff;
-  box-shadow: 0 0 8px rgba(92, 242, 255, 0.8);
+  color: #5cf2ff;
+  filter: drop-shadow(0 0 8px rgba(92, 242, 255, 0.38));
 }
 
 .tab-icon-view {
-  background: #55e6a0;
-  box-shadow: 0 0 8px rgba(85, 230, 160, 0.78);
+  color: #55e6a0;
+  filter: drop-shadow(0 0 8px rgba(85, 230, 160, 0.34));
 }
 
 .tab-icon-sighting {
-  background: #ffd56b;
-  box-shadow: 0 0 8px rgba(255, 213, 107, 0.78);
+  color: #ffd56b;
+  filter: drop-shadow(0 0 8px rgba(255, 213, 107, 0.34));
 }
 
 .tab-icon-music {
-  background: #76f2c6;
-  box-shadow: 0 0 8px rgba(118, 242, 198, 0.82);
+  color: #76f2c6;
+  filter: drop-shadow(0 0 8px rgba(118, 242, 198, 0.34));
 }
 
 .tab-icon-community {
-  background: #ff6fa0;
-  box-shadow: 0 0 8px rgba(255, 111, 160, 0.82);
+  color: #ff6fa0;
+  filter: drop-shadow(0 0 8px rgba(255, 111, 160, 0.34));
 }
 
 .tab-icon-visibility {
-  background: #ff8f5a;
-  box-shadow: 0 0 8px rgba(255, 143, 90, 0.78);
+  color: #ff8f5a;
+  filter: drop-shadow(0 0 8px rgba(255, 143, 90, 0.34));
 }
 
 .sidebar-tabs button.tab-active {
   color: #c9fbff;
   border-color: rgba(127, 249, 255, 0.82);
   box-shadow: 0 0 10px rgba(89, 240, 255, 0.28);
+}
+
+.sidebar-collapsible-panel {
+  position: absolute;
+  left: 96px;
+  top: 0;
+  width: calc(100% - 96px);
+  max-height: 100%;
+  min-height: 0;
+  overflow: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  animation: drawerReveal 0.2s ease;
+  padding: 0;
+  z-index: 1;
 }
 
 .side-drawer {
@@ -355,7 +435,9 @@
   color: #d8fcff;
   border-radius: 10px;
   padding: 7px 12px;
+  font-family: 'Orbitron', 'Eurostile', 'Bank Gothic', 'Rajdhani', sans-serif;
   font-size: 0.85rem;
+  line-height: 1;
   cursor: pointer;
   text-shadow: 0 0 6px rgba(77, 214, 255, 0.45);
   box-shadow: inset 0 0 0 1px rgba(2, 12, 24, 0.8);
@@ -366,11 +448,11 @@
 
 .collapsible {
   margin-top: 8px;
-  border: 1px solid rgba(89, 240, 255, 0.28);
+  border: 1px solid rgba(89, 240, 255, 0.18);
   border-radius: 10px;
-  background: linear-gradient(180deg, rgba(10, 25, 47, 0.62), rgba(7, 18, 34, 0.62));
+  background: transparent;
   padding: 8px;
-  box-shadow: inset 0 0 22px rgba(41, 130, 255, 0.09);
+  box-shadow: none;
 }
 
 .collapsible summary,
@@ -415,9 +497,9 @@
 
 .compass-card {
   margin-top: 8px;
-  border: 1px solid rgba(216, 237, 255, 0.2);
+  border: 1px solid rgba(216, 237, 255, 0.14);
   border-radius: 10px;
-  background: rgba(14, 32, 55, 0.65);
+  background: transparent;
   padding: 8px;
 }
 
@@ -474,8 +556,9 @@
 .focus-toggle {
   position: absolute;
   top: 10px;
-  left: 10px;
-  z-index: 16;
+  right: 10px;
+  left: auto;
+  z-index: 30;
   border: 1px solid rgba(96, 250, 255, 0.45);
   background: linear-gradient(180deg, rgba(10, 28, 54, 0.9), rgba(7, 18, 34, 0.9));
   color: #d8fcff;
@@ -539,7 +622,9 @@
   color: #e8f4ff;
   border-radius: 8px;
   padding: 4px 8px;
+  font-family: 'Orbitron', 'Eurostile', 'Bank Gothic', 'Rajdhani', sans-serif;
   font-size: 0.75rem;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -604,7 +689,9 @@
   color: #d8fcff;
   border-radius: 10px;
   padding: 7px 10px;
+  font-family: 'Orbitron', 'Eurostile', 'Bank Gothic', 'Rajdhani', sans-serif;
   font-size: 0.82rem;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -750,10 +837,26 @@
   }
 
   .panel-section {
+    position: static;
+    width: auto;
+    top: auto;
+    left: auto;
     height: 340px;
     overflow: auto;
     border-right: none;
-    border-bottom: 1px solid rgba(216, 237, 255, 0.12);
+    border-bottom: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    box-shadow: none;
+    background: transparent;
+    border: none;
+    transform: none !important;
+  }
+
+  .focus-toggle {
+    left: 8px !important;
+    right: auto !important;
+    top: 8px;
   }
 
   .viewer-section {

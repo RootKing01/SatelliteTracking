@@ -4,9 +4,16 @@ import '../../styles/panels/compass-panel.css'
 type CompassPanelProps = {
   headingDeg: number
   hideOnMobile?: boolean
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
-export function CompassPanel({ headingDeg, hideOnMobile = false }: CompassPanelProps) {
+export function CompassPanel({
+  headingDeg,
+  hideOnMobile = false,
+  collapsed = false,
+  onToggleCollapsed,
+}: CompassPanelProps) {
   const normalizedHeadingDeg = useMemo(
     () => ((headingDeg % 360) + 360) % 360,
     [headingDeg],
@@ -33,9 +40,21 @@ export function CompassPanel({ headingDeg, hideOnMobile = false }: CompassPanelP
 
   return (
     <section
-      className={`viewer-compass ${hideOnMobile ? 'viewer-compass-mobile-hidden' : ''}`}
+      className={`viewer-compass ${hideOnMobile ? 'viewer-compass-mobile-hidden' : ''} ${collapsed ? 'viewer-compass-collapsed' : ''}`}
       aria-label="Bussola 360 gradi"
     >
+      <button
+        type="button"
+        className="viewer-compass-toggle"
+        onClick={onToggleCollapsed}
+        aria-label={collapsed ? 'Riapri bussola' : 'Socchiudi bussola'}
+        aria-pressed={collapsed}
+      >
+        <span className="viewer-compass-toggle-icon" aria-hidden="true">
+          {collapsed ? '⌁' : '◔'}
+        </span>
+      </button>
+      {collapsed ? null : (
       <svg viewBox="0 0 120 120" role="img" aria-hidden="true">
         <circle cx="60" cy="60" r="54" className="viewer-compass-ring" />
         <circle cx="60" cy="60" r="43" className="viewer-compass-inner-ring" />
@@ -72,7 +91,8 @@ export function CompassPanel({ headingDeg, hideOnMobile = false }: CompassPanelP
         </g>
         <circle cx="60" cy="60" r="5" className="viewer-compass-center" />
       </svg>
-      <p className="viewer-compass-readout">{normalizedHeadingDeg.toFixed(1)}deg</p>
+      )}
+      {collapsed ? null : <p className="viewer-compass-readout">{normalizedHeadingDeg.toFixed(1)}deg</p>}
     </section>
   )
 }

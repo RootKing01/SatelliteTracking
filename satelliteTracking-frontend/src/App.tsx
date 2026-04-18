@@ -47,6 +47,8 @@ import {
   fetchVisibilityPasses,
 } from './helpers/visibilityFlowHelpers'
 import { AuthPanel } from './components/auth/AuthPanel'
+import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
+import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
 import { CommunityPanel, CompassPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
@@ -64,8 +66,6 @@ if (ionToken && !import.meta.env.DEV) {
 type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]>>
 type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
 type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
-
-type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'music' | 'community'
 
 const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
 
@@ -93,7 +93,7 @@ function App() {
   const [enabledGroups, setEnabledGroups] =
     useState<Record<SatelliteGroupKey, boolean>>(defaultEnabledGroups)
   const [selectedPreset, setSelectedPreset] = useState<GroupPreset>('stations')
-  const [openPane, setOpenPane] = useState<SidebarPane | null>('groups')
+  const [openPane, setOpenPane] = useState<SidebarPane | null>(null)
   const [searchScope, setSearchScope] = useState<SatelliteSearchScope>('enabled')
   const [searchQuery, setSearchQuery] = useState('')
   const [catalogByGroup, setCatalogByGroup] =
@@ -103,6 +103,7 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [showBackSideSatellites, setShowBackSideSatellites] = useState(false)
+  const [compassCollapsed, setCompassCollapsed] = useState(false)
   const [refreshTuningIndex, setRefreshTuningIndex] = useState(1)
   const latestRequestIdRef = useRef(0)
   const inFlightRequestRef = useRef(false)
@@ -990,6 +991,8 @@ function App() {
     setEnabledGroups(nextEnabled)
   }
 
+  const panelWidth = 470
+
   if (authChecking || !authUser) {
     return (
       <AuthPanel
@@ -1026,13 +1029,13 @@ function App() {
       <MusicPlayerProvider>
         <main className="app-shell">
           <aside className="panel-section">
-            <div className="panel">
+            <section className="panel-component panel-component-token">
               <h1>Cesium token mancante</h1>
               <p>
                 Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
                 frontend.
               </p>
-            </div>
+            </section>
           </aside>
           <section className="viewer-section" />
         </main>
@@ -1045,244 +1048,173 @@ function App() {
       <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
         {!focusGlobeMode ? (
           <aside className="panel-section">
-          <div className="panel">
-          <div className="panel-header">
-            <h1>Satellite Tracker</h1>
-            <button
-              type="button"
-              className="panel-logout"
-              onClick={() => {
-                void handleLogout()
-              }}
-            >
-              Logout ({authUser.username})
-            </button>
-          </div>
 
-          <div className="panel-status-row">
-            <span className="panel-badge">
-              <span className="live-dot" />
-              Live
-            </span>
-            <span
-              className={`orekit-badge ${
-                orekitStatus?.orekitDataLoaded
-                  ? 'orekit-badge-loaded'
-                  : orekitStatusError
-                    ? 'orekit-badge-error'
-                    : orekitStatusLoading
-                      ? 'orekit-badge-pending'
-                      : 'orekit-badge-fallback'
-              }`}
-              title={
-                orekitStatus
-                  ? `Path: ${orekitStatus.orekitDataPath}`
-                  : orekitStatusError || 'Stato Orekit non disponibile'
-              }
-            >
-              <span className="orekit-dot" />
-              {orekitStatus?.orekitDataLoaded
-                ? 'Orekit ON'
-                : orekitStatusError
-                  ? 'Orekit N/A'
-                  : orekitStatusLoading
-                    ? 'Orekit ...'
-                    : 'Orekit OFF'}
-            </span>
-            <span
-              className={`system-health-badge ${
-                systemHealth?.status === 'UP'
-                  ? 'system-health-up'
-                  : systemHealth?.status === 'DEGRADED'
-                    ? 'system-health-degraded'
-                    : systemHealthError
-                      ? 'system-health-error'
-                      : systemHealthLoading
-                        ? 'system-health-pending'
-                        : 'system-health-down'
-              }`}
-              title={
-                systemHealth
-                  ? `API: ${systemHealth.components.api}, DB: ${systemHealth.components.database}, Orekit: ${systemHealth.components.orekit}`
-                  : systemHealthError || 'Stato sistema non disponibile'
-              }
-            >
-              <span className="system-health-dot" />
-              {systemHealth?.status
-                ? `System ${systemHealth.status}`
-                : systemHealthError
-                  ? 'System N/A'
-                  : systemHealthLoading
-                    ? 'System ...'
-                    : 'System DOWN'}
-            </span>
-          </div>
+            <section className="panel-component panel-component-top">
+              <PanelTopSection
+                username={authUser.username}
+                orekitStatus={orekitStatus}
+                orekitStatusLoading={orekitStatusLoading}
+                orekitStatusError={orekitStatusError}
+                systemHealth={systemHealth}
+                systemHealthLoading={systemHealthLoading}
+                systemHealthError={systemHealthError}
+                onLogout={() => {
+                  void handleLogout()
+                }}
+              />
+            </section>
 
-          <div className="panel-layout">
-            <section className="panel-left">
-              <p className="updated-at">Live feed /api/satellites/positions</p>
-              <p className="updated-at">Visibili: {totalVisibleCount} satelliti</p>
+            <section className="panel-component panel-component-main">
+              <div className="panel-layout">
+                <section className="panel-left">
+                  <p className="updated-at">Live feed /api/satellites/positions</p>
+                  <p className="updated-at">Visibili: {totalVisibleCount} satelliti</p>
 
-              <div className="sidebar-split">
-                <nav className="sidebar-tabs" aria-label="Pannelli laterali">
-                  <button
-                    type="button"
-                    className={openPane === 'groups' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'groups' ? null : 'groups'))}
-                  >
-                    <span className="tab-icon tab-icon-constellation" aria-hidden="true" />
-                    <span>Costellazioni</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={openPane === 'satellites' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'satellites' ? null : 'satellites'))}
-                  >
-                    <span className="tab-icon tab-icon-view" aria-hidden="true" />
-                    <span>Gestione vista</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={openPane === 'visibility' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'visibility' ? null : 'visibility'))}
-                  >
-                    <span className="tab-icon tab-icon-visibility" aria-hidden="true" />
-                    <span>Visibilita</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={openPane === 'sightings' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'sightings' ? null : 'sightings'))}
-                  >
-                    <span className="tab-icon tab-icon-sighting" aria-hidden="true" />
-                    <span>Avvistamenti</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={openPane === 'music' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'music' ? null : 'music'))}
-                  >
-                    <span className="tab-icon tab-icon-music" aria-hidden="true" />
-                    <span>Musica</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={openPane === 'community' ? 'tab-active' : ''}
-                    onClick={() => setOpenPane((prev) => (prev === 'community' ? null : 'community'))}
-                  >
-                    <span className="tab-icon tab-icon-community" aria-hidden="true" />
-                    <span>Community</span>
-                  </button>
-                </nav>
+                  <div className="sidebar-split">
+                    <section className={`sidebar-buttons-shell ${openPane ? 'expanded' : ''}`}>
+                      <PanelSidebarButtons
+                        openPane={openPane}
+                        onTogglePane={(pane) => {
+                          setOpenPane((prev) => (prev === pane ? null : pane))
+                        }}
+                      />
 
-                {openPane === 'groups' ? (
-                  <GroupsPanel
-                    allSelected={allSelected}
-                    selectedPreset={selectedPreset}
-                    searchScope={searchScope}
-                    searchQuery={searchQuery}
-                    searchResultItems={searchResultItems}
-                    searchScopeOptions={allGroups.map((group) => ({
-                      key: group.key,
-                      label: group.label,
-                    }))}
-                    groupRows={groupRows}
-                    onToggleAll={toggleAllGroups}
-                    onPresetChange={(presetValue) => {
-                      const preset = presetValue as GroupPreset
-                      setSelectedPreset(preset)
-                      applyGroupPreset(preset)
-                    }}
-                    onSearchScopeChange={(scopeValue) => {
-                      setSearchScope(scopeValue)
-                    }}
-                    onSearchQueryChange={setSearchQuery}
-                    onSearchResultSelect={(item) => {
-                      void handleSearchResultSelect(item)
-                    }}
-                    onToggleGroup={(groupKey) => {
-                      toggleGroup(groupKey)
-                    }}
-                  />
-                ) : null}
+                      {openPane ? (
+                        <section className="sidebar-collapsible-panel side-drawer">
+                        {openPane === 'groups' ? (
+                          <div id="panel-groups">
+                            <GroupsPanel
+                              allSelected={allSelected}
+                              selectedPreset={selectedPreset}
+                              searchScope={searchScope}
+                              searchQuery={searchQuery}
+                              searchResultItems={searchResultItems}
+                              searchScopeOptions={allGroups.map((group) => ({
+                                key: group.key,
+                                label: group.label,
+                              }))}
+                              groupRows={groupRows}
+                              onToggleAll={toggleAllGroups}
+                              onPresetChange={(presetValue) => {
+                                const preset = presetValue as GroupPreset
+                                setSelectedPreset(preset)
+                                applyGroupPreset(preset)
+                              }}
+                              onSearchScopeChange={(scopeValue) => {
+                                setSearchScope(scopeValue)
+                              }}
+                              onSearchQueryChange={setSearchQuery}
+                              onSearchResultSelect={(item) => {
+                                void handleSearchResultSelect(item)
+                              }}
+                              onToggleGroup={(groupKey) => {
+                                toggleGroup(groupKey)
+                              }}
+                            />
+                          </div>
+                        ) : null}
 
-                {openPane === 'satellites' ? (
-                  <SatellitesPanel
-                    autoRotate={autoRotate}
-                    showBackSideSatellites={showBackSideSatellites}
-                    hasLoadedOnce={hasLoadedOnce}
-                    isRefreshing={isRefreshing}
-                    refreshIntervalMs={refreshIntervalMs}
-                    refreshProfileLabel={selectedRefreshTuning.label}
-                    refreshTuningIndex={refreshTuningIndex}
-                    compass={compass}
-                    onZoomIn={() => globeRef.current?.zoomIn()}
-                    onZoomOut={() => globeRef.current?.zoomOut()}
-                    onGoHome={() => globeRef.current?.goToInitialView()}
-                    onAlignAxis={() => globeRef.current?.alignToEarthAxis()}
-                    onToggleAutoRotate={() => setAutoRotate((prev) => !prev)}
-                    onToggleBackSideSatellites={() => setShowBackSideSatellites((prev) => !prev)}
-                    onRefreshTuningIndexChange={setRefreshTuningIndex}
-                  />
-                ) : null}
+                        {openPane === 'satellites' ? (
+                          <div id="panel-satellites">
+                            <SatellitesPanel
+                              autoRotate={autoRotate}
+                              showBackSideSatellites={showBackSideSatellites}
+                              hasLoadedOnce={hasLoadedOnce}
+                              isRefreshing={isRefreshing}
+                              refreshIntervalMs={refreshIntervalMs}
+                              refreshProfileLabel={selectedRefreshTuning.label}
+                              refreshTuningIndex={refreshTuningIndex}
+                              compass={compass}
+                              onZoomIn={() => globeRef.current?.zoomIn()}
+                              onZoomOut={() => globeRef.current?.zoomOut()}
+                              onGoHome={() => globeRef.current?.goToInitialView()}
+                              onAlignAxis={() => globeRef.current?.alignToEarthAxis()}
+                              onToggleAutoRotate={() => setAutoRotate((prev) => !prev)}
+                              onToggleBackSideSatellites={() =>
+                                setShowBackSideSatellites((prev) => !prev)
+                              }
+                              onRefreshTuningIndexChange={setRefreshTuningIndex}
+                            />
+                          </div>
+                        ) : null}
 
-                {openPane === 'visibility' ? (
-                  <VisibilityPanel
-                    visibilityHours={visibilityHours}
-                    visibilityMinElevation={visibilityMinElevation}
-                    visibilityCity={visibilityCity}
-                    visibilityLocatingBrowser={visibilityLocatingBrowser}
-                    visibilityLoading={visibilityLoading}
-                    visibilityLatitude={visibilityLatitude}
-                    visibilityLongitude={visibilityLongitude}
-                    visibilityInfo={visibilityInfo}
-                    visibilityError={visibilityError}
-                    visibilityResults={visibilityResults}
-                    visibilityResultsTotal={visibilityAllResults.length}
-                    onVisibilityHoursChange={setVisibilityHours}
-                    onVisibilityMinElevationChange={setVisibilityMinElevation}
-                    onVisibilityCityChange={setVisibilityCity}
-                    onUseBrowserLocation={handleUseBrowserLocationForVisibility}
-                    onCalculateVisibility={() => {
-                      void handleCalculateVisibility()
-                    }}
-                    onOpenFullResults={openVisibilityFullResultsOverlay}
-                    onFocusFromVisibility={handleFocusFromVisibility}
-                  />
-                ) : null}
+                        {openPane === 'visibility' ? (
+                          <div id="panel-visibility">
+                            <VisibilityPanel
+                              visibilityHours={visibilityHours}
+                              visibilityMinElevation={visibilityMinElevation}
+                              visibilityCity={visibilityCity}
+                              visibilityLocatingBrowser={visibilityLocatingBrowser}
+                              visibilityLoading={visibilityLoading}
+                              visibilityLatitude={visibilityLatitude}
+                              visibilityLongitude={visibilityLongitude}
+                              visibilityInfo={visibilityInfo}
+                              visibilityError={visibilityError}
+                              visibilityResults={visibilityResults}
+                              visibilityResultsTotal={visibilityAllResults.length}
+                              onVisibilityHoursChange={setVisibilityHours}
+                              onVisibilityMinElevationChange={setVisibilityMinElevation}
+                              onVisibilityCityChange={setVisibilityCity}
+                              onUseBrowserLocation={handleUseBrowserLocationForVisibility}
+                              onCalculateVisibility={() => {
+                                void handleCalculateVisibility()
+                              }}
+                              onOpenFullResults={openVisibilityFullResultsOverlay}
+                              onFocusFromVisibility={handleFocusFromVisibility}
+                            />
+                          </div>
+                        ) : null}
 
-                {openPane === 'sightings' ? (
-                  <SightingsPanel
-                    sightingInfo={sightingInfo}
-                    sightingsError={sightingsError}
-                    sightingsLoading={sightingsLoading}
-                    mySightings={mySightings}
-                  />
-                ) : null}
+                        {openPane === 'sightings' ? (
+                          <div id="panel-sightings">
+                            <SightingsPanel
+                              sightingInfo={sightingInfo}
+                              sightingsError={sightingsError}
+                              sightingsLoading={sightingsLoading}
+                              mySightings={mySightings}
+                            />
+                          </div>
+                        ) : null}
 
-                {openPane === 'music' ? <MusicPanel /> : null}
+                        {openPane === 'community' ? (
+                          <div id="panel-community">
+                            <CommunityPanel
+                              authUser={authUser}
+                              selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
+                              selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
+                            />
+                          </div>
+                        ) : null}
 
-                {openPane === 'community' ? (
-                  <CommunityPanel
-                    authUser={authUser}
-                    selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
-                    selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
-                  />
-                ) : null}
+                        {openPane === 'music' ? (
+                          <div id="panel-music">
+                            <MusicPanel />
+                          </div>
+                        ) : null}
+                        </section>
+                      ) : null}
+                    </section>
+                  </div>
+                </section>
               </div>
             </section>
-          </div>
-          </div>
           </aside>
         ) : null}
 
         <section className="viewer-section">
-          <CompassPanel headingDeg={compass.headingDeg} hideOnMobile={!selectedSatellite} />
-          <MusicFloatingPlayer />
+          <MusicFloatingPlayer floatingStyle={{ left: focusGlobeMode ? 10 : panelWidth + 20, top: 58 }} />
+
+          <CompassPanel
+            headingDeg={compass.headingDeg}
+            hideOnMobile={!selectedSatellite}
+            collapsed={compassCollapsed}
+            onToggleCollapsed={() => setCompassCollapsed((prev) => !prev)}
+          />
 
           <button
             type="button"
             className="focus-toggle"
+            style={{ left: focusGlobeMode ? 10 : panelWidth + 20, right: 'auto' }}
             onClick={() => setFocusGlobeMode((prev) => !prev)}
           >
             {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}

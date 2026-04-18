@@ -16,6 +16,39 @@
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
+.viewer-compass-collapsed {
+  width: 54px;
+  padding: 8px 6px 6px;
+}
+
+.viewer-compass-toggle {
+  pointer-events: auto;
+  align-self: end;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 249, 255, 0.5);
+  background: linear-gradient(180deg, rgba(15, 39, 69, 0.96), rgba(8, 18, 34, 0.96));
+  color: #d8efff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(79, 233, 255, 0.14);
+}
+
+.viewer-compass-toggle:hover {
+  color: #ffffff;
+  border-color: rgba(127, 249, 255, 0.82);
+  box-shadow: 0 0 16px rgba(79, 233, 255, 0.25);
+}
+
+.viewer-compass-toggle-icon {
+  font-size: 0.92rem;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
 .viewer-compass svg {
   width: 126px;
   height: 126px;

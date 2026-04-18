@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { useMusicPlayer } from './MusicPlayerContext'
 import { MUSIC_FLOATING_WIDGET_FIXED_POSITION } from '../../helpers/musicPlayerHelpers'
 import '../../styles/panels/music-panel.css'
@@ -185,7 +185,11 @@ export function MusicPanel() {
   )
 }
 
-export function MusicFloatingPlayer() {
+type MusicFloatingPlayerProps = {
+  floatingStyle?: CSSProperties
+}
+
+export function MusicFloatingPlayer({ floatingStyle }: MusicFloatingPlayerProps) {
   const {
     selectedPlaylist,
     isPlaying,
@@ -212,7 +216,7 @@ export function MusicFloatingPlayer() {
     return (
       <aside
         className="music-float-player is-collapsed"
-        style={MUSIC_FLOATING_WIDGET_FIXED_POSITION}
+        style={floatingStyle ?? MUSIC_FLOATING_WIDGET_FIXED_POSITION}
         aria-label="Widget radio socchiuso"
       >
         <button
@@ -227,7 +231,7 @@ export function MusicFloatingPlayer() {
   }
 
   return (
-    <aside className="music-float-player" style={MUSIC_FLOATING_WIDGET_FIXED_POSITION} aria-label="Controllo musicale flottante">
+    <aside className="music-float-player" style={floatingStyle ?? MUSIC_FLOATING_WIDGET_FIXED_POSITION} aria-label="Controllo musicale flottante">
       <div className="music-float-grip">
         <span className="music-float-label">RADIO LINK</span>
         <button
