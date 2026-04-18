@@ -59,7 +59,6 @@ export async function executeRegisterFlow(payload: {
   try {
     const response = await register(payload)
     if (!response.authenticated || !response.user) {
-      clearAuthToken()
       return {
         user: null,
         info: '',
@@ -67,11 +66,8 @@ export async function executeRegisterFlow(payload: {
       }
     }
 
-    setAuthToken(response.token)
-
     const me = await getCurrentUser()
     if (!me.authenticated || !me.user) {
-      clearAuthToken()
       return {
         user: null,
         info: '',
@@ -100,7 +96,6 @@ export async function executeLogoutFlow(): Promise<{ error: string }> {
     // Niente più gestione token: solo cookie
     return { error: '' }
   } catch (error) {
-    clearAuthToken()
     return { error: extractAuthErrorMessage(error, 'Errore durante il logout') }
   }
 }
