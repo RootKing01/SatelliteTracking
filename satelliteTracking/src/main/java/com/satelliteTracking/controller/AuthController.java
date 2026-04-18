@@ -46,7 +46,7 @@ public class AuthController {
         ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
-            .body(withoutToken(response));
+            .body(response);
     }
 
     @PostMapping("/login")
@@ -56,7 +56,7 @@ public class AuthController {
         ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
-            .body(withoutToken(response));
+            .body(response);
     }
 
     @GetMapping("/me")
@@ -70,10 +70,6 @@ public class AuthController {
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie.toString())
             .body(authService.logout());
-    }
-
-    private AuthResponseDTO withoutToken(AuthResponseDTO response) {
-        return new AuthResponseDTO(response.authenticated(), response.message(), response.user(), null);
     }
 
     private ResponseCookie buildAuthCookie(String token, HttpServletRequest request) {

@@ -1,4 +1,5 @@
 import { getCurrentUser, login, logout, register, type AuthUser } from '../api/authClient'
+
 import { extractAuthErrorMessage } from './appErrorHelpers'
 
 export type AuthFlowResult = {
@@ -14,6 +15,7 @@ export async function executeLoginFlow(payload: {
   try {
     const response = await login(payload)
     if (!response.authenticated || !response.user) {
+      // Niente più gestione token: solo cookie
       return {
         user: null,
         info: '',
@@ -21,9 +23,12 @@ export async function executeLoginFlow(payload: {
       }
     }
 
+    // Niente più gestione token: solo cookie
+
     // Verifica immediata della sessione per evitare stato UI "loggato" senza cookie valido.
     const me = await getCurrentUser()
     if (!me.authenticated || !me.user) {
+      // Niente più gestione token: solo cookie
       return {
         user: null,
         info: '',
@@ -37,6 +42,7 @@ export async function executeLoginFlow(payload: {
       error: '',
     }
   } catch (error) {
+    // Niente più gestione token: solo cookie
     return {
       user: null,
       info: '',
@@ -53,6 +59,7 @@ export async function executeRegisterFlow(payload: {
   try {
     const response = await register(payload)
     if (!response.authenticated || !response.user) {
+      clearAuthToken()
       return {
         user: null,
         info: '',
@@ -60,8 +67,11 @@ export async function executeRegisterFlow(payload: {
       }
     }
 
+    setAuthToken(response.token)
+
     const me = await getCurrentUser()
     if (!me.authenticated || !me.user) {
+      clearAuthToken()
       return {
         user: null,
         info: '',
@@ -75,6 +85,7 @@ export async function executeRegisterFlow(payload: {
       error: '',
     }
   } catch (error) {
+    // Niente più gestione token: solo cookie
     return {
       user: null,
       info: '',
@@ -86,8 +97,10 @@ export async function executeRegisterFlow(payload: {
 export async function executeLogoutFlow(): Promise<{ error: string }> {
   try {
     await logout()
+    // Niente più gestione token: solo cookie
     return { error: '' }
   } catch (error) {
+    clearAuthToken()
     return { error: extractAuthErrorMessage(error, 'Errore durante il logout') }
   }
 }

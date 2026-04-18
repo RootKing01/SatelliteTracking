@@ -42,6 +42,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/system/orekit-status").permitAll()
                 .requestMatchers("/api/system/health").permitAll()
                 .requestMatchers("/api/telegram-webhook/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/community/feed").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/community/threads/featured").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/community/threads/*/*").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

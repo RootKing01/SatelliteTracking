@@ -57,11 +57,18 @@ public class CommunityService {
 
     @Transactional
     public CommunityThreadWithCommentsDTO getThreadWithComments(String targetTypeRaw, String targetIdRaw) {
-        AppUser user = authService.requireAuthenticatedUser();
+        AppUser user = authService.getAuthenticatedUserOrNull();
         CommunityTargetType targetType = parseTargetType(targetTypeRaw);
         String targetId = normalizeRequired(targetIdRaw, "targetId", 128);
 
-        CommunityThread thread = getOrCreateThread(targetType, targetId, user, buildDefaultThreadTitle(targetType, targetId));
+        CommunityThread thread = communityThreadRepository
+            .findByTargetTypeAndTargetId(targetType, targetId)
+            .orElseGet(() -> {
+                if (user == null) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread non trovato");
+                }
+                return getOrCreateThread(targetType, targetId, user, buildDefaultThreadTitle(targetType, targetId));
+            });
         List<CommunityCommentDTO> comments = communityCommentRepository
             .findByThreadIdOrderByCreatedAtAsc(thread.getId())
             .stream()
@@ -69,6 +76,11 @@ public class CommunityService {
             .toList();
 
         return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments);
+    }
+
+    @Transactional
+    public CommunityThreadWithCommentsDTO ensureThreadWithComments(String targetTypeRaw, String targetIdRaw) {
+        return getThreadWithComments(targetTypeRaw, targetIdRaw);
     }
 
     @Transactional
@@ -212,7 +224,7 @@ public class CommunityService {
 
     @Transactional(readOnly = true)
     public List<CommunityFeedItemDTO> getFeed(int limit) {
-        AppUser user = authService.requireAuthenticatedUser();
+        AppUser user = authService.getAuthenticatedUserOrNull();
         int normalizedLimit = Math.max(1, Math.min(limit, 50));
 
         return communityThreadRepository
@@ -224,7 +236,7 @@ public class CommunityService {
 
     @Transactional(readOnly = true)
     public List<CommunityFeedItemDTO> getFeaturedThreads(int limit) {
-        AppUser user = authService.requireAuthenticatedUser();
+        AppUser user = authService.getAuthenticatedUserOrNull();
         int normalizedLimit = Math.max(1, Math.min(limit, 20));
 
         return communityThreadRepository
@@ -321,7 +333,7 @@ public class CommunityService {
 
     private CommunityThreadDTO toThreadDTO(CommunityThread thread, AppUser currentUser) {
         long likesCount = communityThreadLikeRepository.countByThreadId(thread.getId());
-        boolean likedByMe = communityThreadLikeRepository
+        boolean likedByMe = currentUser != null && communityThreadLikeRepository
             .findByThreadIdAndUserId(thread.getId(), currentUser.getId())
             .isPresent();
 
@@ -345,7 +357,7 @@ public class CommunityService {
             .orElse("Nessun commento visibile");
 
         long likesCount = communityThreadLikeRepository.countByThreadId(thread.getId());
-        boolean likedByMe = communityThreadLikeRepository
+        boolean likedByMe = currentUser != null && communityThreadLikeRepository
             .findByThreadIdAndUserId(thread.getId(), currentUser.getId())
             .isPresent();
 

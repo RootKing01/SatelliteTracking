@@ -129,6 +129,23 @@ public class AuthService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessione non autenticata"));
     }
 
+    @Transactional(readOnly = true)
+    public AppUser getAuthenticatedUserOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+
+        String username = authentication.getName();
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+
+        return appUserRepository.findByUsernameIgnoreCase(username)
+            .filter(AppUser::isEnabled)
+            .orElse(null);
+    }
+
     private Optional<AppUser> findByUsernameOrEmail(String usernameOrEmail) {
         String normalized = usernameOrEmail.trim();
         if (normalized.contains("@")) {

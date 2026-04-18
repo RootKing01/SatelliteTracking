@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios'
 import { httpClient } from './httpClient'
 
 export type CommunityComment = {
@@ -53,6 +54,26 @@ export async function fetchCommunityThread(targetType: string, targetId: string,
     { signal },
   )
   return response.data
+}
+
+export async function ensureCommunityThread(targetType: string, targetId: string): Promise<CommunityThreadWithComments> {
+  try {
+    const response = await httpClient.post<CommunityThreadWithComments>(
+      `/api/community/threads/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`,
+    )
+    return response.data
+  } catch (error) {
+    if (isAxiosError(error)) {
+      if (error.code === 'ERR_CANCELED') {
+        throw error
+      }
+
+      // Compatibility fallback: older or restricted backends may reject POST,
+      // while GET still resolves by opening or creating the target thread.
+      return fetchCommunityThread(targetType, targetId)
+    }
+    throw error
+  }
 }
 
 export async function createCommunityThread(payload: {

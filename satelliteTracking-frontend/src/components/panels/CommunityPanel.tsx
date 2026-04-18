@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { isAxiosError } from 'axios'
 import type { AuthUser } from '../../api/authClient'
+import { getCurrentUser } from '../../api/authClient'
 import {
+  ensureCommunityThread,
   createCommunityThread,
   createCommunityComment,
   deleteCommunityComment,
@@ -42,6 +45,8 @@ export function CommunityPanel({
   const [postingThread, setPostingThread] = useState(false)
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [editingBody, setEditingBody] = useState('')
+  const [sessionVerified, setSessionVerified] = useState(false)
+  const [communitySessionValid, setCommunitySessionValid] = useState(false)
 
   const activeTarget = useMemo(() => {
     if (!selectedSatelliteId) {
@@ -55,12 +60,66 @@ export function CommunityPanel({
     }
   }, [selectedSatelliteId, selectedSatelliteName])
 
+  const isUnauthorizedError = (error: unknown) =>
+    isAxiosError(error) && error.response?.status === 401
+
+  const handleUnauthorizedSession = useCallback(() => {
+    setCommunitySessionValid(false)
+    setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+  }, [])
+
   useEffect(() => {
     if (!authUser) {
+      setSessionVerified(true)
+      setCommunitySessionValid(false)
+      return
+    }
+
+    let cancelled = false
+    setSessionVerified(false)
+
+    void getCurrentUser()
+      .then((response) => {
+        if (cancelled) {
+          return
+        }
+
+        const isValid = Boolean(response.authenticated && response.user)
+        setCommunitySessionValid(isValid)
+        if (!isValid) {
+          setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+          setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+        }
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+        setCommunitySessionValid(false)
+        setThreadsError('Sessione non verificabile. Esegui di nuovo l\'accesso.')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSessionVerified(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authUser])
+
+  useEffect(() => {
+    if (!authUser || !sessionVerified || !communitySessionValid) {
       setFeaturedThreads([])
       setAllThreads([])
-      setThreadsError('')
       setActiveThread(null)
+      if (!communitySessionValid && sessionVerified) {
+        setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+      } else {
+        setThreadsError('')
+      }
       return
     }
 
@@ -76,8 +135,12 @@ export function CommunityPanel({
         setFeaturedThreads(featured)
         setAllThreads(all)
       })
-      .catch(() => {
+      .catch((error) => {
         if (!controller.signal.aborted) {
+          if (isUnauthorizedError(error)) {
+            handleUnauthorizedSession()
+            return
+          }
           setThreadsError('Impossibile caricare i thread community.')
         }
       })
@@ -90,10 +153,11 @@ export function CommunityPanel({
     return () => {
       controller.abort()
     }
-  }, [authUser])
+  }, [authUser, communitySessionValid, sessionVerified])
 
   const loadThread = async (targetType: string, targetId: string) => {
-    if (!authUser) {
+    if (!authUser || !communitySessionValid) {
+      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
       return
     }
 
@@ -103,8 +167,39 @@ export function CommunityPanel({
       const payload = await fetchCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
+      setActiveThread(null)
+      setComments([])
       setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
+
+  const ensureThread = async (targetType: string, targetId: string) => {
+    if (!authUser || !communitySessionValid) {
+      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+      return
+    }
+
+    setCommentsLoading(true)
+    setCommentsError('')
+    try {
+      const payload = await ensureCommunityThread(targetType, targetId)
+      setActiveThread(payload.thread)
+      setComments(payload.comments)
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
+      setActiveThread(null)
+      setComments([])
+      setCommentsError('Impossibile aprire o creare il thread del satellite selezionato.')
     } finally {
       setCommentsLoading(false)
     }
@@ -115,7 +210,7 @@ export function CommunityPanel({
       return
     }
     void loadThread(activeTarget.targetType, activeTarget.targetId)
-  }, [activeTarget?.targetId, authUser?.id])
+  }, [activeTarget?.targetId, activeTarget?.targetType, authUser?.id])
 
   const applyLikeUpdateToCollections = (threadId: number, likesCount: number, likedByMe: boolean) => {
     const updater = (items: CommunityFeedItem[]) =>
@@ -137,12 +232,21 @@ export function CommunityPanel({
     try {
       const updated = await toggleCommunityThreadLike(threadId)
       applyLikeUpdateToCollections(updated.threadId, updated.likesCount, updated.likedByMe)
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setThreadsError('Like non aggiornato. Riprova.')
     }
   }
 
   const handleCreateGeneralThread = async () => {
+    if (!communitySessionValid) {
+      setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+      return
+    }
+
     if (!newThreadTitle.trim() || !newThreadBody.trim() || postingThread) {
       return
     }
@@ -172,7 +276,11 @@ export function CommunityPanel({
       setComments(created.comments)
       setNewThreadTitle('')
       setNewThreadBody('')
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setThreadsError('Creazione thread non riuscita.')
     } finally {
       setPostingThread(false)
@@ -180,6 +288,11 @@ export function CommunityPanel({
   }
 
   const handleSubmitComment = async () => {
+    if (!communitySessionValid) {
+      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+      return
+    }
+
     if (!activeThread || !newCommentBody.trim() || postingComment) {
       return
     }
@@ -217,7 +330,11 @@ export function CommunityPanel({
             }
           : prev,
       )
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setCommentsError('Invio commento non riuscito. Riprova.')
     } finally {
       setPostingComment(false)
@@ -234,7 +351,11 @@ export function CommunityPanel({
             : item,
         ),
       )
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setCommentsError('Impossibile eliminare il commento selezionato.')
     }
   }
@@ -249,7 +370,11 @@ export function CommunityPanel({
       setComments((prev) => prev.map((item) => (item.id === commentId ? updated : item)))
       setEditingCommentId(null)
       setEditingBody('')
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setCommentsError('Modifica commento non riuscita.')
     }
   }
@@ -257,7 +382,11 @@ export function CommunityPanel({
   const handleReportComment = async (commentId: number) => {
     try {
       await reportCommunityComment(commentId, 'Contenuto non appropriato')
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorizedSession()
+        return
+      }
       setCommentsError('Segnalazione non inviata. Riprova.')
     }
   }
@@ -267,6 +396,15 @@ export function CommunityPanel({
       <section className="collapsible side-drawer community-panel" aria-label="Community">
         <h3>Community</h3>
         <p className="updated-at">Accedi per usare commenti e feed community.</p>
+      </section>
+    )
+  }
+
+  if (!sessionVerified) {
+    return (
+      <section className="collapsible side-drawer community-panel" aria-label="Community">
+        <h3>Community</h3>
+        <p className="updated-at">Verifica sessione in corso...</p>
       </section>
     )
   }
@@ -389,7 +527,7 @@ export function CommunityPanel({
           {activeThread
             ? `Thread attivo: ${activeThread.title}`
             : activeTarget
-              ? `Nessun thread aperto. Premi "Apri thread satellite" per ${activeTarget.label}`
+              ? `Nessun thread aperto. Premi "Apri o crea thread satellite" per ${activeTarget.label}`
               : 'Seleziona un thread dall\'elenco oppure un satellite'}
         </strong>
 
@@ -410,13 +548,17 @@ export function CommunityPanel({
         {activeTarget ? (
           <button
             type="button"
+            disabled={commentsLoading}
             onClick={() => {
-              void loadThread(activeTarget.targetType, activeTarget.targetId)
+              void ensureThread(activeTarget.targetType, activeTarget.targetId)
             }}
           >
-            Apri thread satellite corrente
+            {commentsLoading ? 'Caricamento thread...' : 'Apri o crea thread satellite corrente'}
           </button>
         ) : null}
+
+        {commentsError ? <p className="community-error">{commentsError}</p> : null}
+        {!activeThread && commentsLoading ? <p className="updated-at">Caricamento thread...</p> : null}
 
         {activeThread ? (
           <>
@@ -431,8 +573,6 @@ export function CommunityPanel({
                 {postingComment ? 'Invio...' : 'Pubblica'}
               </button>
             </div>
-
-            {commentsError ? <p className="community-error">{commentsError}</p> : null}
             {commentsLoading ? <p className="updated-at">Caricamento thread...</p> : null}
 
             {!commentsLoading && comments.length === 0 ? (

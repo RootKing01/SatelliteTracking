@@ -48,6 +48,14 @@ public class CommunityController {
         return ResponseEntity.ok(communityService.getThreadWithComments(targetType, targetId));
     }
 
+    @PostMapping("/threads/{targetType}/{targetId}")
+    public ResponseEntity<CommunityThreadWithCommentsDTO> ensureThread(
+        @PathVariable String targetType,
+        @PathVariable String targetId
+    ) {
+        return ResponseEntity.ok(communityService.ensureThreadWithComments(targetType, targetId));
+    }
+
     @PostMapping("/threads/{targetType}/{targetId}/comments")
     public ResponseEntity<CommunityCommentDTO> createComment(
         @PathVariable String targetType,
