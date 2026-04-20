@@ -20,6 +20,8 @@ import com.satelliteTracking.repository.CommunityCommentRepository;
 import com.satelliteTracking.repository.CommunityThreadLikeRepository;
 import com.satelliteTracking.repository.CommunityThreadRepository;
 import org.springframework.data.domain.PageRequest;
+import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.model.Satellite;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,17 +44,20 @@ public class CommunityService {
     private final CommunityCommentReportRepository communityCommentReportRepository;
     private final CommunityThreadLikeRepository communityThreadLikeRepository;
     private final AuthService authService;
+    private final SatelliteRepository satelliteRepository;
 
     public CommunityService(CommunityThreadRepository communityThreadRepository,
                             CommunityCommentRepository communityCommentRepository,
                             CommunityCommentReportRepository communityCommentReportRepository,
                             CommunityThreadLikeRepository communityThreadLikeRepository,
-                            AuthService authService) {
+                            AuthService authService,
+                            SatelliteRepository satelliteRepository) {
         this.communityThreadRepository = communityThreadRepository;
         this.communityCommentRepository = communityCommentRepository;
         this.communityCommentReportRepository = communityCommentReportRepository;
         this.communityThreadLikeRepository = communityThreadLikeRepository;
         this.authService = authService;
+        this.satelliteRepository = satelliteRepository;
     }
 
     @Transactional
@@ -376,11 +381,29 @@ public class CommunityService {
 
     private String buildDefaultThreadTitle(CommunityTargetType targetType, String targetId) {
         return switch (targetType) {
-            case SATELLITE -> "Satellite #" + targetId;
+            case SATELLITE -> {
+                // Prova a recuperare il nome del satellite dal repository
+                String name = satelliteRepository.findByNoradCatId(parseLongSafe(targetId))
+                        .map(Satellite::getObjectName)
+                        .orElse(null);
+                if (name != null && !name.isBlank()) {
+                    yield name;
+                } else {
+                    yield "Satellite #" + targetId;
+                }
+            }
             case SIGHTING -> "Avvistamento #" + targetId;
             case PASS -> "Passaggio #" + targetId;
             case GENERAL -> "Discussione generale";
         };
+    }
+
+    private Long parseLongSafe(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private String buildPreview(String body) {

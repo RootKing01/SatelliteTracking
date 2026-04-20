@@ -1,3 +1,38 @@
+/* Reply indicator: solo la reply, non tocca altri strong */
+.community-reply-indicator {
+  margin-bottom: 4px;
+  background: rgba(96, 250, 255, 0.10);
+  border-left: 4px solid #60faff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #60faff;
+  font-weight: 500;
+  box-shadow: 0 0 8px #60faff88;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-reply-indicator strong {
+  color: #fff;
+  text-shadow: 0 0 4px #60faff, 0 0 2px #fff;
+}
+
+.community-cancel-reply {
+  background: #ff3b8d;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  margin-left: 8px;
+  font-size: 0.8em;
+  cursor: pointer;
+  box-shadow: 0 0 6px #ff3b8d88;
+  transition: background 0.2s;
+}
+.community-cancel-reply:hover {
+  background: #ff1c6b;
+}
 .community-panel {
   display: grid;
   gap: 8px;
