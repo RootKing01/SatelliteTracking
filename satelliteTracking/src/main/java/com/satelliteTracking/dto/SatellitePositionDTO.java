@@ -18,6 +18,16 @@ public record SatellitePositionDTO(
     double orbitalPeriodHours,
     double velocityKmh,
     double directionDeg,
-    OrbitalParametersDTO latestOrbitalParameters
-) {
-}
+    OrbitalParametersDTO latestOrbitalParameters,
+    // Campi da SatelliteObservationDTO
+    Double observerLatitudeDeg,
+    Double observerLongitudeDeg,
+    Double observerAltitudeM,
+    Double elevationDeg,
+    Double azimuthDeg,
+    Double rangeKm,
+    Double estimatedMagnitude,
+    Boolean isVisible,
+    String visibility,
+    String observingCondition
+) {}

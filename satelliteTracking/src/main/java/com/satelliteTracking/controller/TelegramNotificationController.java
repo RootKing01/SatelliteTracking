@@ -32,6 +32,8 @@ public class TelegramNotificationController {
      *   "locationName": "San Marcellino"
      * }
      */
+
+    
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> registerTelegramUser(@RequestBody Map<String, Object> request) {
         try {
@@ -76,7 +78,7 @@ public class TelegramNotificationController {
             @RequestBody Map<String, Object> request) {
         try {
             String observingCondition = (String) request.getOrDefault("observingCondition", "any");
-            Double maxMagnitude = ((Number) request.getOrDefault("maxMagnitude", 6.0)).doubleValue();
+            Double maxMagnitude = ((Number) request.getOrDefault("maxMagnitude", 3.0)).doubleValue();
             Double minElevation = ((Number) request.getOrDefault("minElevation", 10.0)).doubleValue();
             
             TelegramSubscription subscription = telegramNotificationService.updatePreferences(

@@ -442,6 +442,7 @@ public class SatellitePassService {
             propagator.clearEventsDetectors();
         }
     }
+
     
     /**
      * Calcolo semplificato (senza Orekit)
@@ -690,7 +691,17 @@ public class SatellitePassService {
             orbitalPeriodHours,
             velocityKmh,
             directionDeg,
-            OrbitalParametersDTO.fromEntity(latestParams)
+            OrbitalParametersDTO.fromEntity(latestParams),
+            null, // observerLatitudeDeg
+            null, // observerLongitudeDeg
+            null, // observerAltitudeM
+            null, // elevationDeg
+            null, // azimuthDeg
+            null, // rangeKm
+            null, // estimatedMagnitude
+            null, // isVisible
+            null, // visibility
+            null  // observingCondition
         ));
     }
 
@@ -703,7 +714,7 @@ public class SatellitePassService {
      * @return lista di pass ordinati per tempo di rise
      */
     public List<SatellitePassDTO> findVisibleUpcomingPasses(int hours, double minElevation) {
-        return findVisibleUpcomingPasses(hours, minElevation, defaultLocation, "any", 6.0);
+        return findVisibleUpcomingPasses(hours, minElevation, defaultLocation, "any", 3.0);
     }
 
     /**

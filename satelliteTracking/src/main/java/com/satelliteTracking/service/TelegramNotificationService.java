@@ -101,14 +101,23 @@ public class TelegramNotificationService {
      */
     public boolean sendNotificationToUser(TelegramSubscription subscription,
                                          SatellitePassDTO pass) {
-        return sendNotificationToUser(subscription,
-            pass.satelliteName(),
-            pass.riseTime(),
-            pass.maxElevation(),
-            pass.maxElevationAzimuth(),
-            pass.estimatedMagnitude(),
-            subscription.getLocationName()
-        );
+        if (!subscription.getNotificationsEnabled() || telegramBotToken.isEmpty()) {
+            return false;
+        }
+        try {
+            String message = buildNotificationMessage(pass, subscription.getLocationName());
+            boolean success = sendTelegramMessage(subscription.getChatId(), message);
+            if (success) {
+                subscription.setLastNotificationSent(LocalDateTime.now());
+                subscriptionRepository.save(subscription);
+                System.out.println("✅ Telegram notifica inviata a " + subscription.getUserIdentifier() +
+                                 " per " + pass.satelliteName());
+            }
+            return success;
+        } catch (Exception e) {
+            System.err.println("❌ Errore invio notifica Telegram: " + e.getMessage());
+            return false;
+        }
     }
     
     public boolean sendNotificationToUser(TelegramSubscription subscription,
@@ -118,24 +127,34 @@ public class TelegramNotificationService {
         if (!subscription.getNotificationsEnabled() || telegramBotToken.isEmpty()) {
             return false;
         }
-        
         try {
-            String message = buildNotificationMessage(
-                satelliteName, riseTime, 
-                maxElevation, maxElevationAzimuth,
-                magnitude, 
-                locationName
+            // Costruisco un SatellitePassDTO minimale per compatibilità
+            SatellitePassDTO pass = new SatellitePassDTO(
+                null, // satelliteId
+                satelliteName,
+                riseTime,
+                null, // maxElevationTime
+                null, // setTime
+                maxElevation != null ? maxElevation : 0.0,
+                0.0, // riseAzimuth
+                maxElevationAzimuth != null ? maxElevationAzimuth : 0.0,
+                0.0, // setAzimuth
+                0.0, // maxDistance
+                true, // isVisible
+                true, // isSunlit
+                "-", // visibility
+                "-", // observingCondition
+                magnitude != null ? magnitude : 0.0,
+                0.0 // satelliteAltitudeKm
             );
-            
+            String message = buildNotificationMessage(pass, locationName);
             boolean success = sendTelegramMessage(subscription.getChatId(), message);
-            
             if (success) {
                 subscription.setLastNotificationSent(LocalDateTime.now());
                 subscriptionRepository.save(subscription);
-                System.out.println("✅ Telegram notifica inviata a " + subscription.getUserIdentifier() + 
+                System.out.println("✅ Telegram notifica inviata a " + subscription.getUserIdentifier() +
                                  " per " + satelliteName);
             }
-            
             return success;
         } catch (Exception e) {
             System.err.println("❌ Errore invio notifica Telegram: " + e.getMessage());
@@ -194,23 +213,36 @@ public class TelegramNotificationService {
     /**
      * Costruisce il messaggio Telegram con formattazione
      */
-    private String buildNotificationMessage(String satelliteName, LocalDateTime riseTime,
-                                           Double maxElevation, Double maxElevationAzimuth,
-                                           Double magnitude, String locationName) {
-        String direction = azimuthToDirection(maxElevationAzimuth);
-         String safeSatelliteName = escapeTelegramMarkdown(satelliteName);
-         String safeLocationName = escapeTelegramMarkdown(locationName);
-        
-        return "🛰️ *Satellite Tracker Alert*\n" +
-               "\n" +
-             "*Satellite:* " + safeSatelliteName + "\n" +
-             "*Location:* " + safeLocationName + "\n" +
-               "*Rise Time:* " + String.format("%02d:%02d UTC", riseTime.getHour(), riseTime.getMinute()) + "\n" +
-               "*Max Elevation:* " + String.format("%.1f°", maxElevation) + "\n" +
-               "*Direction:* " + direction + " (azimuth " + String.format("%.0f", maxElevationAzimuth) + "°)\n" +
-               "*Magnitude:* " + String.format("%.1f", magnitude) + "\n" +
-               "\n📱 [Open Web App](" + "https://satellite-tracker.app" + ")"
-;
+    private String buildNotificationMessage(SatellitePassDTO pass, String locationName) {
+        String safeSatelliteName = escapeTelegramMarkdown(pass.satelliteName());
+        String safeLocationName = escapeTelegramMarkdown(locationName);
+        String riseTimeStr = pass.riseTime() != null ? String.format("%02d:%02d UTC", pass.riseTime().getHour(), pass.riseTime().getMinute()) : "-";
+        String setTimeStr = pass.setTime() != null ? String.format("%02d:%02d UTC", pass.setTime().getHour(), pass.setTime().getMinute()) : "-";
+        String maxTimeStr = pass.maxElevationTime() != null ? String.format("%02d:%02d UTC", pass.maxElevationTime().getHour(), pass.maxElevationTime().getMinute()) : "-";
+        String riseAzStr = String.format("%.0f° %s", pass.riseAzimuth(), pass.getRiseDirection());
+        String maxAzStr = String.format("%.0f° %s", pass.maxElevationAzimuth(), pass.getMaxElevationDirection());
+        String setAzStr = String.format("%.0f° %s", pass.setAzimuth(), pass.getSetDirection());
+        String maxElevStr = String.format("%.1f°", pass.maxElevation());
+        String magnitudeStr = String.format("%.1f", pass.estimatedMagnitude());
+        String altitudeStr = String.format("%.0f km", pass.satelliteAltitudeKm());
+        String durationStr = String.format("%d min", pass.getDurationSeconds() / 60);
+        String conditionStr = pass.observingCondition() != null ? pass.observingCondition() : "-";
+        String visibilityStr = pass.visibility() != null ? pass.visibility() : "-";
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("🛰️ *Satellite Tracker Alert*\n\n");
+        msg.append("*Satellite:* ").append(safeSatelliteName).append("\n");
+        msg.append("*Location:* ").append(safeLocationName).append("\n");
+        msg.append("*Rise:* ").append(riseTimeStr).append("  (azimuth: ").append(riseAzStr).append(")\n");
+        msg.append("*Max:*  ").append(maxTimeStr).append("  (elev: ").append(maxElevStr).append(", azimuth: ").append(maxAzStr).append(")\n");
+        msg.append("*Set:*  ").append(setTimeStr).append("  (azimuth: ").append(setAzStr).append(")\n");
+        msg.append("*Magnitude:* ").append(magnitudeStr).append("\n");
+        msg.append("*Altitudine satellite:* ").append(altitudeStr).append("\n");
+        msg.append("*Durata passaggio:* ").append(durationStr).append("\n");
+        msg.append("*Condizioni:* ").append(conditionStr).append("\n");
+        msg.append("*Visibilità:* ").append(visibilityStr).append("\n");
+        msg.append("\n📱 [Open Web App](https://vincenzonoviello.ddns.net)");
+        return msg.toString();
     }
     
     /**

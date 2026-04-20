@@ -34,4 +34,5 @@ public class SatellitePositionController {
 
         return ResponseEntity.ok(satellitePassService.getCurrentSatellitePositions(type));
     }
+
 }

@@ -38,7 +38,17 @@ class SatellitePositionControllerTest {
             1.55,
             27580.0,
             124.3,
-            null
+            null, // OrbitalParametersDTO
+            null, // observerLatitudeDeg
+            null, // observerLongitudeDeg
+            null, // observerAltitudeM
+            null, // elevationDeg
+            null, // azimuthDeg
+            null, // rangeKm
+            null, // estimatedMagnitude
+            null, // isVisible
+            null, // visibility
+            null  // observingCondition
         );
 
         when(satellitePassService.getCurrentSatellitePosition(25544L))
@@ -69,7 +79,17 @@ class SatellitePositionControllerTest {
             1.55,
             27580.0,
             124.3,
-            null
+            null, // OrbitalParametersDTO
+            null, // observerLatitudeDeg
+            null, // observerLongitudeDeg
+            null, // observerAltitudeM
+            null, // elevationDeg
+            null, // azimuthDeg
+            null, // rangeKm
+            null, // estimatedMagnitude
+            null, // isVisible
+            null, // visibility
+            null  // observingCondition
         );
 
         when(satellitePassService.getCurrentSatellitePositions(null))
