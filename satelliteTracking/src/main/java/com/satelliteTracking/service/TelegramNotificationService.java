@@ -579,7 +579,7 @@ public class TelegramNotificationService {
             sub.getMinElevation(),
             location,
             sub.getObservingCondition(),
-            sub.getMaxMagnitude()
+            3.0
         );
 
         if (passes.isEmpty()) {

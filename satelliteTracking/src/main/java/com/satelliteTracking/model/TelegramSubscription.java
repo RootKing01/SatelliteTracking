@@ -38,7 +38,7 @@ public class TelegramSubscription {
     private String observingCondition = "any"; // "night", "twilight", "any"
     
     @Column(nullable = false)
-    private Double maxMagnitude = 6.0; // Magnitudine massima
+    private Double maxMagnitude = 3.0; // Magnitudine massima
     
     @Column(nullable = false)
     private Double minElevation = 10.0; // Elevazione minima

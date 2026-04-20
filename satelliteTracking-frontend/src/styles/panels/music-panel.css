@@ -2,20 +2,29 @@
   gap: 10px;
 }
 
+/* Widget radio: stile più carino e glow */
 .music-panel-widget-tab {
-  border-radius: 8px;
-  border: 1px solid rgba(99, 247, 255, 0.34);
-  background: rgba(5, 14, 30, 0.9);
-  color: #bfeaff;
-  font-size: 0.74rem;
-  padding: 6px 8px;
+  border-radius: 12px;
+  border: 2px solid #00ffe7;
+  background: linear-gradient(90deg, #0a1a2f 80%, #00ffe733 100%);
+  color: #00ffe7;
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 7px 14px 7px 10px;
+  box-shadow: 0 0 12px #00ffe744, 0 0 0 2px #00ffe722 inset;
+  transition: box-shadow 0.18s, border 0.18s;
+  outline: none;
+  cursor: pointer;
 }
 
 .music-panel-widget-tab.is-highlighted {
-  border-color: rgba(255, 64, 88, 0.85);
-  color: #ffd8de;
-  box-shadow: 0 0 14px rgba(255, 64, 88, 0.22);
+  border-color: #00ffe7;
+  color: #fff;
+  background: linear-gradient(90deg, #00ffe7 0%, #0a1a2f 100%);
+  box-shadow: 0 0 18px #00ffe7, 0 0 0 2px #fff inset;
+  text-shadow: 0 0 8px #fff, 0 0 16px #00ffe7;
 }
+
 
 .music-panel,
 .music-float-player {
@@ -34,7 +43,7 @@
   padding: 7px;
   display: grid;
   gap: 6px;
-  box-shadow: 0 0 18px rgba(99, 247, 255, 0.08), inset 0 0 16px rgba(255, 51, 79, 0.04);
+  box-shadow: 0 0 18px #00ffe744, inset 0 0 16px #00ffe722;
 }
 
 .music-note {
@@ -167,7 +176,7 @@
   padding: 8px;
   display: grid;
   gap: 8px;
-  box-shadow: inset 0 0 18px rgba(255, 51, 79, 0.04), 0 0 16px rgba(99, 247, 255, 0.05);
+  box-shadow: inset 0 0 18px #00ffe722, 0 0 16px #00ffe744;
 }
 
 .music-now-playing-head {
@@ -226,9 +235,10 @@
 }
 
 .music-track-item.is-active {
-  border-color: rgba(255, 51, 79, 0.9);
-  background: linear-gradient(180deg, rgba(73, 10, 20, 0.94), rgba(18, 6, 12, 0.98));
-  box-shadow: 0 0 20px rgba(255, 51, 79, 0.16), inset 0 0 16px rgba(255, 51, 79, 0.1);
+  box-shadow: none;
+  background: linear-gradient(90deg, #193c44 0%, #0a1a2f 100%);
+  border-color: #63f7ff;
+  color: #63f7ff;
 }
 
 .music-track-item span {
@@ -256,7 +266,7 @@
   border-radius: 12px;
   border: 1px solid rgba(99, 247, 255, 0.34);
   background:
-    radial-gradient(circle at top left, rgba(255, 51, 79, 0.16), transparent 40%),
+    radial-gradient(circle at top left, rgba(0, 255, 231, 0.16), transparent 40%),
     linear-gradient(180deg, rgba(8, 16, 32, 0.98), rgba(4, 9, 18, 0.98));
   box-shadow:
     0 0 0 1px rgba(99, 247, 255, 0.08),
@@ -284,7 +294,7 @@
   width: 140px;
   height: 140px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 51, 79, 0.28), transparent 72%);
+  background: radial-gradient(circle, rgba(0, 255, 231, 0.22), transparent 72%);
   filter: blur(4px);
   pointer-events: none;
 }
@@ -312,9 +322,13 @@
 }
 
 .music-float-peek-tab {
-  border-color: rgba(255, 64, 88, 0.7);
-  color: #ffd7dd;
-  box-shadow: 0 0 12px rgba(255, 64, 88, 0.2);
+  border: 2px solid #00ffe7;
+  color: #00ffe7;
+  background: rgba(10, 24, 46, 0.92);
+  box-shadow: 0 0 8px #00ffe744;
+  text-shadow: 0 0 6px #00ffe7aa;
+  font-weight: 600;
+  transition: box-shadow 0.18s, border 0.18s, color 0.18s;
 }
 
 .music-float-header {
@@ -333,15 +347,18 @@
 .music-float-label {
   display: inline-flex;
   margin-bottom: 2px;
-  color: #ff8d99;
+  color: #00ffe7;
   font-size: 0.62rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
 .music-float-header strong {
-  color: #ffe7ea;
-  text-shadow: 0 0 8px rgba(255, 51, 79, 0.34);
+  text-shadow: none;
+  color: #63f7ff;
+  background: linear-gradient(90deg, #132c36 0%, #0a1a2f 100%);
+  border-radius: 6px;
+  padding: 2px 6px;
   font-size: 0.78rem;
   display: block;
   overflow: hidden;
@@ -381,11 +398,11 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #ff4058;
+  color: #00ffe7;
   font-weight: 800;
   font-size: 1.35rem;
   line-height: 1;
-  text-shadow: 0 0 8px rgba(255, 64, 88, 0.9), 0 0 18px rgba(255, 64, 88, 0.5);
+  text-shadow: 0 0 8px #00ffe7, 0 0 18px #00ffe7aa;
   box-shadow: none;
 }
 
@@ -408,11 +425,11 @@
 }
 
 .music-float-seek,
-.music-float-volume {
+  .music-float-volume {
   position: relative;
   z-index: 1;
   width: 100%;
-  accent-color: var(--music-accent);
+  accent-color: #00ffe7;
 }
 
 .music-float-timebar {

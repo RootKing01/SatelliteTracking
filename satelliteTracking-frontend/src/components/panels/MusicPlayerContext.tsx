@@ -54,7 +54,8 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0)
   const [statusMessage, setStatusMessage] = useState('Seleziona una cartella di playlist con mp3.')
   const [error, setError] = useState('')
-  const [floatingWidgetCollapsed, setFloatingWidgetCollapsed] = useState(false)
+  // Il widget parte chiuso
+  const [floatingWidgetCollapsed, setFloatingWidgetCollapsed] = useState(true)
 
   useEffect(() => {
     void (async () => {

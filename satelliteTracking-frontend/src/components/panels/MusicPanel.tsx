@@ -55,8 +55,18 @@ export function MusicPanel() {
         className={`music-panel-widget-tab ${floatingWidgetCollapsed ? 'is-highlighted' : ''}`}
         onClick={() => setFloatingWidgetCollapsed(false)}
         disabled={!floatingWidgetCollapsed}
+        aria-label="Apri radio"
+        style={{ display: 'flex', alignItems: 'center', gap: 8 }}
       >
-        {floatingWidgetCollapsed ? 'Riapri widget radio' : 'Widget radio aperto'}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00ffe7" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px #00ffe799)' }}>
+          <rect x="2" y="7" width="20" height="13" rx="3" fill="#0a1a2f" stroke="#00ffe7" />
+          <circle cx="7.5" cy="13.5" r="2.5" fill="#00ffe7" stroke="#fff" />
+          <rect x="13" y="12" width="6" height="3" rx="1.2" fill="#fff" stroke="#00ffe7" />
+          <rect x="4.5" y="9.5" width="15" height="2" rx="1" fill="#fff" stroke="#00ffe7" />
+        </svg>
+        <span style={{ color: '#00ffe7', textShadow: '0 0 8px #00ffe799' }}>
+          {floatingWidgetCollapsed ? 'Apri radio' : 'Radio aperta'}
+        </span>
       </button>
 
       <div className="music-import-card">
@@ -210,7 +220,7 @@ export function MusicFloatingPlayer({ floatingStyle }: MusicFloatingPlayerProps)
     seekTo,
   } = useMusicPlayer()
 
-  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0
+  // const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0
 
   if (floatingWidgetCollapsed) {
     return (
@@ -299,8 +309,8 @@ export function MusicFloatingPlayer({ floatingStyle }: MusicFloatingPlayerProps)
         </div>
 
         <div className="music-float-meter">
-          <span>{Math.round(progress * 100)}%</span>
-          <span>{Math.round(volume * 100)}%</span>
+          {/* Avanzamento brano rimosso */}
+          <span style={{ color: '#00ffe7' }}>{Math.round(volume * 100)}%</span>
         </div>
 
         <input

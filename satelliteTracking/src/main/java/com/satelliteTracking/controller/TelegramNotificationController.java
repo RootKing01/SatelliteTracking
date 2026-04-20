@@ -79,6 +79,7 @@ public class TelegramNotificationController {
         try {
             String observingCondition = (String) request.getOrDefault("observingCondition", "any");
             Double maxMagnitude = ((Number) request.getOrDefault("maxMagnitude", 3.0)).doubleValue();
+            if (maxMagnitude == null) maxMagnitude = 3.0;
             Double minElevation = ((Number) request.getOrDefault("minElevation", 10.0)).doubleValue();
             
             TelegramSubscription subscription = telegramNotificationService.updatePreferences(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchSatelliteCatalogByType } from '../../api/satelliteCatalogClient'
+import { fetchSatelliteCatalogByType, fetchSatelliteById } from '../../api/satelliteCatalogClient'
 import { isAxiosError } from 'axios'
 import type { AuthUser } from '../../api/authClient'
 import { getCurrentUser } from '../../api/authClient'
@@ -31,14 +31,17 @@ export function CommunityPanel({
   selectedSatelliteId,
   selectedSatelliteName,
 }: CommunityPanelProps) {
+  const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
+  const [satelliteCatalog, setSatelliteCatalog] = useState<any[]>([])
   const [featuredThreads, setFeaturedThreads] = useState<CommunityFeedItem[]>([])
   const [allThreads, setAllThreads] = useState<CommunityFeedItem[]>([])
-  const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
-    // Carica tutti i nomi dei satelliti una volta sola
-    useEffect(() => {
-      let cancelled = false
-      fetchSatelliteCatalogByType('ALL').then(list => {
+  // Carica tutti i nomi dei satelliti una volta sola all'avvio
+  useEffect(() => {
+    let cancelled = false
+    fetchSatelliteCatalogByType('ALL')
+      .then(list => {
         if (!cancelled) {
+          setSatelliteCatalog(list)
           const map: Record<string, string> = {}
           for (const sat of list) {
             map[String(sat.id)] = sat.objectName
@@ -48,8 +51,46 @@ export function CommunityPanel({
           setSatelliteNames(map)
         }
       })
-      return () => { cancelled = true }
-    }, [])
+      .catch(err => {
+        console.error('Errore fetchSatelliteCatalogByType', err)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Aggiorna la mappa solo se arriva un nuovo thread satellite non presente
+  useEffect(() => {
+    // Prendi tutti i targetId dei thread satellite
+    const allTargetIds = [
+      ...featuredThreads,
+      ...allThreads,
+    ]
+      .filter(t => t.targetType === 'SATELLITE')
+      .map(t => String(t.targetId))
+
+    // Trova i targetId non presenti nella mappa
+    const missingIds = allTargetIds.filter(id => !(id in satelliteNames))
+    if (missingIds.length === 0) return
+
+    // Fetcha solo i satelliti mancanti (uno alla volta per evitare flood)
+    missingIds.forEach(id => {
+      fetchSatelliteById(id)
+        .then(sat => {
+          if (sat && sat.objectName) {
+            setSatelliteNames(prev => ({ ...prev, [id]: sat.objectName }))
+          }
+        })
+        .catch(err => {
+          console.error('Errore fetchSatelliteById', id, err)
+        })
+    })
+  }, [featuredThreads, allThreads, satelliteNames])
+  // ...existing code...
+  // DEBUG: logga la mappa dei nomi, le chiavi e la lista satelliti
+  console.log('satelliteNames', satelliteNames)
+  console.log('satelliteNames keys', Object.keys(satelliteNames))
+  console.log('satelliteCatalog', satelliteCatalog)
+  console.log('featuredThreads targetIds', featuredThreads.map(t => t.targetId))
+  console.log('allThreads targetIds', allThreads.map(t => t.targetId))
   const [threadsError, setThreadsError] = useState('')
   const [activeThread, setActiveThread] = useState<CommunityThread | null>(null)
   const [comments, setComments] = useState<CommunityComment[]>([])
@@ -189,6 +230,17 @@ export function CommunityPanel({
     setCommentsLoading(true)
     setCommentsError('')
     try {
+      // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
+      if (targetType === 'SATELLITE') {
+        const list = await fetchSatelliteCatalogByType('ALL')
+        const map: Record<string, string> = {}
+        for (const sat of list) {
+          map[String(sat.id)] = sat.objectName
+          map[String(sat.noradCatId)] = sat.objectName
+          if (sat.objectId) map[String(sat.objectId)] = sat.objectName
+        }
+        setSatelliteNames(map)
+      }
       const payload = await fetchCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
@@ -214,6 +266,17 @@ export function CommunityPanel({
     setCommentsLoading(true)
     setCommentsError('')
     try {
+      // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
+      if (targetType === 'SATELLITE') {
+        const list = await fetchSatelliteCatalogByType('ALL')
+        const map: Record<string, string> = {}
+        for (const sat of list) {
+          map[String(sat.id)] = sat.objectName
+          map[String(sat.noradCatId)] = sat.objectName
+          if (sat.objectId) map[String(sat.objectId)] = sat.objectName
+        }
+        setSatelliteNames(map)
+      }
       const payload = await ensureCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
@@ -648,11 +711,12 @@ export function CommunityPanel({
           <small>Nessun thread in evidenza disponibile.</small>
         ) : (
           <div className="community-feed-list">
-            {[...featuredThreads]
+            {featuredThreads
               .sort((a, b) => b.commentCount - a.commentCount)
               .map((item) => (
                 <article key={`featured-${item.threadId}`} className="community-feed-item">
                   <strong>
+                    {/* DEBUG: log accoppiamento nome/targetId */}
                     {(item.targetType === 'SATELLITE' || item.targetType === 'SIGHTING') && satelliteNames[item.targetId]
                       ? satelliteNames[item.targetId]
                       : item.title}
@@ -704,28 +768,19 @@ export function CommunityPanel({
             {allThreads.map((item) => (
               <article key={`all-${item.threadId}`} className="community-feed-item">
                 <strong>
-                  {item.targetType === 'SATELLITE' && selectedSatelliteId && Number(item.targetId) === selectedSatelliteId && selectedSatelliteName
-                    ? selectedSatelliteName
-                    : (item.targetType === 'SATELLITE' && satelliteNames[item.targetId]
-                        ? satelliteNames[item.targetId]
-                        : (item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
-                          ? satelliteNames[item.targetId]
-                          : item.title)}
+                  {/* DEBUG: log accoppiamento nome/targetId */}
+                  {(() => { console.log('thread', item.targetId, satelliteNames[item.targetId]); return null })()}
+                  {(item.targetType === 'SATELLITE' || item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
+                    ? satelliteNames[item.targetId]
+                    : item.title}
                 </strong>
                 <small>
-                  {item.targetType === 'SATELLITE' && selectedSatelliteId && Number(item.targetId) === selectedSatelliteId && selectedSatelliteName
-                    ? `SATELLITE (${selectedSatelliteName})`
-                    : (item.targetType === 'SATELLITE' && satelliteNames[item.targetId]
-                        ? `SATELLITE (${satelliteNames[item.targetId]})`
-                        : (item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
-                          ? `${item.targetType} (${satelliteNames[item.targetId]})`
-                          : `${item.targetType} #${item.targetId}`)}
+                  {item.targetType === 'SATELLITE' && satelliteNames[item.targetId]
+                    ? `SATELLITE (${satelliteNames[item.targetId]})`
+                    : (item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
+                      ? `${item.targetType} (${satelliteNames[item.targetId]})`
+                      : `${item.targetType} #${item.targetId}`}
                 </small>
-
-                {/* Aggiorna la mappa locale se manca il nome e il thread è quello selezionato */}
-                {item.targetType === 'SATELLITE' && selectedSatelliteId && Number(item.targetId) === selectedSatelliteId && selectedSatelliteName && !satelliteNames[item.targetId] && (
-                  (() => { setSatelliteNames(prev => ({ ...prev, [item.targetId]: selectedSatelliteName })); return null })()
-                )}
                 <small>{item.commentCount} commenti · {item.likesCount} like</small>
                 <p>{item.lastCommentPreview}</p>
                 <div className="community-inline-actions">

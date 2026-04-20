@@ -24,7 +24,7 @@ export async function fetchVisibilityPasses(input: VisibilityQueryInput): Promis
         hours: input.hours,
         minElevation: input.minElevation,
         observingCondition: 'any',
-        maxMagnitude: 8.0,
+        maxMagnitude: 3.0,
       })
     ).passes
   }
@@ -33,7 +33,7 @@ export async function fetchVisibilityPasses(input: VisibilityQueryInput): Promis
     hours: input.hours,
     minElevation: input.minElevation,
     observingCondition: 'any',
-    maxMagnitude: 8.0,
+    maxMagnitude: 3.0,
     latitude: input.latitude ?? undefined,
     longitude: input.longitude ?? undefined,
     altitude: input.altitude ?? undefined,
