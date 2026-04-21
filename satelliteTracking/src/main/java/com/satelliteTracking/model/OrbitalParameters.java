@@ -28,24 +28,22 @@ public class OrbitalParameters {
     private Double meanAnomaly;
     private Double meanMotion;
 
-    // TLE raw data
     @Column(columnDefinition = "TEXT")
     private String tleLine1;
 
     @Column(columnDefinition = "TEXT")
     private String tleLine2;
 
+    // FIX: naming coerente con TleDataService
     private Double raan;
     private Double argumentOfPerigee;
 
     private LocalDateTime fetchedAt;
 
-    // ✅ REQUIRED BY JPA (fix del tuo errore principale)
     public OrbitalParameters() {
         this.fetchedAt = LocalDateTime.now();
     }
 
-    // ✅ COSTRUTTORE USATO DAL TLE SERVICE
     public OrbitalParameters(
             Satellite satellite,
             String epoch,
@@ -56,6 +54,7 @@ public class OrbitalParameters {
             Double meanAnomaly,
             Double meanMotion
     ) {
+        this();
         this.satellite = satellite;
         this.epoch = epoch;
         this.inclination = inclination;
@@ -64,6 +63,5 @@ public class OrbitalParameters {
         this.argOfPericenter = argOfPericenter;
         this.meanAnomaly = meanAnomaly;
         this.meanMotion = meanMotion;
-        this.fetchedAt = LocalDateTime.now();
     }
 }

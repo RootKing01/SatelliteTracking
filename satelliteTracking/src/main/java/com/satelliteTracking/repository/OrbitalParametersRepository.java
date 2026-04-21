@@ -7,35 +7,35 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface OrbitalParametersRepository extends JpaRepository<OrbitalParameters, Long> {
-    
-    // Trova tutti i parametri orbitali per un satellite specifico
+
     List<OrbitalParameters> findBySatelliteOrderByFetchedAtDesc(Satellite satellite);
-    
-    // Trova i parametri orbitali più recenti per un satellite
+
     OrbitalParameters findTopBySatelliteOrderByFetchedAtDesc(Satellite satellite);
 
-        // Trova i parametri orbitali più recenti per tutti i satelliti in un solo round-trip
+    OrbitalParameters findTopByOrderByFetchedAtDesc();
+
+    // ✅ FIX IMPORTANTE (CACHE PER NORAD ID)
+    Optional<OrbitalParameters> findTopBySatellite_NoradCatIdOrderByFetchedAtDesc(Long noradCatId);
+
     @Query("""
         select op
         from OrbitalParameters op
         join fetch op.satellite
-                where op.fetchedAt = (
+        where op.fetchedAt = (
               select max(op2.fetchedAt)
               from OrbitalParameters op2
               where op2.satellite = op.satellite
           )
-                    and op.id = (
-                            select max(op3.id)
-                            from OrbitalParameters op3
-                            where op3.satellite = op.satellite
-                                and op3.fetchedAt = op.fetchedAt
-                    )
+          and op.id = (
+              select max(op3.id)
+              from OrbitalParameters op3
+              where op3.satellite = op.satellite
+                and op3.fetchedAt = op.fetchedAt
+          )
     """)
-        List<OrbitalParameters> findLatestForAllSatellites();
-    
-    // Trova l'ultimo parametro orbitale scaricato (di qualsiasi satellite)
-    OrbitalParameters findTopByOrderByFetchedAtDesc();
+    List<OrbitalParameters> findLatestForAllSatellites();
 }
