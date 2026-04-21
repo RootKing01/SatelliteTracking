@@ -14,13 +14,15 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Component
 @ConditionalOnProperty(value = "app.scheduler.enabled", havingValue = "true", matchIfMissing = true)
 public class SatelliteScheduler {
+
+    private static final long TLE_UPDATE_HOURS = 12;
 
     private final TleDataService tleDataService;
     private final SatellitePassService passService;
@@ -37,42 +39,51 @@ public class SatelliteScheduler {
         this.orbitalParametersRepository = orbitalParametersRepository;
     }
 
+    /**
+     * Avvio immediato dopo startup
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void initialSatelliteLoad() {
         System.out.println("🚀 [Satellite Update] Avvio iniziale...");
         updateSatellites();
     }
 
-    @Scheduled(initialDelay = 10800000, fixedRate = 10800000) // ogni 3 ore
+    /**
+     * 🔄 UPDATE TLE ogni 12 ore
+     * (unico punto di verità, niente doppio check inutile)
+     */
+    @Scheduled(fixedRate = 43200000, initialDelay = 60000) // 12h
     public void updateSatellites() {
 
         OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
 
         if (lastUpdate != null) {
-            long hours = ChronoUnit.HOURS.between(lastUpdate.getFetchedAt(), LocalDateTime.now());
+            long hours = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toHours();
 
-            if (hours < 3) {
-                System.out.println("⏭️  Skip update - dati recenti (" + hours + "h fa)");
+            if (hours < TLE_UPDATE_HOURS) {
+                System.out.println("⏭️ Skip TLE update (ultimo aggiornamento " + hours + "h fa)");
                 return;
             }
 
-            System.out.println("🔄 Update necessario - ultimo: " + hours + "h fa");
+            System.out.println("🔄 Update TLE necessario (" + hours + "h dall'ultimo)");
         } else {
             System.out.println("🔄 Primo download TLE");
         }
 
         try {
-            // ✅ QUI È IL FIX PRINCIPALE
             tleDataService.updateTle();
 
             passService.clearPassesCache();
             precomputeUpcomingPasses();
 
         } catch (Exception e) {
-            System.err.println("❌ Scheduler error: " + e.getMessage());
+            System.err.println("❌ Scheduler error TLE: " + e.getMessage());
         }
     }
 
+    /**
+     * 📩 Poll Telegram ogni 10 secondi
+     */
     @Scheduled(fixedRate = 10000, initialDelay = 5000)
     public void pollTelegramMessages() {
         try {
@@ -80,19 +91,22 @@ public class SatelliteScheduler {
         } catch (Exception ignored) {}
     }
 
+    /**
+     * 🧠 Precalcolo passaggi ogni ora
+     */
     @Scheduled(fixedRate = 3600000, initialDelay = 120000)
     public void precomputeUpcomingPasses() {
         System.out.println("🔄 [Pass Precalculator] Pre-calcolo passaggi...");
 
         try {
             List<SatellitePassDTO> passes = passService.findVisibleUpcomingPasses(3, 10.0);
-            System.out.println("✅ Default: " + passes.size());
+            System.out.println("✅ Default cache: " + passes.size());
 
             List<TelegramSubscription> subs = telegramNotificationService.getAllSubscriptions();
 
             if (!subs.isEmpty()) {
                 passService.precomputePassesForSubscriptions(subs);
-                System.out.println("✅ Cache aggiornata per " + subs.size());
+                System.out.println("✅ Cache utenti aggiornata: " + subs.size());
             }
 
         } catch (Exception e) {
@@ -100,6 +114,9 @@ public class SatelliteScheduler {
         }
     }
 
+    /**
+     * 📢 Notifiche Telegram
+     */
     @Scheduled(fixedRate = 3600000)
     public void sendTelegramNotificationsForUpcomingPasses() {
 
@@ -128,10 +145,10 @@ public class SatelliteScheduler {
                             sub.getMaxMagnitude()
                     );
 
-                    LocalDateTime now = LocalDateTime.now();
-                    long minutes = ChronoUnit.MINUTES.between(sub.getLastNotificationSent(), now);
-
-                    if (minutes < 30) continue;
+                    if (sub.getLastNotificationSent() != null) {
+                        long minutes = Duration.between(sub.getLastNotificationSent(), LocalDateTime.now()).toMinutes();
+                        if (minutes < 30) continue;
+                    }
 
                     final int maxAuto = 10;
                     List<SatellitePassDTO> autoPasses = passes.stream().limit(maxAuto).toList();
