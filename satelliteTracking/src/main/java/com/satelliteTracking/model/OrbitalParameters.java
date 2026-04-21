@@ -3,6 +3,7 @@ package com.satelliteTracking.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.time.LocalDateTime;
 
 @Getter
@@ -16,40 +17,45 @@ public class OrbitalParameters {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "satellite_id", nullable = false)
     private Satellite satellite;
 
-    @Column(nullable = false)
     private String epoch;
 
-    @Column(nullable = false)
     private Double inclination;
-
-    @Column(nullable = false)
     private Double raOfAscNode;
-
-    @Column(nullable = false)
     private Double eccentricity;
-
-    @Column(nullable = false)
     private Double argOfPericenter;
-
-    @Column(nullable = false)
     private Double meanAnomaly;
-
-    @Column(nullable = false)
     private Double meanMotion;
 
-    @Column(nullable = false)
+    // TLE raw data
+    @Column(columnDefinition = "TEXT")
+    private String tleLine1;
+
+    @Column(columnDefinition = "TEXT")
+    private String tleLine2;
+
+    private Double raan;
+    private Double argumentOfPerigee;
+
     private LocalDateTime fetchedAt;
 
+    // ✅ REQUIRED BY JPA (fix del tuo errore principale)
     public OrbitalParameters() {
         this.fetchedAt = LocalDateTime.now();
     }
 
-    public OrbitalParameters(Satellite satellite, String epoch, Double inclination, 
-                             Double raOfAscNode, Double eccentricity, 
-                             Double argOfPericenter, Double meanAnomaly, Double meanMotion) {
+    // ✅ COSTRUTTORE USATO DAL TLE SERVICE
+    public OrbitalParameters(
+            Satellite satellite,
+            String epoch,
+            Double inclination,
+            Double raOfAscNode,
+            Double eccentricity,
+            Double argOfPericenter,
+            Double meanAnomaly,
+            Double meanMotion
+    ) {
         this.satellite = satellite;
         this.epoch = epoch;
         this.inclination = inclination;
