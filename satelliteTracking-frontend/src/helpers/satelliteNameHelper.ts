@@ -30,7 +30,7 @@ export async function updateMissingSatelliteNames(
     }
   }
 }
-import { fetchSatelliteCatalogByType } from '../api/satelliteCatalogClient'
+import { fetchSatelliteCatalogByType, fetchSatelliteById } from '../api/satelliteCatalogClient'
 
 /**
  * Fetches the satellite catalog and returns a mapping from satellite IDs to names.

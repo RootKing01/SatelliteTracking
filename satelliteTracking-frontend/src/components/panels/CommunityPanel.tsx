@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-// import { fetchSatelliteCatalogByType } from '../../api/satelliteCatalogClient' // non più usato
 import { updateMissingSatelliteNames, fetchAndMapSatelliteNames } from '../../helpers/satelliteNameHelper'
 import { CommunityThreadCard } from '../community/CommunityThreadCard'
 import { CommunityCompose } from '../community/CommunityCompose'
@@ -23,6 +22,7 @@ import {
   type CommunityThread,
 } from '../../api/communityClient'
 import '../../styles/panels/community-panel.css'
+ 
 
 type CommunityPanelProps = {
   authUser: AuthUser | null
@@ -36,16 +36,15 @@ export function CommunityPanel({
   selectedSatelliteName,
 }: CommunityPanelProps) {
   const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
-  const [satelliteCatalog, setSatelliteCatalog] = useState<any[]>([])
+  // satelliteCatalog non più usato
   const [featuredThreads, setFeaturedThreads] = useState<CommunityFeedItem[]>([])
   const [allThreads, setAllThreads] = useState<CommunityFeedItem[]>([])
   // Carica tutti i nomi dei satelliti una volta sola all'avvio
   useEffect(() => {
     let cancelled = false
     fetchAndMapSatelliteNames('ALL')
-      .then(({ map, list }) => {
+      .then(({ map }) => {
         if (!cancelled) {
-          setSatelliteCatalog(list)
           setSatelliteNames(map)
         }
       })
@@ -73,12 +72,6 @@ export function CommunityPanel({
     updateMissingSatelliteNames(missingIds, setSatelliteNames)
   }, [featuredThreads, allThreads, satelliteNames])
   // ...existing code...
-  // DEBUG: logga la mappa dei nomi, le chiavi e la lista satelliti
-  console.log('satelliteNames', satelliteNames)
-  console.log('satelliteNames keys', Object.keys(satelliteNames))
-  console.log('satelliteCatalog', satelliteCatalog)
-  console.log('featuredThreads targetIds', featuredThreads.map(t => t.targetId))
-  console.log('allThreads targetIds', allThreads.map(t => t.targetId))
   const [threadsError, setThreadsError] = useState('')
   const [activeThread, setActiveThread] = useState<CommunityThread | null>(null)
   const [comments, setComments] = useState<CommunityComment[]>([])
