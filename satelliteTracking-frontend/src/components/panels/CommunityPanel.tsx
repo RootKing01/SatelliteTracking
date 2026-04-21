@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchSatelliteCatalogByType, fetchSatelliteById } from '../../api/satelliteCatalogClient'
+// import { fetchSatelliteCatalogByType } from '../../api/satelliteCatalogClient' // non più usato
+import { updateMissingSatelliteNames, fetchAndMapSatelliteNames } from '../../helpers/satelliteNameHelper'
+import { CommunityThreadCard } from '../community/CommunityThreadCard'
+import { CommunityCompose } from '../community/CommunityCompose'
+import { CommunityFeedCard } from '../community/CommunityFeedCard'
 import { isAxiosError } from 'axios'
 import type { AuthUser } from '../../api/authClient'
 import { getCurrentUser } from '../../api/authClient'
@@ -38,21 +42,15 @@ export function CommunityPanel({
   // Carica tutti i nomi dei satelliti una volta sola all'avvio
   useEffect(() => {
     let cancelled = false
-    fetchSatelliteCatalogByType('ALL')
-      .then(list => {
+    fetchAndMapSatelliteNames('ALL')
+      .then(({ map, list }) => {
         if (!cancelled) {
           setSatelliteCatalog(list)
-          const map: Record<string, string> = {}
-          for (const sat of list) {
-            map[String(sat.id)] = sat.objectName
-            map[String(sat.noradCatId)] = sat.objectName
-            if (sat.objectId) map[String(sat.objectId)] = sat.objectName
-          }
           setSatelliteNames(map)
         }
       })
       .catch(err => {
-        console.error('Errore fetchSatelliteCatalogByType', err)
+        console.error('Errore fetchAndMapSatelliteNames', err)
       })
     return () => { cancelled = true }
   }, [])
@@ -71,18 +69,8 @@ export function CommunityPanel({
     const missingIds = allTargetIds.filter(id => !(id in satelliteNames))
     if (missingIds.length === 0) return
 
-    // Fetcha solo i satelliti mancanti (uno alla volta per evitare flood)
-    missingIds.forEach(id => {
-      fetchSatelliteById(id)
-        .then(sat => {
-          if (sat && sat.objectName) {
-            setSatelliteNames(prev => ({ ...prev, [id]: sat.objectName }))
-          }
-        })
-        .catch(err => {
-          console.error('Errore fetchSatelliteById', id, err)
-        })
-    })
+    // Usa helper per aggiornare solo i satelliti mancanti
+    updateMissingSatelliteNames(missingIds, setSatelliteNames)
   }, [featuredThreads, allThreads, satelliteNames])
   // ...existing code...
   // DEBUG: logga la mappa dei nomi, le chiavi e la lista satelliti
@@ -232,13 +220,7 @@ export function CommunityPanel({
     try {
       // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
       if (targetType === 'SATELLITE') {
-        const list = await fetchSatelliteCatalogByType('ALL')
-        const map: Record<string, string> = {}
-        for (const sat of list) {
-          map[String(sat.id)] = sat.objectName
-          map[String(sat.noradCatId)] = sat.objectName
-          if (sat.objectId) map[String(sat.objectId)] = sat.objectName
-        }
+        const { map } = await fetchAndMapSatelliteNames('ALL')
         setSatelliteNames(map)
       }
       const payload = await fetchCommunityThread(targetType, targetId)
@@ -268,13 +250,7 @@ export function CommunityPanel({
     try {
       // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
       if (targetType === 'SATELLITE') {
-        const list = await fetchSatelliteCatalogByType('ALL')
-        const map: Record<string, string> = {}
-        for (const sat of list) {
-          map[String(sat.id)] = sat.objectName
-          map[String(sat.noradCatId)] = sat.objectName
-          if (sat.objectId) map[String(sat.objectId)] = sat.objectName
-        }
+        const { map } = await fetchAndMapSatelliteNames('ALL')
         setSatelliteNames(map)
       }
       const payload = await ensureCommunityThread(targetType, targetId)
@@ -506,307 +482,60 @@ export function CommunityPanel({
 
 
 
-      {/* Thread attivo in cima, identico a quello originale */}
-      <div className="community-thread-card">
+      {/* Thread attivo in cima, ora come componente */}
+      <CommunityThreadCard
+        activeThread={activeThread}
+        activeTarget={activeTarget}
+        selectedSatelliteName={selectedSatelliteName}
+        comments={comments}
+        commentsLoading={commentsLoading}
+        commentsError={commentsError}
+        authUser={authUser}
+        replyToComment={replyToComment}
+        editingCommentId={editingCommentId}
+        editingBody={editingBody}
+        postingComment={postingComment}
+        newCommentBody={newCommentBody}
+        setReplyToComment={setReplyToComment}
+        setEditingCommentId={setEditingCommentId}
+        setEditingBody={setEditingBody}
+        setNewCommentBody={setNewCommentBody}
+        handleToggleLike={handleToggleLike}
+        handleSubmitComment={handleSubmitComment}
+        handleSaveEdit={handleSaveEdit}
+        handleDeleteComment={handleDeleteComment}
+        handleReportComment={handleReportComment}
+        ensureThread={ensureThread}
+      />
 
-        <strong>
-          {activeThread
-            ? (
-                activeThread.targetType === 'SATELLITE' && selectedSatelliteName
-                  ? `Thread attivo: ${selectedSatelliteName}`
-                  : `Thread attivo: ${activeThread.title}`
-              )
-            : activeTarget
-              ? `Nessun thread aperto. Premi "Apri o crea thread satellite" per ${activeTarget.label}`
-              : 'Seleziona un thread dall\'elenco oppure un satellite'}
-        </strong>
-
-        {activeThread ? (
-          <div className="community-inline-actions">
-            <button
-              type="button"
-              className={activeThread.likedByMe ? 'community-like-active' : ''}
-              onClick={() => {
-                void handleToggleLike(activeThread.id)
-              }}
-            >
-              {activeThread.likedByMe ? 'Unlike' : 'Like'} ({activeThread.likesCount})
-            </button>
-          </div>
-        ) : null}
-
-        {activeTarget ? (
-          <button
-            type="button"
-            disabled={commentsLoading}
-            onClick={() => {
-              void ensureThread(activeTarget.targetType, activeTarget.targetId)
-            }}
-          >
-            {commentsLoading ? 'Caricamento thread...' : 'Apri o crea thread satellite corrente'}
-          </button>
-        ) : null}
-
-        {commentsError ? <p className="community-error">{commentsError}</p> : null}
-        {!activeThread && commentsLoading ? <p className="updated-at">Caricamento thread...</p> : null}
-
-        {activeThread ? (
-          <>
-            <div className="community-compose">
-              {replyToComment && (
-                <div className="community-reply-indicator">
-                  Risposta a <strong>{replyToComment.authorUsername}</strong>
-                  <button
-                    type="button"
-                    className="community-cancel-reply"
-                    onClick={() => setReplyToComment(null)}
-                  >
-                    Annulla risposta
-                  </button>
-                </div>
-              )}
-              <textarea
-                rows={3}
-                value={newCommentBody}
-                onChange={(event) => setNewCommentBody(event.target.value)}
-                placeholder={replyToComment ? `Rispondi a ${replyToComment.authorUsername}` : 'Scrivi un commento costruttivo per la community'}
-              />
-              <button type="button" onClick={() => void handleSubmitComment()} disabled={postingComment || !newCommentBody.trim()}>
-                {postingComment ? 'Invio...' : 'Pubblica'}
-              </button>
-            </div>
-            {commentsLoading ? <p className="updated-at">Caricamento thread...</p> : null}
-
-            {!commentsLoading && comments.length === 0 ? (
-              <p className="updated-at">Nessun commento su questo target.</p>
-            ) : (
-              <div className="community-comment-list">
-                {comments.map((comment) => {
-                  const isOwnComment = comment.authorId === authUser.id
-                  const isEditing = editingCommentId === comment.id
-
-                  // Trova il commento padre se esiste
-                  let parent = null
-                  if (comment.parentCommentId) {
-                    parent = comments.find(c => c.id === comment.parentCommentId)
-                  }
-
-                  return (
-                    <article key={comment.id} className={`community-comment-item ${comment.deleted ? 'is-deleted' : ''}`}>
-                      <div className="community-comment-head">
-                        <strong>{comment.authorUsername}</strong>
-                        <small>{new Date(comment.createdAt).toLocaleString('it-IT')}</small>
-                      </div>
-
-                      {/* Mostra a chi si sta rispondendo */}
-                      {parent && (
-                        <div className="community-reply-indicator" style={{marginBottom: 4}}>
-                          Risposta a <strong>{parent.authorUsername}</strong>
-                          <span style={{color:'#9bbad6', fontSize:'0.75em', marginLeft:4}}>
-                            “{parent.body.length > 60 ? parent.body.slice(0, 57) + '…' : parent.body}”
-                          </span>
-                        </div>
-                      )}
-
-                      {isEditing ? (
-                        <div className="community-edit-box">
-                          <textarea
-                            rows={3}
-                            value={editingBody}
-                            onChange={(event) => setEditingBody(event.target.value)}
-                          />
-                          <div className="community-inline-actions">
-                            <button type="button" onClick={() => void handleSaveEdit(comment.id)}>
-                              Salva
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCommentId(null)
-                                setEditingBody('')
-                              }}
-                            >
-                              Annulla
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p>{comment.body}</p>
-                      )}
-
-                      {!comment.deleted && !isEditing ? (
-                        <div className="community-inline-actions">
-                          <button
-                            type="button"
-                            onClick={() => setReplyToComment(comment)}
-                          >
-                            Rispondi
-                          </button>
-                          {isOwnComment ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCommentId(comment.id)
-                                  setEditingBody(comment.body)
-                                }}
-                              >
-                                Modifica
-                              </button>
-                              <button type="button" onClick={() => void handleDeleteComment(comment.id)}>
-                                Elimina
-                              </button>
-                            </>
-                          ) : (
-                            <button type="button" onClick={() => void handleReportComment(comment.id)}>
-                              Segnala
-                            </button>
-                          )}
-                        </div>
-                      ) : null}
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-          </>
-        ) : null}
-      </div>
-
-      {/* Nuovo thread libero sempre sotto */}
-      <div className="community-thread-card">
-        <strong>Nuovo thread libero</strong>
-        <div className="community-compose">
-          <input
-            type="text"
-            value={newThreadTitle}
-            onChange={(event) => setNewThreadTitle(event.target.value)}
-            placeholder="Titolo thread (es. Miglior setup per osservazione urbana)"
-          />
-          <textarea
-            rows={3}
-            value={newThreadBody}
-            onChange={(event) => setNewThreadBody(event.target.value)}
-            placeholder="Apri una discussione non legata a un satellite specifico"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              void handleCreateGeneralThread()
-            }}
-            disabled={postingThread || !newThreadTitle.trim() || !newThreadBody.trim()}
-          >
-            {postingThread ? 'Creazione...' : 'Crea thread'}
-          </button>
-        </div>
-      </div>
+      <CommunityCompose
+        newThreadTitle={newThreadTitle}
+        setNewThreadTitle={setNewThreadTitle}
+        newThreadBody={newThreadBody}
+        setNewThreadBody={setNewThreadBody}
+        postingThread={postingThread}
+        handleCreateGeneralThread={handleCreateGeneralThread}
+      />
 
 
-      {/* Thread in evidenza: ordinati per numero di messaggi */}
-      <div className="community-feed-card">
-        <strong>Thread in evidenza</strong>
-        {/* <small>Caricamento thread...</small> */}
-        {threadsError ? <small className="community-error">{threadsError}</small> : null}
-        {!threadsError && featuredThreads.length === 0 ? (
-          <small>Nessun thread in evidenza disponibile.</small>
-        ) : (
-          <div className="community-feed-list">
-            {featuredThreads
-              .sort((a, b) => b.commentCount - a.commentCount)
-              .map((item) => (
-                <article key={`featured-${item.threadId}`} className="community-feed-item">
-                  <strong>
-                    {/* DEBUG: log accoppiamento nome/targetId */}
-                    {(item.targetType === 'SATELLITE' || item.targetType === 'SIGHTING') && satelliteNames[item.targetId]
-                      ? satelliteNames[item.targetId]
-                      : item.title}
-                  </strong>
-                  <small>
-                    {(item.targetType === 'SATELLITE' || item.targetType === 'SIGHTING') && satelliteNames[item.targetId]
-                      ? `${item.targetType} (${satelliteNames[item.targetId]})`
-                      : `${item.targetType} #${item.targetId}`}
-                  </small>
-                  <small>{item.commentCount} commenti · {item.likesCount} like</small>
-                  <small>
-                    {item.lastCommentAt
-                      ? new Date(item.lastCommentAt).toLocaleString('it-IT')
-                      : 'Nessun commento recente'}
-                  </small>
-                  <p>{item.lastCommentPreview}</p>
-                  <div className="community-inline-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void loadThread(item.targetType, item.targetId)
-                      }}
-                    >
-                      Apri thread
-                    </button>
-                    <button
-                      type="button"
-                      className={item.likedByMe ? 'community-like-active' : ''}
-                      onClick={() => {
-                        void handleToggleLike(item.threadId)
-                      }}
-                    >
-                      {item.likedByMe ? 'Unlike' : 'Like'} ({item.likesCount})
-                    </button>
-                  </div>
-                </article>
-              ))}
-          </div>
-        )}
-      </div>
+      <CommunityFeedCard
+        title="Thread in evidenza"
+        threadsError={threadsError}
+        items={featuredThreads}
+        satelliteNames={satelliteNames}
+        onOpenThread={loadThread}
+        onToggleLike={handleToggleLike}
+        featured
+      />
 
-      {/* Tutti i thread creati */}
-      <div className="community-feed-card">
-        <strong>Tutti i thread creati</strong>
-        {!threadsError && allThreads.length === 0 ? (
-          <small>Nessun thread disponibile.</small>
-        ) : (
-          <div className="community-feed-list">
-            {allThreads.map((item) => (
-              <article key={`all-${item.threadId}`} className="community-feed-item">
-                <strong>
-                  {/* DEBUG: log accoppiamento nome/targetId */}
-                  {(() => { console.log('thread', item.targetId, satelliteNames[item.targetId]); return null })()}
-                  {(item.targetType === 'SATELLITE' || item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
-                    ? satelliteNames[item.targetId]
-                    : item.title}
-                </strong>
-                <small>
-                  {item.targetType === 'SATELLITE' && satelliteNames[item.targetId]
-                    ? `SATELLITE (${satelliteNames[item.targetId]})`
-                    : (item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
-                      ? `${item.targetType} (${satelliteNames[item.targetId]})`
-                      : `${item.targetType} #${item.targetId}`}
-                </small>
-                <small>{item.commentCount} commenti · {item.likesCount} like</small>
-                <p>{item.lastCommentPreview}</p>
-                <div className="community-inline-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void loadThread(item.targetType, item.targetId)
-                    }}
-                  >
-                    Apri
-                  </button>
-                  <button
-                    type="button"
-                    className={item.likedByMe ? 'community-like-active' : ''}
-                    onClick={() => {
-                      void handleToggleLike(item.threadId)
-                    }}
-                  >
-                    {item.likedByMe ? 'Unlike' : 'Like'} ({item.likesCount})
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
+      <CommunityFeedCard
+        title="Tutti i thread creati"
+        threadsError={threadsError}
+        items={allThreads}
+        satelliteNames={satelliteNames}
+        onOpenThread={loadThread}
+        onToggleLike={handleToggleLike}
+      />
     </section>
   )
 }
