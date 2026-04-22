@@ -36,6 +36,8 @@ public class CelestrakService {
     public CelestrakService(SatelliteRepository satelliteRepository,
                             OrbitalParametersRepository orbitalParametersRepository) {
 
+        log.info("🔧 Inizializzazione CelestrakService");
+        
         this.webClient = WebClient.builder()
                 .baseUrl("https://celestrak.org")
                 .defaultHeader("User-Agent", "SatelliteTracker")
@@ -43,21 +45,35 @@ public class CelestrakService {
 
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
+        
+        log.info("   Gruppi satelliti configurati: {}", String.join(", ", SATELLITE_GROUPS));
     }
 
     @Transactional
     public void fetchAndSaveStations() {
 
         if (!isDownloading.compareAndSet(false, true)) {
-            log.info("Skip CelesTrak (already running)");
+            log.info("⏭️  CelesTrak già in esecuzione, salto questa chiamata");
             return;
         }
 
         try {
 
-            log.info("📡 CelesTrak bulk fetch");
+            log.info("═══════════════════════════════════════════════════════════");
+            log.info("🌍 INIZIO DOWNLOAD DA CELESTRAK");
+            log.info("   Gruppi da scaricare: {}", SATELLITE_GROUPS.length);
+            log.info("═══════════════════════════════════════════════════════════");
+
+            int totalSatellites = 0;
+            int totalGroups = 0;
 
             for (String group : SATELLITE_GROUPS) {
+
+                totalGroups++;
+                log.info("📦 Gruppo {}/{}: '{}' - Avvio download...", 
+                        totalGroups, SATELLITE_GROUPS.length, group);
+                
+                long startTime = System.currentTimeMillis();
 
                 List<CelestrakSatelliteDTO> satellites =
                         webClient.get()
@@ -68,8 +84,19 @@ public class CelestrakService {
                                 .collectList()
                                 .block();
 
-                if (satellites == null) continue;
+                long duration = System.currentTimeMillis() - startTime;
 
+                if (satellites == null || satellites.isEmpty()) {
+                    log.warn("⚠️  Gruppo '{}': Nessun satellite ricevuto (tempo: {}ms)", group, duration);
+                    continue;
+                }
+
+                log.info("✅ Gruppo '{}': {} satelliti scaricati in {}ms", 
+                        group, satellites.size(), duration);
+                log.info("   Inizio salvataggio nel database...");
+
+                int savedInGroup = 0;
+                
                 for (CelestrakSatelliteDTO dto : satellites) {
 
                     Satellite sat = satelliteRepository
@@ -77,6 +104,8 @@ public class CelestrakService {
                             .orElseGet(() -> {
                                 Satellite s = new Satellite();
                                 s.setNoradCatId(dto.noradCatId());
+                                log.debug("      Nuovo satellite: NORAD {} - {}", 
+                                        dto.noradCatId(), dto.objectName());
                                 return s;
                             });
 
@@ -98,11 +127,28 @@ public class CelestrakService {
                     sat.addOrbitalParameters(op);
 
                     satelliteRepository.save(sat);
+                    savedInGroup++;
                 }
+
+                totalSatellites += savedInGroup;
+                log.info("✅ Gruppo '{}': {} satelliti salvati nel database", group, savedInGroup);
             }
 
+            log.info("═══════════════════════════════════════════════════════════");
+            log.info("✅ CELESTRAK DOWNLOAD COMPLETATO");
+            log.info("   Gruppi processati: {}", totalGroups);
+            log.info("   Satelliti totali salvati: {}", totalSatellites);
+            log.info("═══════════════════════════════════════════════════════════");
+
+        } catch (Exception e) {
+            log.error("═══════════════════════════════════════════════════════════");
+            log.error("❌ ERRORE CELESTRAK");
+            log.error("   Tipo: {}", e.getClass().getSimpleName());
+            log.error("   Messaggio: {}", e.getMessage());
+            log.error("═══════════════════════════════════════════════════════════", e);
         } finally {
             isDownloading.set(false);
+            log.debug("🔓 CelesTrak lock rilasciato");
         }
     }
 }

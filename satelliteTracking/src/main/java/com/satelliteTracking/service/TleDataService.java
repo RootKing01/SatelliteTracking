@@ -39,63 +39,133 @@ public class TleDataService {
 
     public void updateTle() {
 
-        log.info("🚀 Aggiornamento TLE iniziato...");
+        log.info("╔═══════════════════════════════════════════════════════════╗");
+        log.info("║  🚀 AGGIORNAMENTO TLE INIZIATO                            ║");
+        log.info("╚═══════════════════════════════════════════════════════════╝");
+        log.info("⚙️  Sorgente primaria configurata: {}", primarySource);
 
         try {
             if (!"spacetrack".equalsIgnoreCase(primarySource)) {
+                log.info("🎯 Usando CELESTRAK come sorgente primaria (da configurazione)...");
                 celestrakService.fetchAndSaveStations();
+                log.info("╔═══════════════════════════════════════════════════════════╗");
+                log.info("║  ✅ AGGIORNAMENTO TLE COMPLETATO CON SUCCESSO            ║");
+                log.info("╚═══════════════════════════════════════════════════════════╝");
                 return;
             }
 
+            log.info("🎯 Tentativo download da SPACE-TRACK (sorgente primaria)...");
             boolean ok = fetchFromSpaceTrack();
 
             if (!ok) {
-                log.warn("⚠️ fallback CelesTrak");
+                log.warn("╔═══════════════════════════════════════════════════════════╗");
+                log.warn("║  ⚠️  SPACE-TRACK FALLITO - ATTIVO FALLBACK               ║");
+                log.warn("╚═══════════════════════════════════════════════════════════╝");
+                log.info("🔄 Passaggio a CELESTRAK come sorgente di backup...");
                 celestrakService.fetchAndSaveStations();
+                log.info("✅ Fallback CelesTrak completato");
             }
 
+            log.info("╔═══════════════════════════════════════════════════════════╗");
+            log.info("║  ✅ AGGIORNAMENTO TLE COMPLETATO CON SUCCESSO            ║");
+            log.info("╚═══════════════════════════════════════════════════════════╝");
+
         } catch (Exception e) {
-            log.error("❌ errore globale TLE", e);
-            celestrakService.fetchAndSaveStations();
+            log.error("╔═══════════════════════════════════════════════════════════╗");
+            log.error("║  ❌ ERRORE CRITICO AGGIORNAMENTO TLE                     ║");
+            log.error("╚═══════════════════════════════════════════════════════════╝");
+            log.error("   Tipo errore: {}", e.getClass().getSimpleName());
+            log.error("   Messaggio: {}", e.getMessage());
+            log.error("🔄 Tentativo fallback d'emergenza a CelesTrak...", e);
+            
+            try {
+                celestrakService.fetchAndSaveStations();
+                log.info("✅ Fallback d'emergenza CelesTrak riuscito");
+            } catch (Exception fallbackError) {
+                log.error("❌ Anche il fallback CelesTrak è fallito: {}", fallbackError.getMessage(), fallbackError);
+            }
         }
     }
 
     private boolean fetchFromSpaceTrack() {
 
-        log.info("📡 SpaceTrack delta fetch");
+        log.info("───────────────────────────────────────────────────────────");
+        log.info("📡 Inizio fetch DELTA da Space-Track");
+        log.info("───────────────────────────────────────────────────────────");
 
         try {
+            log.info("🔍 Ricerca ultimo epoch nel database...");
+            
             OrbitalParameters last = orbitalParametersRepository
                     .findTopByOrderByFetchedAtDesc();
 
             String lastEpoch = (last != null) ? last.getEpoch() : null;
 
             if (lastEpoch == null) {
-                log.warn("⚠️ nessun epoch → skip delta");
+                log.warn("⚠️  Nessun epoch trovato nel database");
+                log.warn("   Impossibile effettuare fetch delta (richiede epoch di riferimento)");
+                log.warn("   Usa prima CelesTrak per popolare il database");
                 return false;
             }
+
+            log.info("✅ Ultimo epoch trovato: {}", lastEpoch);
+            log.info("   Timestamp fetch: {}", last.getFetchedAt());
+            log.info("🔄 Richiesta delta TLE da Space-Track (epoch > {})...", lastEpoch);
 
             String tleData = spaceTrackService.downloadDeltaTle(lastEpoch);
 
             if (tleData == null || tleData.isBlank()) {
-                log.warn("⚠️ SpaceTrack vuoto");
+                log.warn("⚠️  Space-Track ha restituito dati NULL o vuoti");
+                log.warn("   Possibili cause:");
+                log.warn("   - Nessun aggiornamento TLE disponibile dopo epoch {}", lastEpoch);
+                log.warn("   - Errore di connessione/autenticazione");
+                log.warn("   - Rate limit raggiunto");
                 return false;
             }
 
+            log.info("✅ Dati delta ricevuti da Space-Track: {} bytes", tleData.length());
+            log.info("🔄 Inizio parsing e salvataggio nel database...");
+            
+            long startParse = System.currentTimeMillis();
             int saved = parseAndSave(tleData);
+            long parseDuration = System.currentTimeMillis() - startParse;
 
-            return saved > 0;
+            if (saved == 0) {
+                log.warn("⚠️  Parsing completato ma nessun satellite salvato");
+                log.warn("   Possibili cause:");
+                log.warn("   - Satelliti nel TLE non presenti nel database");
+                log.warn("   - Formato TLE non valido");
+                return false;
+            }
+
+            log.info("───────────────────────────────────────────────────────────");
+            log.info("✅ SPACE-TRACK DELTA IMPORT COMPLETATO");
+            log.info("   Satelliti aggiornati: {}", saved);
+            log.info("   Tempo di parsing: {}ms", parseDuration);
+            log.info("───────────────────────────────────────────────────────────");
+
+            return true;
 
         } catch (Exception e) {
-            log.warn("❌ SpaceTrack error", e);
+            log.error("───────────────────────────────────────────────────────────");
+            log.error("❌ Errore durante fetch delta da Space-Track");
+            log.error("   Tipo: {}", e.getClass().getSimpleName());
+            log.error("   Messaggio: {}", e.getMessage());
+            log.error("───────────────────────────────────────────────────────────", e);
             return false;
         }
     }
 
     private int parseAndSave(String tleData) {
 
+        log.info("🔍 Inizio parsing TLE...");
         String[] lines = tleData.split("\n");
         int count = 0;
+        int skipped = 0;
+        int errors = 0;
+
+        log.info("   Totale righe da processare: {}", lines.length);
+        log.info("   TLE attesi: ~{}", lines.length / 2);
 
         for (int i = 0; i + 2 < lines.length; i += 3) {
 
@@ -103,12 +173,23 @@ public class TleDataService {
                 String line1 = lines[i + 1].trim();
                 String line2 = lines[i + 2].trim();
 
+                if (line1.isEmpty() || line2.isEmpty()) {
+                    skipped++;
+                    continue;
+                }
+
                 Long norad = Long.parseLong(line1.substring(2, 7).trim());
 
                 Optional<Satellite> satOpt =
                         satelliteRepository.findByNoradCatId(norad);
 
-                if (satOpt.isEmpty()) continue;
+                if (satOpt.isEmpty()) {
+                    skipped++;
+                    if (skipped % 1000 == 0) {
+                        log.debug("   Saltati {} satelliti non in database", skipped);
+                    }
+                    continue;
+                }
 
                 Satellite sat = satOpt.get();
 
@@ -139,9 +220,26 @@ public class TleDataService {
                 orbitalParametersRepository.save(p);
 
                 count++;
+                
+                if (count % 1000 == 0) {
+                    log.info("   Progresso: {} satelliti salvati...", count);
+                }
 
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                errors++;
+                if (errors < 10) { // Log solo i primi 10 errori
+                    log.warn("⚠️  Errore parsing TLE al blocco {} (riga {}): {}", 
+                            i / 3, i, e.getMessage());
+                }
+            }
         }
+
+        log.info("═══════════════════════════════════════════════════════════");
+        log.info("✅ PARSING COMPLETATO");
+        log.info("   Satelliti salvati: {}", count);
+        log.info("   Satelliti saltati (non in DB): {}", skipped);
+        log.info("   Errori di parsing: {}", errors);
+        log.info("═══════════════════════════════════════════════════════════");
 
         return count;
     }
