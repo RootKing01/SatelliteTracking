@@ -114,13 +114,23 @@ public class TleDataService {
 
             String tleData = spaceTrackService.downloadDeltaTle(lastEpoch);
 
-            if (tleData == null || tleData.isBlank()) {
-                log.warn("⚠️  Space-Track ha restituito dati NULL o vuoti");
+            if (tleData == null) {
+                log.warn("❌   Space-Track ha restituito dati NULL o vuoti");
                 log.warn("   Possibili cause:");
-                log.warn("   - Nessun aggiornamento TLE disponibile dopo epoch {}", lastEpoch);
+                log.warn("   - Timeout");
                 log.warn("   - Errore di connessione/autenticazione");
                 log.warn("   - Rate limit raggiunto");
                 return false;
+            }
+
+            if (tleData.isBlank()) {
+                log.info("ℹ️ Nessun aggiornamento TLE disponibile → database già aggiornato");
+
+                log.info("───────────────────────────────────────────────────────────");
+                    log.info("✅ SPACE-TRACK: NESSUN AGGIORNAMENTO NECESSARIO");
+                log.info("───────────────────────────────────────────────────────────");
+
+                return true; // ✅ IMPORTANTE: NON fallback, dati già aggiornati 
             }
 
             log.info("✅ Dati delta ricevuti da Space-Track: {} bytes", tleData.length());

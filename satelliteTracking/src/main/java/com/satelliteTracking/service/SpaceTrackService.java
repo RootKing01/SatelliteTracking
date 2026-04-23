@@ -93,43 +93,110 @@ public class SpaceTrackService {
     // =========================
     public String downloadDeltaTle(String lastEpoch) {
 
-        log.info("📡 Richiesta DELTA TLE da epoch: {}", lastEpoch);
-        ensureLogin();
+    log.info("📡 Inizio download DELTA TLE (chunked) da epoch: {}", lastEpoch);
+    ensureLogin();
 
-        try {
-            String result = webClient.get()
+    try {
+        StringBuilder allData = new StringBuilder();
+
+        int offset = 0;
+        final int limit = 1000;
+        int totalEntries = 0;
+        int chunkNumber = 0;
+
+        while (true) {
+            chunkNumber++;
+
+            log.info("📦 Delta chunk #{} → offset={}, limit={}", chunkNumber, offset, limit);
+
+            long startTime = System.currentTimeMillis();
+            int currentOffset = offset;
+
+            String chunk = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/basicspacedata/query/class/gp")
                             .queryParam("EPOCH", ">" + lastEpoch)
                             .queryParam("DECAY_DATE", "null-val")
                             .queryParam("orderby", "NORAD_CAT_ID,EPOCH desc")
+                            .queryParam("limit", limit)
+                            .queryParam("offset", currentOffset)
                             .queryParam("format", "tle")
                             .build()
                     )
                     .header(HttpHeaders.COOKIE, sessionCookie)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block(Duration.ofMinutes(5));
+                    .block(Duration.ofMinutes(2)); // timeout ridotto
 
-            if (result != null && !result.isBlank()) {
-                int lines = result.split("\n").length;
-                log.info("✅ Delta TLE scaricato: {} bytes, ~{} satelliti", result.length(), lines / 2);
-            } else {
-                log.warn("⚠️ Nessun aggiornamento TLE disponibile dopo epoch {}", lastEpoch);
+            long duration = System.currentTimeMillis() - startTime;
+
+            // Fine dati
+            if (chunk == null) {
+                log.warn("⚠️ Chunk #{} NULL → possibile errore HTTP / timeout ({} ms)", chunkNumber, duration);
+                break;
             }
-            
-            return result;
 
-        } catch (WebClientResponseException e) {
-            log.error("❌ HTTP error durante delta fetch → Status: {} | Body: {}",
-                    e.getStatusCode(),
-                    e.getResponseBodyAsString().substring(0, Math.min(200, e.getResponseBodyAsString().length())));
-            return null;
-        } catch (Exception e) {
-            log.error("❌ Errore inatteso durante delta fetch: {}", e.getMessage(), e);
-            return null;
+            if (chunk.isBlank()) {
+                log.info("ℹ️ Chunk #{} vuoto → nessun altro delta disponibile ({} ms)", chunkNumber, duration);
+                break;
+            }
+
+            int lines = chunk.split("\n").length;
+            int entries = lines / 2;
+
+            allData.append(chunk);
+            totalEntries += entries;
+
+            log.info("✅ Chunk #{}: {} entries, {} bytes in {} ms",
+                    chunkNumber, entries, chunk.length(), duration);
+
+            // Ultimo chunk
+            if (entries < limit) {
+                log.info("✅ Ultimo chunk raggiunto ({} < {})", entries, limit);
+                break;
+            }
+
+            offset += limit;
+
+            // Piccolo rate limit per evitare throttling
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("⚠️ Thread interrotto durante sleep");
+            }
+
+            // Safety stop (evita loop infiniti in caso di bug)
+            if (offset > 200_000) {
+                log.warn("⚠️ Raggiunto limite sicurezza offset={}, interrompo", offset);
+                break;
+            }
         }
+
+        String result = allData.toString();
+
+        if (result.isBlank()) {
+            log.info("ℹ️ Nessun aggiornamento TLE disponibile dopo epoch {}", lastEpoch);
+            return "";
+        }
+
+        log.info("🚀 DELTA COMPLETATO: {} entries totali, {} bytes",
+                totalEntries, result.length());
+
+        return result;
+
+    } catch (WebClientResponseException e) {
+        log.error("❌ HTTP error durante delta fetch → Status: {} | Body: {}",
+                e.getStatusCode(),
+                e.getResponseBodyAsString().substring(0,
+                        Math.min(300, e.getResponseBodyAsString().length())));
+        return null;
+
+    } catch (Exception e) {
+        log.error("❌ Errore inatteso durante delta fetch: {}", e.getMessage(), e);
+        return null;
     }
+}
 
     // =========================
     // SINGLE TLE (SAFE)
