@@ -202,7 +202,7 @@ public class TleDataService {
             log.info("✅ Dati delta LEO ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-
+            int saved = parseAndSaveJson(tleData);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
