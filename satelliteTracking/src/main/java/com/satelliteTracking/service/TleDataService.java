@@ -131,7 +131,6 @@ public class TleDataService {
             }
 
             // ⚡ FIX: passa LocalDateTime, non String epoch
-            spaceTrackService.ensureLogin();
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
                         if (tleData == null) {
@@ -187,7 +186,6 @@ public class TleDataService {
             LocalDateTime lastFetchedAt = last.getFetchedAt();
             log.info("✅ Ultimo fetch: {}", lastFetchedAt);
 
-            spaceTrackService.ensureLogin();
             String tleData = spaceTrackService.downloadDeltaTleLeoOnly(lastFetchedAt);
 
             if (tleData == null) {

@@ -124,6 +124,7 @@ public class SpaceTrackService {
         log.info("   CREATION_DATE range: {} → {}", from, to);
         log.info("   💡 GP_HISTORY restituisce TUTTI i TLE pubblicati nell'intervallo");
         ensureLogin();
+        ensureLogin();
         try {
             return downloadGpHistoryInternal(from, to, false, false);
         } catch (Exception e) {
@@ -140,6 +141,7 @@ public class SpaceTrackService {
         String to = formatForSpaceTrack(LocalDateTime.now());
         log.info("📡 DELTA FETCH LEO via GP_HISTORY");
         log.info("   CREATION_DATE range: {} → {}", from, to);
+        ensureLogin();
         ensureLogin();
         try {
             return downloadGpHistoryInternal(from, to, true, false);
