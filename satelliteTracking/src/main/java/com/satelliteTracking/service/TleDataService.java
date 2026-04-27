@@ -229,11 +229,34 @@ public class TleDataService {
                     try {
                         Long norad = node.path("NORAD_CAT_ID").asLong();
                         java.util.Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
+                        Satellite sat;
+
                         if (satOpt.isEmpty()) {
-                            skipped++;
-                            continue;
-                        }
-                        Satellite sat = satOpt.get();
+                            log.info("🆕 Nuovo satellite scoperto: NORAD {}", norad);
+
+                            sat = new Satellite();
+                            sat.setNoradCatId(norad);
+
+                            String name = node.path("OBJECT_NAME").asText(null);
+                            String objectId = node.path("OBJECT_ID").asText(null);
+
+                            sat.setObjectName(name != null ? name : "UNKNOWN-" + norad);
+                            sat.setObjectId(objectId != null ? objectId : "UNKNOWN");
+
+                            String type = node.path("OBJECT_TYPE").asText("");
+                            switch (type) {
+                                case "PAYLOAD" -> sat.setSatelliteType("PAYLOAD");
+                                case "ROCKET BODY" -> sat.setSatelliteType("ROCKET_BODY");
+                                case "DEBRIS" -> sat.setSatelliteType("DEBRIS");
+                                default -> sat.setSatelliteType("UNKNOWN");
+                            }
+
+                            sat = satelliteRepository.save(sat);
+
+                        } else {
+                            sat = satOpt.get();
+                        }       
+                        
                         String epoch = node.path("EPOCH").asText();
                         Double inclination = node.path("INCLINATION").asDouble();
                         Double raOfAscNode = node.path("RA_OF_ASC_NODE").asDouble();
