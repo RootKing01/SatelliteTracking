@@ -133,9 +133,7 @@ public class TleDataService {
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
-            // TODO: se il formato è JSON, chiamare parseAndSaveJson(tleData) anziché parseAndSave(tleData)
-
-            if (tleData == null) {
+                        if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
                 return false;
             }
@@ -149,7 +147,7 @@ public class TleDataService {
             log.info("✅ Dati delta ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSave(tleData);
+            int saved = parseAndSaveJson(tleData);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             if (saved == 0) {
@@ -204,7 +202,7 @@ public class TleDataService {
             log.info("✅ Dati delta LEO ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSave(tleData);
+
             long parseDuration = System.currentTimeMillis() - startParse;
 
             log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
@@ -273,7 +271,7 @@ public class TleDataService {
         return count;
     }
 
-    private int parseAndSave(String tleData) {
+
     log.info("🔍 Inizio parsing TLE...");
 
     String[] rawLines = tleData.split("\n");
