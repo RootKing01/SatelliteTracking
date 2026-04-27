@@ -44,11 +44,6 @@ public class SatelliteScheduler {
     /**
      * 🚀 Avvio immediato dopo startup
      */
-    @EventListener(ApplicationReadyEvent.class)
-    public void initialSatelliteLoad() {
-        System.out.println("🚀 [Satellite Update] Avvio iniziale...");
-        updateSatellitesFull();
-    }
 
     /**
      * 🔄 UPDATE TLE COMPLETO ogni 12 ore
