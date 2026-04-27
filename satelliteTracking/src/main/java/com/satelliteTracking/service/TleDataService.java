@@ -53,10 +53,18 @@ public class TleDataService {
             log.info("🎯 Tentativo download da SPACE-TRACK...");
             boolean ok = fetchFromSpaceTrack();
 
+            // Se fetchFromSpaceTrack non ha già gestito il fallback, esegui qui solo se necessario
             if (!ok) {
-                log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
-                celestrakService.fetchAndSaveStations();
-                log.info("✅ Fallback CelesTrak completato");
+                OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+                long hoursSinceLast = 0;
+                if (last != null) {
+                    hoursSinceLast = java.time.Duration.between(last.getFetchedAt(), java.time.LocalDateTime.now()).toHours();
+                }
+                if (hoursSinceLast <= 48) {
+                    log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
+                    celestrakService.fetchAndSaveStations();
+                    log.info("✅ Fallback CelesTrak completato");
+                }
             }
 
             log.info("╔═══════════════════════════════════════════════════════════╗");
@@ -119,11 +127,13 @@ public class TleDataService {
                 log.warn("⏳ Sono passate {} ore dall'ultimo aggiornamento: fallback obbligatorio a CelesTrak", hoursSinceLast);
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback CelesTrak forzato dopo {} ore", hoursSinceLast);
-                return false;
+                return true; // Interrompi qui, non chiamare fallback due volte
             }
 
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
+            log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
+            // TODO: se il formato è JSON, chiamare parseAndSaveJson(tleData) anziché parseAndSave(tleData)
 
             if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
@@ -206,6 +216,61 @@ public class TleDataService {
             log.error("❌ Errore fetch delta LEO: {}", e.getMessage(), e);
             return false;
         }
+    }
+
+    int parseAndSaveJson(String jsonData) {
+        log.info("🔍 Inizio parsing TLE (JSON)...");
+        int count = 0;
+        int skipped = 0;
+        int errors = 0;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonData);
+            if (root.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode node : root) {
+                    try {
+                        Long norad = node.path("NORAD_CAT_ID").asLong();
+                        java.util.Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
+                        if (satOpt.isEmpty()) {
+                            skipped++;
+                            continue;
+                        }
+                        Satellite sat = satOpt.get();
+                        String epoch = node.path("EPOCH").asText();
+                        Double inclination = node.path("INCLINATION").asDouble();
+                        Double raOfAscNode = node.path("RA_OF_ASC_NODE").asDouble();
+                        Double eccentricity = node.path("ECCENTRICITY").asDouble();
+                        Double argOfPericenter = node.path("ARG_OF_PERICENTER").asDouble();
+                        Double meanAnomaly = node.path("MEAN_ANOMALY").asDouble();
+                        Double meanMotion = node.path("MEAN_MOTION").asDouble();
+                        String tleLine1 = node.path("TLE_LINE1").asText("");
+                        String tleLine2 = node.path("TLE_LINE2").asText("");
+                        OrbitalParameters p = new OrbitalParameters(
+                                sat, epoch, inclination, raOfAscNode,
+                                eccentricity, argOfPericenter, meanAnomaly, meanMotion);
+                        p.setTleLine1(tleLine1);
+                        p.setTleLine2(tleLine2);
+                        p.setFetchedAt(java.time.LocalDateTime.now());
+                        orbitalParametersRepository.save(p);
+                        count++;
+                    } catch (Exception e) {
+                        errors++;
+                        if (errors <= 10) {
+                            log.warn("⚠️ Errore JSON: {}", e.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("❌ Errore parsing JSON: {}", e.getMessage(), e);
+        }
+        log.info("═══════════════════════════════════════════════════════════");
+        log.info("✅ PARSING JSON COMPLETATO");
+        log.info("   Salvati:          {}", count);
+        log.info("   Saltati (no DB):  {}", skipped);
+        log.info("   Errori:           {}", errors);
+        log.info("═══════════════════════════════════════════════════════════");
+        return count;
     }
 
     private int parseAndSave(String tleData) {

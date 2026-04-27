@@ -150,6 +150,7 @@ public class SpaceTrackService {
     }
 
     private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
+        // TODO: implementare parser JSON in parseAndSaveJson() e richiamarlo da TleDataService
         StringBuilder allData = new StringBuilder();
         int offset = 0;
         final int limit = 1000;
@@ -174,7 +175,7 @@ public class SpaceTrackService {
                                 .queryParam("orderby", "CREATION_DATE asc")
                                 .queryParam("limit", limit)
                                 .queryParam("offset", currentOffset)
-                                .queryParam("format", "tle");
+                                .queryParam("format", "json"); // Usa JSON come formato principale
                         if (leoOnly) {
                             builder = builder.queryParam("MEAN_MOTION", ">11.25");
                         }
