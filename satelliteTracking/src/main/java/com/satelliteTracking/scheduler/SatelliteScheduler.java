@@ -22,7 +22,9 @@ import java.util.List;
 @ConditionalOnProperty(value = "app.scheduler.enabled", havingValue = "true", matchIfMissing = true)
 public class SatelliteScheduler {
 
-    private static final long TLE_UPDATE_HOURS = 12;
+    // Intervalli di aggiornamento TLE
+    private static final long FULL_UPDATE_HOURS = 12;    // Aggiornamento completo ogni 12 ore
+    private static final long LEO_UPDATE_HOURS = 3;      // Aggiornamento LEO ogni 3 ore
 
     private final TleDataService tleDataService;
     private final SatellitePassService passService;
@@ -40,34 +42,49 @@ public class SatelliteScheduler {
     }
 
     /**
-     * Avvio immediato dopo startup
+     * 🚀 Avvio immediato dopo startup
      */
     @EventListener(ApplicationReadyEvent.class)
     public void initialSatelliteLoad() {
         System.out.println("🚀 [Satellite Update] Avvio iniziale...");
-        updateSatellites();
+        updateSatellitesFull();
     }
 
     /**
-     * 🔄 UPDATE TLE ogni 12 ore
-     * (unico punto di verità, niente doppio check inutile)
+     * 🔄 UPDATE TLE COMPLETO ogni 12 ore
+     * Aggiorna tutti i satelliti (LEO + MEO + GEO + HEO)
      */
-    @Scheduled(fixedRate = 43200000, initialDelay = 60000) // 12h
-    public void updateSatellites() {
+    @Scheduled(fixedRate = 43200000, initialDelay = 60000) // 12 ore
+    public void updateSatellitesFull() {
+
+        System.out.println("═══════════════════════════════════════════════════════════");
+        System.out.println("🔄 [Full Update] Verifica aggiornamento TLE completo...");
+        System.out.println("═══════════════════════════════════════════════════════════");
 
         OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
 
         if (lastUpdate != null) {
-            long hours = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toHours();
+            
+            long minutes = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toMinutes();
 
-            if (hours < TLE_UPDATE_HOURS) {
-                System.out.println("⏭️ Skip TLE update (ultimo aggiornamento " + hours + "h fa)");
+
+            if (minutes < 30) {
+                System.out.println("⏭️ Skip update: ultimo fetch troppo recente (" + minutes + " min fa)");
                 return;
             }
 
-            System.out.println("🔄 Update TLE necessario (" + hours + "h dall'ultimo)");
+            long hours = minutes / 60;
+
+            if (hours < FULL_UPDATE_HOURS) {
+                System.out.println("⏭️ Skip full update (ultimo aggiornamento " + hours + "h fa)");
+                System.out.println("   Prossimo update completo tra: " + (FULL_UPDATE_HOURS - hours) + "h");
+                System.out.println("═══════════════════════════════════════════════════════════");
+                return;
+            }
+
+            System.out.println("✅ Update completo necessario (" + hours + "h dall'ultimo)");
         } else {
-            System.out.println("🔄 Primo download TLE");
+            System.out.println("✅ Primo download TLE (database vuoto)");
         }
 
         try {
@@ -76,8 +93,73 @@ public class SatelliteScheduler {
             passService.clearPassesCache();
             precomputeUpcomingPasses();
 
+            System.out.println("═══════════════════════════════════════════════════════════");
+            System.out.println("✅ [Full Update] Aggiornamento completo terminato");
+            System.out.println("═══════════════════════════════════════════════════════════");
+
         } catch (Exception e) {
-            System.err.println("❌ Scheduler error TLE: " + e.getMessage());
+            System.err.println("❌ [Full Update] Errore: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 🛰️ UPDATE TLE LEO ogni 3 ore
+     * Aggiorna solo i satelliti in orbita bassa (più soggetti a variazioni)
+     * 
+     * Schedulazione: ogni 3 ore (10800000 ms)
+     * Initial delay: 10 minuti per non sovrapporsi al full update iniziale
+     */
+    @Scheduled(fixedRate = 10800000, initialDelay = 600000) // 3 ore, delay 10min
+    public void updateSatellitesLeoOnly() {
+
+        System.out.println("═══════════════════════════════════════════════════════════");
+        System.out.println("🛰️  [LEO Update] Verifica aggiornamento TLE LEO...");
+        System.out.println("═══════════════════════════════════════════════════════════");
+
+        OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+
+        if (lastUpdate == null) {
+            System.out.println("⏭️ Skip LEO update: database non inizializzato");
+            System.out.println("   Attendo primo full update...");
+            System.out.println("═══════════════════════════════════════════════════════════");
+            return;
+        }
+
+        long hours = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toHours();
+
+        // Se è passato meno del tempo LEO, skip
+        if (hours < LEO_UPDATE_HOURS) {
+            System.out.println("⏭️ Skip LEO update (ultimo aggiornamento " + hours + "h fa)");
+            System.out.println("   Prossimo LEO update tra: " + (LEO_UPDATE_HOURS - hours) + "h");
+            System.out.println("═══════════════════════════════════════════════════════════");
+            return;
+        }
+
+        // Se è quasi tempo per un full update (entro 1h), skip il LEO
+        if (hours >= FULL_UPDATE_HOURS - 1) {
+            System.out.println("⏭️ Skip LEO update: full update imminente");
+            System.out.println("   Full update tra: " + (FULL_UPDATE_HOURS - hours) + "h");
+            System.out.println("═══════════════════════════════════════════════════════════");
+            return;
+        }
+
+        System.out.println("✅ Update LEO necessario (" + hours + "h dall'ultimo)");
+
+        try {
+            tleDataService.updateTleLeoOnly();
+
+            // Invalida solo la cache dei passaggi (i LEO cambiano rapidamente)
+            passService.clearPassesCache();
+            precomputeUpcomingPasses();
+
+            System.out.println("═══════════════════════════════════════════════════════════");
+            System.out.println("✅ [LEO Update] Aggiornamento LEO terminato");
+            System.out.println("═══════════════════════════════════════════════════════════");
+
+        } catch (Exception e) {
+            System.err.println("❌ [LEO Update] Errore: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -115,9 +197,9 @@ public class SatelliteScheduler {
     }
 
     /**
-     * 📢 Notifiche Telegram
+     * 📢 Notifiche Telegram ogni ora
      */
-    @Scheduled(fixedRate = 3600000)
+    @Scheduled(fixedRate = 3600000, initialDelay = 180000)
     public void sendTelegramNotificationsForUpcomingPasses() {
 
         System.out.println("📢 [Telegram Scheduler] Scan passaggi...");

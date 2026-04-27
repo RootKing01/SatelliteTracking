@@ -4,71 +4,78 @@
   body,
   #root {
     min-height: 100dvh;
+    overflow-x: hidden;
   }
 
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(320px, 46vh) 1fr;
+    grid-template-rows: auto 1fr;
     min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* NASCONDI ELEMENTI NON ESSENZIALI SU MOBILE */
+  .viewer-compass,
+  .group-meta,
+  .sync-footer-card,
+  .refresh-guard-note {
+    display: none !important;
   }
 
   .panel-section {
-    position: static;
-    width: auto;
-    top: auto;
-    left: auto;
-    bottom: auto;
+    position: relative;
+    width: 100%;
     height: auto;
-    min-height: 320px;
-    overflow: hidden;
+    max-height: 50vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: none;
     border-radius: 0;
     box-shadow: none;
     backdrop-filter: none;
     background: transparent;
-  }
-
-  .panel-section {
-    padding: 10px 8px;
+    padding: 12px 10px;
   }
 
   .panel-component,
   .collapsible,
   .details-card,
   .search-panel,
-  .sync-footer-card,
   .visibility-item,
   .sighting-item,
   .group-item {
-    border-radius: 8px;
+    border-radius: 10px;
   }
 
   .panel-component h1 {
-    font-size: 1.02rem;
+    font-size: 1.1rem;
+    margin-bottom: 8px;
   }
 
   .panel-component p {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
   }
 
   .panel-layout,
   .panel-left,
   .sidebar-split {
     min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .sidebar-split {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 8px;
   }
 
   .sidebar-buttons-shell,
   .sidebar-buttons-shell.expanded {
     width: 100%;
     min-height: 0;
-    border-radius: 10px;
-    padding: 4px;
+    border-radius: 12px;
+    padding: 6px;
+    background: rgba(10, 25, 47, 0.75);
+    backdrop-filter: blur(12px);
   }
 
   .sidebar-tabs {
@@ -76,8 +83,12 @@
     max-height: none;
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: none;
-    padding-bottom: 2px;
+    padding-bottom: 4px;
+    display: flex;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sidebar-tabs::-webkit-scrollbar {
@@ -85,17 +96,22 @@
   }
 
   .sidebar-tabs button {
-    min-height: auto;
+    min-height: 44px; /* Touch target size migliorato */
     min-width: max-content;
-    padding: 9px 12px;
-    font-size: 0.68rem;
+    padding: 10px 14px;
+    font-size: 0.75rem;
     flex-direction: row;
     gap: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .side-drawer {
-    padding-right: 2px;
-    max-height: 34vh;
+    padding-right: 4px;
+    max-height: 40vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sidebar-collapsible-panel {
@@ -103,18 +119,19 @@
     left: auto;
     top: auto;
     width: 100%;
-    max-height: 34vh;
-    overflow: auto;
-    padding: 6px;
+    max-height: none;
+    overflow: visible;
+    padding: 8px;
   }
 
   .collapsible,
   .details-card,
-  .search-panel,
-  .sync-footer-card {
-    padding: 7px;
+  .search-panel {
+    padding: 10px;
+    margin-bottom: 8px;
   }
 
+  /* MIGLIORAMENTO TOUCH TARGETS - Tutti i bottoni devono essere facilmente cliccabili */
   .panel-logout,
   .toolbar button,
   .sighting-actions button,
@@ -130,9 +147,12 @@
   .visibility-grid input,
   .visibility-city-row input,
   .sighting-city-input,
-  .auth-form input {
-    font-size: 16px;
-    min-height: 36px;
+  .auth-form input,
+  .visibility-overlay-filter-row input {
+    font-size: 16px; /* Previene zoom su iOS */
+    min-height: 44px; /* Apple HIG raccomandato */
+    padding: 10px 12px;
+    touch-action: manipulation; /* Previene double-tap zoom */
   }
 
   .panel-logout,
@@ -143,18 +163,18 @@
   .visibility-full-list-actions button,
   .auth-submit,
   .auth-tabs button {
-    padding: 7px 9px;
+    font-weight: 600;
   }
 
   .panel-badge {
-    font-size: 0.66rem;
-    padding: 3px 8px;
+    font-size: 0.7rem;
+    padding: 4px 10px;
     letter-spacing: 0.08em;
   }
 
   .tab-icon {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
   }
 
   .search-label,
@@ -163,7 +183,8 @@
   .visibility-grid label,
   .visibility-city-row,
   .auth-form label {
-    font-size: 0.74rem;
+    font-size: 0.8rem;
+    margin-bottom: 4px;
   }
 
   .search-input,
@@ -174,26 +195,33 @@
   .visibility-item small,
   .sync-status,
   .refresh-slider-head,
-  .refresh-guard-note,
   .visibility-note,
   .auth-info,
   .auth-error,
   .auth-hint {
-    font-size: 0.73rem;
+    font-size: 0.8rem;
   }
 
   .toolbar {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toolbar button {
+    width: 100%;
   }
 
   .refresh-controls {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .group-preset-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .group-preset-row select {
@@ -202,94 +230,115 @@
   }
 
   .group-item {
-    grid-template-columns: 18px 8px 1fr auto;
-    gap: 6px;
-    padding: 6px 7px;
+    display: grid;
+    grid-template-columns: 20px 10px 1fr auto;
+    gap: 8px;
+    padding: 10px;
+    min-height: 44px;
+    align-items: center;
   }
 
   .group-color {
-    width: 7px;
-    height: 7px;
-  }
-
-  .group-meta {
-    display: none;
+    width: 8px;
+    height: 8px;
   }
 
   .search-results-list,
   .group-list,
   .visibility-list,
   .sighting-list {
-    max-height: 20vh;
+    max-height: 30vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .search-result-item {
-    gap: 1px;
+    gap: 6px;
+    padding: 12px;
   }
 
   .visibility-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .visibility-actions {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .sighting-location-row {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
+  /* VIEWER SECTION - Più spazio per la mappa */
   .viewer-section {
     height: auto;
-    min-height: 56vh;
+    min-height: 50vh;
+    position: relative;
   }
 
   .viewer-section .cesium-viewer-fullscreenContainer {
-    right: 8px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    right: 10px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
 
   .viewer-section .cesium-viewer-toolbar {
-    top: 8px;
-    right: 8px;
+    top: 10px;
+    right: 10px;
   }
 
   .focus-toggle {
-    top: 8px;
-    left: 8px;
-    padding: 6px 9px;
-    font-size: 0.72rem;
+    top: 10px;
+    left: 10px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    min-height: 44px;
+    z-index: 100;
   }
 
+  /* HUD - Solo informazioni essenziali */
   .viewer-hud {
-    top: 56px;
-    right: 6px;
-    width: min(88vw, 340px);
-    gap: 6px;
-    max-height: calc(100% - 170px);
-    overflow: hidden;
+    top: 70px;
+    right: 10px;
+    width: min(90vw, 360px);
+    gap: 8px;
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .hud-details {
-    max-height: calc(100% - 8px);
+    max-height: none;
+    overflow: visible;
   }
 
   .details-card {
-    margin-top: 8px;
-    padding: 8px;
+    margin-top: 0;
+    padding: 12px;
   }
 
   .details-head {
+    display: flex;
     align-items: flex-start;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
+  }
+
+  .details-head h2 {
+    font-size: 1rem;
+    margin: 0;
   }
 
   .details-head-actions {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 8px;
   }
 
   .details-head button {
@@ -297,41 +346,56 @@
   }
 
   .details-grid {
+    display: grid;
     grid-template-columns: 1fr;
-    gap: 3px;
+    gap: 6px;
+    margin-top: 12px;
   }
 
   .details-grid span:nth-child(odd) {
     color: #8db4d7;
     font-weight: 700;
-    margin-top: 5px;
+    font-size: 0.75rem;
+    margin-top: 8px;
   }
 
+  .details-grid span:nth-child(even) {
+    font-size: 0.85rem;
+  }
+
+  /* VISIBILITY OVERLAY - Ottimizzato per mobile */
   .visibility-overlay-card {
-    inset: 1vh 1vw;
-    padding: 7px;
-    border-radius: 10px;
+    position: fixed;
+    inset: 2vh 2vw;
+    padding: 12px;
+    border-radius: 12px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .visibility-overlay-meta {
-    font-size: 0.72rem;
-    line-height: 1.3;
+    font-size: 0.8rem;
+    line-height: 1.4;
   }
 
   .visibility-overlay-header {
+    display: flex;
     align-items: flex-start;
     flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
   }
 
   .visibility-overlay-header h2 {
-    font-size: 0.9rem;
+    font-size: 1rem;
+    margin: 0;
   }
 
   .visibility-overlay-header-actions {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 8px;
   }
 
   .visibility-overlay-header-actions button {
@@ -339,80 +403,63 @@
   }
 
   .visibility-overlay-filter-row {
-    font-size: 0.73rem;
-    gap: 4px;
-  }
-
-  .visibility-overlay-filter-row input {
-    font-size: 16px;
+    font-size: 0.8rem;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
   }
 
   .visibility-overlay-table {
-    font-size: 0.69rem;
+    font-size: 0.75rem;
+    width: 100%;
+    overflow-x: auto;
+    display: block;
   }
 
   .visibility-overlay-table th,
   .visibility-overlay-table td {
-    padding: 6px;
+    padding: 8px 6px;
     white-space: nowrap;
   }
 
-  .viewer-compass {
-    left: 8px;
-    right: auto;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-    width: 112px;
-    padding: 5px 5px 4px;
-  }
-
-  .viewer-compass svg {
-    width: 94px;
-    height: 94px;
-  }
-
-  .viewer-compass-readout {
-    font-size: 0.7rem;
-  }
-
-  .viewer-compass-mobile-hidden {
-    opacity: 0;
-    transform: translateY(8px) scale(0.92);
-  }
-
+  /* AUTH */
   .auth-shell {
-    padding: 10px;
-  }
-
-  .auth-card {
-    width: min(420px, 96vw);
-    border-radius: 10px;
     padding: 12px;
   }
 
+  .auth-card {
+    width: min(440px, 96vw);
+    border-radius: 12px;
+    padding: 16px;
+  }
+
   .auth-card h1 {
-    font-size: 1.02rem;
+    font-size: 1.1rem;
   }
 
   .auth-tabs {
-    gap: 6px;
+    gap: 8px;
+    margin-bottom: 16px;
   }
 
   .auth-form {
-    gap: 7px;
+    gap: 12px;
   }
 }
 
+/* SCHERMI MOLTO PICCOLI */
 @media (max-width: 390px) {
   .app-shell {
-    grid-template-rows: minmax(290px, 44vh) 1fr;
+    grid-template-rows: auto 1fr;
   }
 
   .panel-section {
-    padding: 8px 6px;
+    padding: 10px 8px;
+    max-height: 45vh;
   }
 
   .panel-component h1 {
-    font-size: 0.96rem;
+    font-size: 1rem;
   }
 
   .panel-component p,
@@ -425,26 +472,27 @@
   .sighting-item small,
   .auth-info,
   .auth-hint {
-    font-size: 0.69rem;
+    font-size: 0.75rem;
   }
 
   .panel-badge {
-    font-size: 0.61rem;
-    padding: 2px 7px;
+    font-size: 0.65rem;
+    padding: 3px 8px;
   }
 
   .sidebar-tabs button {
-    font-size: 0.63rem;
-    padding: 5px 8px;
+    font-size: 0.7rem;
+    padding: 8px 12px;
     gap: 6px;
+    min-height: 42px;
   }
 
   .side-drawer {
-    max-height: 32vh;
+    max-height: 35vh;
   }
 
   .toolbar {
-    gap: 6px;
+    gap: 8px;
   }
 
   .toolbar button,
@@ -453,17 +501,24 @@
   .auth-submit,
   .auth-tabs button,
   .visibility-overlay-header button,
-  .visibility-full-list-actions button {
-    min-height: 34px;
-    padding: 6px 8px;
-    font-size: 14px;
+  .visibility-full-list-actions button,
+  .group-preset-row select,
+  .refresh-controls input,
+  .refresh-controls select,
+  .visibility-grid input,
+  .visibility-city-row input,
+  .sighting-city-input,
+  .auth-form input,
+  .visibility-overlay-filter-row input {
+    min-height: 42px;
+    padding: 9px 11px;
   }
 
   .group-list,
   .search-results-list,
   .visibility-list,
   .sighting-list {
-    max-height: 18vh;
+    max-height: 28vh;
   }
 
   .group-item,
@@ -472,133 +527,108 @@
   .sighting-item,
   .collapsible,
   .details-card,
-  .search-panel,
-  .sync-footer-card {
-    padding: 6px;
-    border-radius: 7px;
+  .search-panel {
+    padding: 10px;
+    border-radius: 8px;
   }
 
   .viewer-hud {
-    top: 52px;
-    right: 4px;
-    width: min(90vw, 320px);
-  }
-
-  .hud-details {
-    max-height: 29vh;
+    top: 65px;
+    right: 8px;
+    width: min(92vw, 340px);
+    max-height: calc(100vh - 160px);
   }
 
   .focus-toggle {
-    padding: 5px 8px;
-    font-size: 0.68rem;
+    padding: 7px 10px;
+    font-size: 0.75rem;
+    min-height: 42px;
   }
 
   .details-grid {
-    gap: 2px;
-    font-size: 0.74rem;
+    gap: 5px;
+    font-size: 0.8rem;
+  }
+
+  .details-grid span:nth-child(odd) {
+    font-size: 0.7rem;
   }
 
   .visibility-overlay-card {
-    inset: 0.5vh 0.5vw;
-    padding: 6px;
+    inset: 1vh 1vw;
+    padding: 10px;
   }
 
   .visibility-overlay-header h2 {
-    font-size: 0.84rem;
+    font-size: 0.95rem;
   }
 
   .visibility-overlay-meta,
   .visibility-overlay-filter-row {
-    font-size: 0.68rem;
+    font-size: 0.75rem;
   }
 
   .visibility-overlay-table {
-    font-size: 0.64rem;
+    font-size: 0.7rem;
   }
 
   .visibility-overlay-table th,
   .visibility-overlay-table td {
-    padding: 5px;
-  }
-
-  .viewer-compass {
-    width: 96px;
-    left: 6px;
-    right: auto;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
-    padding: 4px 4px 3px;
-  }
-
-  .viewer-compass svg {
-    width: 80px;
-    height: 80px;
-  }
-
-  .viewer-compass-readout {
-    font-size: 0.64rem;
-  }
-
-  .viewer-compass-mobile-hidden {
-    opacity: 0;
-    transform: translateY(8px) scale(0.92);
+    padding: 6px 5px;
   }
 
   .auth-shell {
-    padding: 8px;
+    padding: 10px;
   }
 
   .auth-card {
     width: 97vw;
-    padding: 10px;
-    border-radius: 9px;
+    padding: 14px;
+    border-radius: 10px;
   }
 
   .auth-card h1 {
-    font-size: 0.94rem;
+    font-size: 1rem;
   }
 
   .auth-tabs {
-    gap: 5px;
-  }
-
-  .auth-form {
     gap: 6px;
   }
 
-  .auth-form input,
-  .visibility-grid input,
-  .visibility-city-row input,
-  .sighting-city-input,
-  .group-preset-row select,
-  .refresh-controls input,
-  .refresh-controls select,
-  .visibility-overlay-filter-row input {
-    min-height: 34px;
-    font-size: 14px;
-    padding: 5px 7px;
+  .auth-form {
+    gap: 10px;
   }
 }
 
+/* LANDSCAPE MOBILE - Layout orizzontale ottimizzato */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .app-shell {
-    grid-template-columns: minmax(280px, 38vw) 1fr;
+    grid-template-columns: minmax(300px, 40vw) 1fr;
     grid-template-rows: 1fr;
     min-height: 100dvh;
   }
 
-  .panel-section {
-    height: 100dvh;
-    overflow: hidden;
-    border-right: 1px solid rgba(216, 237, 255, 0.12);
-    border-bottom: none;
+  /* NASCONDI ANCORA PIÙ ELEMENTI IN LANDSCAPE */
+  .viewer-compass,
+  .group-meta,
+  .sync-footer-card,
+  .refresh-guard-note,
+  .panel-badge {
+    display: none !important;
   }
 
   .panel-section {
-    padding: 8px 7px;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid rgba(216, 237, 255, 0.12);
+    border-bottom: none;
+    padding: 10px 8px;
   }
 
   .panel-component h1 {
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
 
   .panel-component p,
@@ -608,18 +638,14 @@
   .refresh-slider-head,
   .visibility-item small,
   .sighting-item small {
-    font-size: 0.69rem;
-  }
-
-  .panel-badge {
-    font-size: 0.62rem;
-    padding: 2px 7px;
+    font-size: 0.75rem;
   }
 
   .sidebar-split {
-    margin-top: 4px;
-    grid-template-columns: 38px 1fr;
-    gap: 6px;
+    margin-top: 6px;
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 8px;
   }
 
   .sidebar-tabs {
@@ -630,14 +656,15 @@
   .sidebar-tabs button {
     writing-mode: vertical-rl;
     transform: rotate(180deg);
-    min-height: 84px;
-    padding: 7px 4px;
-    font-size: 0.62rem;
+    min-height: 90px;
+    min-width: 42px;
+    padding: 8px 5px;
+    font-size: 0.7rem;
   }
 
   .side-drawer {
-    max-height: calc(100dvh - 120px);
-    padding-right: 1px;
+    max-height: calc(100dvh - 140px);
+    padding-right: 2px;
   }
 
   .toolbar,
@@ -646,8 +673,9 @@
   .visibility-grid,
   .visibility-actions,
   .sighting-location-row {
-    grid-template-columns: 1fr;
-    gap: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .toolbar button,
@@ -665,8 +693,9 @@
   .sighting-city-input,
   .auth-form input,
   .visibility-overlay-filter-row input {
-    min-height: 32px;
-    font-size: 14px;
+    min-height: 38px;
+    font-size: 15px;
+    padding: 8px 10px;
   }
 
   .viewer-section {
@@ -676,155 +705,166 @@
 
   .viewer-section .cesium-viewer-fullscreenContainer {
     right: 8px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
   .viewer-section .cesium-viewer-toolbar {
-    top: 6px;
-    right: 6px;
+    top: 8px;
+    right: 8px;
   }
 
   .viewer-hud {
-    top: 48px;
-    right: 4px;
-    width: min(42vw, 280px);
-    gap: 5px;
-    max-height: calc(100% - 120px);
-    overflow: hidden;
+    top: 55px;
+    right: 8px;
+    width: min(45vw, 300px);
+    gap: 6px;
+    max-height: calc(100dvh - 140px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .hud-details {
-    max-height: calc(100% - 6px);
+    max-height: none;
+    overflow: visible;
   }
 
   .focus-toggle {
-    top: 6px;
-    left: 6px;
-    padding: 5px 7px;
-    font-size: 0.66rem;
+    top: 8px;
+    left: 8px;
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    min-height: 38px;
   }
 
   .details-card,
   .collapsible,
   .search-panel,
-  .sync-footer-card,
   .visibility-item,
   .sighting-item,
   .group-item,
   .search-result-item {
-    padding: 6px;
-    border-radius: 7px;
+    padding: 8px;
+    border-radius: 8px;
   }
 
   .details-head {
     align-items: flex-start;
     flex-direction: column;
-    gap: 5px;
+    gap: 6px;
   }
 
   .details-head-actions {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    gap: 6px;
   }
 
   .details-grid {
     grid-template-columns: 1fr;
-    gap: 2px;
-    font-size: 0.72rem;
+    gap: 4px;
+    font-size: 0.8rem;
+  }
+
+  .details-grid span:nth-child(odd) {
+    font-size: 0.7rem;
+    margin-top: 6px;
   }
 
   .search-results-list,
   .group-list,
   .visibility-list,
   .sighting-list {
-    max-height: 24vh;
-  }
-
-  .group-meta {
-    display: none;
+    max-height: 30vh;
   }
 
   .visibility-overlay-card {
-    inset: 1vh 1vw;
-    padding: 6px;
-    border-radius: 9px;
+    inset: 2vh 2vw;
+    padding: 10px;
+    border-radius: 10px;
   }
 
   .visibility-overlay-header {
     align-items: flex-start;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .visibility-overlay-header h2 {
-    font-size: 0.86rem;
+    font-size: 0.95rem;
   }
 
   .visibility-overlay-header-actions {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    gap: 6px;
   }
 
   .visibility-overlay-meta,
   .visibility-overlay-filter-row {
-    font-size: 0.69rem;
+    font-size: 0.75rem;
   }
 
   .visibility-overlay-table {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
   }
 
   .visibility-overlay-table th,
   .visibility-overlay-table td {
-    padding: 5px;
+    padding: 6px 5px;
     white-space: nowrap;
   }
 
-  .viewer-compass {
-    width: 94px;
-    left: 6px;
-    right: auto;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
-    padding: 4px 4px 3px;
-  }
-
-  .viewer-compass svg {
-    width: 78px;
-    height: 78px;
-  }
-
-  .viewer-compass-readout {
-    font-size: 0.62rem;
-  }
-
-  .viewer-compass-mobile-hidden {
-    opacity: 0;
-    transform: translateY(6px) scale(0.9);
-  }
-
   .auth-shell {
-    padding: 8px;
+    padding: 10px;
   }
 
   .auth-card {
-    width: min(560px, 96vw);
-    padding: 10px;
-    border-radius: 9px;
+    width: min(580px, 96vw);
+    padding: 12px;
+    border-radius: 10px;
   }
 
   .auth-card h1 {
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
 
   .auth-tabs {
-    gap: 5px;
+    gap: 6px;
   }
 
   .auth-form {
-    gap: 6px;
+    gap: 8px;
+  }
+}
+
+/* FIX PER Z-INDEX E SOVRAPPOSIZIONI */
+@media (max-width: 760px) {
+  .panel-section {
+    z-index: 10;
+  }
+
+  .viewer-section {
+    z-index: 5;
+  }
+
+  .viewer-hud {
+    z-index: 100;
+  }
+
+  .visibility-overlay-card {
+    z-index: 200;
+  }
+
+  .focus-toggle {
+    z-index: 101;
+  }
+
+  /* Previeni scroll body quando overlay aperto */
+  body.overlay-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
   }
 }

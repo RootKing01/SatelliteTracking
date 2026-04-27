@@ -29,8 +29,7 @@ public class TleDataService {
             SpaceTrackService spaceTrackService,
             CelestrakService celestrakService,
             SatelliteRepository satelliteRepository,
-            OrbitalParametersRepository orbitalParametersRepository
-    ) {
+            OrbitalParametersRepository orbitalParametersRepository) {
         this.spaceTrackService = spaceTrackService;
         this.celestrakService = celestrakService;
         this.satelliteRepository = satelliteRepository;
@@ -38,221 +37,287 @@ public class TleDataService {
     }
 
     public void updateTle() {
-
         log.info("╔═══════════════════════════════════════════════════════════╗");
-        log.info("║  🚀 AGGIORNAMENTO TLE INIZIATO                            ║");
+        log.info("║  🚀 AGGIORNAMENTO TLE COMPLETO INIZIATO                   ║");
         log.info("╚═══════════════════════════════════════════════════════════╝");
-        log.info("⚙️  Sorgente primaria configurata: {}", primarySource);
+        log.info("⚙️  Sorgente primaria: {}", primarySource);
 
         try {
             if (!"spacetrack".equalsIgnoreCase(primarySource)) {
-                log.info("🎯 Usando CELESTRAK come sorgente primaria (da configurazione)...");
+                log.info("🎯 Usando CELESTRAK come sorgente primaria...");
                 celestrakService.fetchAndSaveStations();
-                log.info("╔═══════════════════════════════════════════════════════════╗");
-                log.info("║  ✅ AGGIORNAMENTO TLE COMPLETATO CON SUCCESSO            ║");
-                log.info("╚═══════════════════════════════════════════════════════════╝");
+                log.info("✅ Aggiornamento CelesTrak completato");
                 return;
             }
 
-            log.info("🎯 Tentativo download da SPACE-TRACK (sorgente primaria)...");
+            log.info("🎯 Tentativo download da SPACE-TRACK...");
             boolean ok = fetchFromSpaceTrack();
 
             if (!ok) {
-                log.warn("╔═══════════════════════════════════════════════════════════╗");
-                log.warn("║  ⚠️  SPACE-TRACK FALLITO - ATTIVO FALLBACK               ║");
-                log.warn("╚═══════════════════════════════════════════════════════════╝");
-                log.info("🔄 Passaggio a CELESTRAK come sorgente di backup...");
+                log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback CelesTrak completato");
             }
 
             log.info("╔═══════════════════════════════════════════════════════════╗");
-            log.info("║  ✅ AGGIORNAMENTO TLE COMPLETATO CON SUCCESSO            ║");
+            log.info("║  ✅ AGGIORNAMENTO TLE COMPLETATO                         ║");
             log.info("╚═══════════════════════════════════════════════════════════╝");
 
         } catch (Exception e) {
-            log.error("╔═══════════════════════════════════════════════════════════╗");
-            log.error("║  ❌ ERRORE CRITICO AGGIORNAMENTO TLE                     ║");
-            log.error("╚═══════════════════════════════════════════════════════════╝");
-            log.error("   Tipo errore: {}", e.getClass().getSimpleName());
-            log.error("   Messaggio: {}", e.getMessage());
-            log.error("🔄 Tentativo fallback d'emergenza a CelesTrak...", e);
-            
+            log.error("❌ ERRORE CRITICO: {}", e.getMessage(), e);
             try {
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback d'emergenza CelesTrak riuscito");
-            } catch (Exception fallbackError) {
-                log.error("❌ Anche il fallback CelesTrak è fallito: {}", fallbackError.getMessage(), fallbackError);
+            } catch (Exception fe) {
+                log.error("❌ Anche il fallback CelesTrak è fallito: {}", fe.getMessage(), fe);
             }
         }
     }
 
-    private boolean fetchFromSpaceTrack() {
+    public void updateTleLeoOnly() {
+        log.info("╔═══════════════════════════════════════════════════════════╗");
+        log.info("║  🛰️  AGGIORNAMENTO TLE LEO INIZIATO                      ║");
+        log.info("╚═══════════════════════════════════════════════════════════╝");
 
+        try {
+            if (!"spacetrack".equalsIgnoreCase(primarySource)) {
+                log.info("⚠️ Aggiornamento LEO disponibile solo con Space-Track, skip");
+                return;
+            }
+            boolean ok = fetchLeoFromSpaceTrack();
+            if (!ok) {
+                log.warn("⚠️ Aggiornamento LEO fallito");
+            } else {
+                log.info("✅ AGGIORNAMENTO TLE LEO COMPLETATO");
+            }
+        } catch (Exception e) {
+            log.error("❌ Errore durante aggiornamento LEO: {}", e.getMessage(), e);
+        }
+    }
+
+    private boolean fetchFromSpaceTrack() {
         log.info("───────────────────────────────────────────────────────────");
-        log.info("📡 Inizio fetch DELTA da Space-Track");
+        log.info("📡 Fetch DELTA da Space-Track (tutti i satelliti)");
+        log.info("   💡 Filtro su CREATION_DATE (non EPOCH) per delta corretti");
         log.info("───────────────────────────────────────────────────────────");
 
         try {
-            log.info("🔍 Ricerca ultimo epoch nel database...");
-            
-            OrbitalParameters last = orbitalParametersRepository
-                    .findTopByOrderByFetchedAtDesc();
+            OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
 
-            String lastEpoch = (last != null) ? last.getEpoch() : null;
-
-            if (lastEpoch == null) {
-                log.warn("⚠️  Nessun epoch trovato nel database");
-                log.warn("   Impossibile effettuare fetch delta (richiede epoch di riferimento)");
-                log.warn("   Usa prima CelesTrak per popolare il database");
+            if (last == null) {
+                log.warn("⚠️ Database vuoto, impossibile fare delta - usa CelesTrak prima");
                 return false;
             }
 
-            log.info("✅ Ultimo epoch trovato: {}", lastEpoch);
-            log.info("   Timestamp fetch: {}", last.getFetchedAt());
-            log.info("🔄 Richiesta delta TLE da Space-Track (epoch > {})...", lastEpoch);
+            LocalDateTime lastFetchedAt = last.getFetchedAt();
+            log.info("✅ Ultimo fetch: {}", lastFetchedAt);
+            log.info("🔄 Richiesta delta TLE con CREATION_DATE > {}...", lastFetchedAt);
 
-            String tleData = spaceTrackService.downloadDeltaTle(lastEpoch);
+            // ⚡ FIX: passa LocalDateTime, non String epoch
+            String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
 
             if (tleData == null) {
-                log.warn("❌   Space-Track ha restituito dati NULL o vuoti");
-                log.warn("   Possibili cause:");
-                log.warn("   - Timeout");
-                log.warn("   - Errore di connessione/autenticazione");
-                log.warn("   - Rate limit raggiunto");
+                log.warn("❌ Space-Track ha restituito null");
                 return false;
             }
 
             if (tleData.isBlank()) {
                 log.info("ℹ️ Nessun aggiornamento TLE disponibile → database già aggiornato");
-
-                log.info("───────────────────────────────────────────────────────────");
-                    log.info("✅ SPACE-TRACK: NESSUN AGGIORNAMENTO NECESSARIO");
-                log.info("───────────────────────────────────────────────────────────");
-
-                return true; // ✅ IMPORTANTE: NON fallback, dati già aggiornati 
+                log.info("✅ SPACE-TRACK: NESSUN AGGIORNAMENTO NECESSARIO");
+                return true;
             }
 
-            log.info("✅ Dati delta ricevuti da Space-Track: {} bytes", tleData.length());
-            log.info("🔄 Inizio parsing e salvataggio nel database...");
-            
+            log.info("✅ Dati delta ricevuti: {} bytes", tleData.length());
+
             long startParse = System.currentTimeMillis();
             int saved = parseAndSave(tleData);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             if (saved == 0) {
-                log.warn("⚠️  Parsing completato ma nessun satellite salvato");
-                log.warn("   Possibili cause:");
-                log.warn("   - Satelliti nel TLE non presenti nel database");
-                log.warn("   - Formato TLE non valido");
+                log.warn("⚠️ Parsing completato ma nessun satellite salvato");
+                log.warn("   Possibili cause: satelliti non in DB, formato TLE errato");
+                // Debug: mostra le prime righe ricevute
+                String preview = tleData.substring(0, Math.min(500, tleData.length()));
+                log.warn("   Preview dati ricevuti:\n{}", preview);
                 return false;
             }
 
-            log.info("───────────────────────────────────────────────────────────");
             log.info("✅ SPACE-TRACK DELTA IMPORT COMPLETATO");
             log.info("   Satelliti aggiornati: {}", saved);
-            log.info("   Tempo di parsing: {}ms", parseDuration);
-            log.info("───────────────────────────────────────────────────────────");
-
+            log.info("   Tempo parsing: {} ms", parseDuration);
             return true;
 
         } catch (Exception e) {
-            log.error("───────────────────────────────────────────────────────────");
-            log.error("❌ Errore durante fetch delta da Space-Track");
-            log.error("   Tipo: {}", e.getClass().getSimpleName());
-            log.error("   Messaggio: {}", e.getMessage());
-            log.error("───────────────────────────────────────────────────────────", e);
+            log.error("❌ Errore fetch delta: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private boolean fetchLeoFromSpaceTrack() {
+        log.info("───────────────────────────────────────────────────────────");
+        log.info("📡 Fetch DELTA LEO da Space-Track");
+        log.info("───────────────────────────────────────────────────────────");
+
+        try {
+            OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+
+            if (last == null) {
+                log.warn("⚠️ Database vuoto, skip LEO update");
+                return false;
+            }
+
+            LocalDateTime lastFetchedAt = last.getFetchedAt();
+            log.info("✅ Ultimo fetch: {}", lastFetchedAt);
+
+            String tleData = spaceTrackService.downloadDeltaTleLeoOnly(lastFetchedAt);
+
+            if (tleData == null) {
+                log.warn("❌ Space-Track LEO ha restituito null");
+                return false;
+            }
+
+            if (tleData.isBlank()) {
+                log.info("ℹ️ Nessun aggiornamento TLE LEO disponibile");
+                log.info("✅ SPACE-TRACK LEO: NESSUN AGGIORNAMENTO NECESSARIO");
+                return true;
+            }
+
+            log.info("✅ Dati delta LEO ricevuti: {} bytes", tleData.length());
+
+            long startParse = System.currentTimeMillis();
+            int saved = parseAndSave(tleData);
+            long parseDuration = System.currentTimeMillis() - startParse;
+
+            log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
+            log.info("   Satelliti LEO aggiornati: {}", saved);
+            log.info("   Tempo parsing: {} ms", parseDuration);
+            return true;
+
+        } catch (Exception e) {
+            log.error("❌ Errore fetch delta LEO: {}", e.getMessage(), e);
             return false;
         }
     }
 
     private int parseAndSave(String tleData) {
+    log.info("🔍 Inizio parsing TLE...");
 
-        log.info("🔍 Inizio parsing TLE...");
-        String[] lines = tleData.split("\n");
-        int count = 0;
-        int skipped = 0;
-        int errors = 0;
+    String[] rawLines = tleData.split("\n");
+    int count = 0;
+    int skipped = 0;
+    int errors = 0;
 
-        log.info("   Totale righe da processare: {}", lines.length);
-        log.info("   TLE attesi: ~{}", lines.length / 2);
+    // Filtra righe vuote
+    java.util.List<String> lines = new java.util.ArrayList<>();
+    for (String l : rawLines) {
+        String trimmed = l.trim();
+        if (!trimmed.isEmpty()) lines.add(trimmed);
+    }
 
-        for (int i = 0; i + 2 < lines.length; i += 3) {
+    log.info("   Righe non vuote: {}", lines.size());
 
-            try {
-                String line1 = lines[i + 1].trim();
-                String line2 = lines[i + 2].trim();
+    // Debug: mostra formato per capire se sono 2 o 3 righe per satellite
+    if (lines.size() >= 3) {
+        log.info("   [DEBUG] Riga 0: '{}'", lines.get(0).substring(0, Math.min(30, lines.get(0).length())));
+        log.info("   [DEBUG] Riga 1: '{}'", lines.get(1).substring(0, Math.min(30, lines.get(1).length())));
+        log.info("   [DEBUG] Riga 2: '{}'", lines.get(2).substring(0, Math.min(30, lines.get(2).length())));
+        boolean has3Lines = !lines.get(0).startsWith("1 ") && !lines.get(0).startsWith("2 ");
+        log.info("   Formato rilevato: {} righe per satellite", has3Lines ? "3 (nome+line1+line2)" : "2 (line1+line2)");
+    }
 
-                if (line1.isEmpty() || line2.isEmpty()) {
-                    skipped++;
-                    continue;
-                }
+    int i = 0;
+    while (i < lines.size()) {
+        String line = lines.get(i);
 
-                Long norad = Long.parseLong(line1.substring(2, 7).trim());
-
-                Optional<Satellite> satOpt =
-                        satelliteRepository.findByNoradCatId(norad);
-
-                if (satOpt.isEmpty()) {
-                    skipped++;
-                    if (skipped % 1000 == 0) {
-                        log.debug("   Saltati {} satelliti non in database", skipped);
-                    }
-                    continue;
-                }
-
-                Satellite sat = satOpt.get();
-
-                String epoch = line1.substring(18, 32).trim();
-
-                Double inclination = parse(line2, 8, 16);
-                Double raOfAscNode = parse(line2, 17, 25);
-                Double eccentricity = parseEcc(line2, 26, 33);
-                Double argOfPericenter = parse(line2, 34, 42);
-                Double meanAnomaly = parse(line2, 43, 51);
-                Double meanMotion = parse(line2, 52, 63);
-
-                OrbitalParameters p = new OrbitalParameters(
-                        sat,
-                        epoch,
-                        inclination,
-                        raOfAscNode,
-                        eccentricity,
-                        argOfPericenter,
-                        meanAnomaly,
-                        meanMotion
-                );
-
-                p.setTleLine1(line1);
-                p.setTleLine2(line2);
-                p.setFetchedAt(LocalDateTime.now());
-
-                orbitalParametersRepository.save(p);
-
-                count++;
-                
-                if (count % 1000 == 0) {
-                    log.info("   Progresso: {} satelliti salvati...", count);
-                }
-
-            } catch (Exception e) {
-                errors++;
-                if (errors < 10) { // Log solo i primi 10 errori
-                    log.warn("⚠️  Errore parsing TLE al blocco {} (riga {}): {}", 
-                            i / 3, i, e.getMessage());
-                }
-            }
+        // Salta righe nome (non iniziano con "1 " o "2 ")
+        if (!line.startsWith("1 ") && !line.startsWith("2 ")) {
+            i++;
+            continue;
         }
 
-        log.info("═══════════════════════════════════════════════════════════");
-        log.info("✅ PARSING COMPLETATO");
-        log.info("   Satelliti salvati: {}", count);
-        log.info("   Satelliti saltati (non in DB): {}", skipped);
-        log.info("   Errori di parsing: {}", errors);
-        log.info("═══════════════════════════════════════════════════════════");
+        if (!line.startsWith("1 ")) {
+            log.warn("⚠️ Attesa line1, trovato: '{}'", line.substring(0, Math.min(30, line.length())));
+            i++;
+            errors++;
+            continue;
+        }
 
-        return count;
+        if (i + 1 >= lines.size()) {
+            log.warn("⚠️ Line1 senza line2 alla riga {}", i);
+            errors++;
+            break;
+        }
+
+        String line1 = line;
+        String line2 = lines.get(i + 1);
+
+        if (!line2.startsWith("2 ")) {
+            log.warn("⚠️ Attesa line2, trovato: '{}'", line2.substring(0, Math.min(30, line2.length())));
+            i++;
+            errors++;
+            continue;
+        }
+
+        i += 2;
+
+        try {
+            String noradStr = line1.substring(2, 7).trim();
+            Long norad = Long.parseLong(noradStr);
+
+            Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
+
+            if (satOpt.isEmpty()) {
+                skipped++;
+                if (skipped <= 3 || skipped % 1000 == 0) {
+                    log.debug("   Skip NORAD {} (non in database)", norad);
+                }
+                continue;
+            }
+
+            Satellite sat = satOpt.get();
+            String epoch = line1.substring(18, 32).trim();
+
+            Double inclination     = parse(line2, 8, 16);
+            Double raOfAscNode     = parse(line2, 17, 25);
+            Double eccentricity    = parseEcc(line2, 26, 33);
+            Double argOfPericenter = parse(line2, 34, 42);
+            Double meanAnomaly     = parse(line2, 43, 51);
+            Double meanMotion      = parse(line2, 52, 63);
+
+            OrbitalParameters p = new OrbitalParameters(
+                    sat, epoch, inclination, raOfAscNode,
+                    eccentricity, argOfPericenter, meanAnomaly, meanMotion);
+
+            p.setTleLine1(line1);
+            p.setTleLine2(line2);
+            p.setFetchedAt(LocalDateTime.now());
+
+            orbitalParametersRepository.save(p);
+            count++;
+
+            if (count % 500 == 0) {
+                log.info("   Progresso: {} satelliti salvati...", count);
+            }
+
+        } catch (Exception e) {
+            errors++;
+            if (errors <= 10) {
+                log.warn("⚠️ Errore alla riga {}: {} | '{}'",
+                        i, e.getMessage(),
+                        line1.substring(0, Math.min(30, line1.length())));
+            }
+        }
     }
+
+    log.info("═══════════════════════════════════════════════════════════");
+    log.info("✅ PARSING COMPLETATO");
+    log.info("   Salvati:          {}", count);
+    log.info("   Saltati (no DB):  {}", skipped);
+    log.info("   Errori:           {}", errors);
+    log.info("═══════════════════════════════════════════════════════════");
+
+    return count;
+}
 
     private Double parse(String l, int a, int b) {
         try { return Double.parseDouble(l.substring(a, b).trim()); }
