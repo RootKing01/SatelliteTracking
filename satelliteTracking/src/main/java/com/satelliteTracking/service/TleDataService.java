@@ -113,6 +113,15 @@ public class TleDataService {
             log.info("✅ Ultimo fetch: {}", lastFetchedAt);
             log.info("🔄 Richiesta delta TLE con CREATION_DATE > {}...", lastFetchedAt);
 
+            // Se sono passate più di 48 ore dall'ultimo aggiornamento, forza fallback
+            long hoursSinceLast = java.time.Duration.between(lastFetchedAt, LocalDateTime.now()).toHours();
+            if (hoursSinceLast > 48) {
+                log.warn("⏳ Sono passate {} ore dall'ultimo aggiornamento: fallback obbligatorio a CelesTrak", hoursSinceLast);
+                celestrakService.fetchAndSaveStations();
+                log.info("✅ Fallback CelesTrak forzato dopo {} ore", hoursSinceLast);
+                return false;
+            }
+
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
 
