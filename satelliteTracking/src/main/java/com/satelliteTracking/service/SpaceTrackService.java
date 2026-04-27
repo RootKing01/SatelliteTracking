@@ -118,12 +118,13 @@ public class SpaceTrackService {
      *   tutti i TLE pubblicati nell'intervallo, indipendentemente da aggiornamenti successivi.
      */
     public String downloadDeltaTle(LocalDateTime lastFetchedAt) {
+        
+        ensureLogin();
         String from = formatForSpaceTrack(lastFetchedAt);
         String to = formatForSpaceTrack(LocalDateTime.now());
         log.info("📡 DELTA FETCH via GP_HISTORY");
         log.info("   CREATION_DATE range: {} → {}", from, to);
         log.info("   💡 GP_HISTORY restituisce TUTTI i TLE pubblicati nell'intervallo");
-        ensureLogin();
         try {
             return downloadGpHistoryInternal(from, to, false, false);
         } catch (Exception e) {
@@ -136,11 +137,12 @@ public class SpaceTrackService {
      * Scarica TLE LEO pubblicati dopo lastFetchedAt usando GP_HISTORY.
      */
     public String downloadDeltaTleLeoOnly(LocalDateTime lastFetchedAt) {
+        ensureLogin();
         String from = formatForSpaceTrack(lastFetchedAt);
         String to = formatForSpaceTrack(LocalDateTime.now());
         log.info("📡 DELTA FETCH LEO via GP_HISTORY");
         log.info("   CREATION_DATE range: {} → {}", from, to);
-        ensureLogin();
+
         try {
             return downloadGpHistoryInternal(from, to, true, false);
         } catch (Exception e) {
@@ -150,7 +152,7 @@ public class SpaceTrackService {
     }
 
     private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
-        // TODO: implementare parser JSON in parseAndSaveJson() e richiamarlo da TleDataService
+
         StringBuilder allData = new StringBuilder();
         int offset = 0;
         final int limit = 1000;
