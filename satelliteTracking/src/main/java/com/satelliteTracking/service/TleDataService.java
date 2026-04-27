@@ -133,9 +133,7 @@ public class TleDataService {
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
-            // TODO: se il formato è JSON, chiamare parseAndSaveJson(tleData) anziché parseAndSave(tleData)
-
-            if (tleData == null) {
+                        if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
                 return false;
             }
@@ -149,7 +147,7 @@ public class TleDataService {
             log.info("✅ Dati delta ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSave(tleData);
+            int saved = parseAndSaveJson(tleData);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             if (saved == 0) {
@@ -204,7 +202,7 @@ public class TleDataService {
             log.info("✅ Dati delta LEO ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSave(tleData);
+            int saved = parseAndSaveJson(tleData);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
@@ -273,125 +271,6 @@ public class TleDataService {
         return count;
     }
 
-    private int parseAndSave(String tleData) {
-    log.info("🔍 Inizio parsing TLE...");
-
-    String[] rawLines = tleData.split("\n");
-    int count = 0;
-    int skipped = 0;
-    int errors = 0;
-
-    // Filtra righe vuote
-    java.util.List<String> lines = new java.util.ArrayList<>();
-    for (String l : rawLines) {
-        String trimmed = l.trim();
-        if (!trimmed.isEmpty()) lines.add(trimmed);
-    }
-
-    log.info("   Righe non vuote: {}", lines.size());
-
-    // Debug: mostra formato per capire se sono 2 o 3 righe per satellite
-    if (lines.size() >= 3) {
-        log.info("   [DEBUG] Riga 0: '{}'", lines.get(0).substring(0, Math.min(30, lines.get(0).length())));
-        log.info("   [DEBUG] Riga 1: '{}'", lines.get(1).substring(0, Math.min(30, lines.get(1).length())));
-        log.info("   [DEBUG] Riga 2: '{}'", lines.get(2).substring(0, Math.min(30, lines.get(2).length())));
-        boolean has3Lines = !lines.get(0).startsWith("1 ") && !lines.get(0).startsWith("2 ");
-        log.info("   Formato rilevato: {} righe per satellite", has3Lines ? "3 (nome+line1+line2)" : "2 (line1+line2)");
-    }
-
-    int i = 0;
-    while (i < lines.size()) {
-        String line = lines.get(i);
-
-        // Salta righe nome (non iniziano con "1 " o "2 ")
-        if (!line.startsWith("1 ") && !line.startsWith("2 ")) {
-            i++;
-            continue;
-        }
-
-        if (!line.startsWith("1 ")) {
-            log.warn("⚠️ Attesa line1, trovato: '{}'", line.substring(0, Math.min(30, line.length())));
-            i++;
-            errors++;
-            continue;
-        }
-
-        if (i + 1 >= lines.size()) {
-            log.warn("⚠️ Line1 senza line2 alla riga {}", i);
-            errors++;
-            break;
-        }
-
-        String line1 = line;
-        String line2 = lines.get(i + 1);
-
-        if (!line2.startsWith("2 ")) {
-            log.warn("⚠️ Attesa line2, trovato: '{}'", line2.substring(0, Math.min(30, line2.length())));
-            i++;
-            errors++;
-            continue;
-        }
-
-        i += 2;
-
-        try {
-            String noradStr = line1.substring(2, 7).trim();
-            Long norad = Long.parseLong(noradStr);
-
-            Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
-
-            if (satOpt.isEmpty()) {
-                skipped++;
-                if (skipped <= 3 || skipped % 1000 == 0) {
-                    log.debug("   Skip NORAD {} (non in database)", norad);
-                }
-                continue;
-            }
-
-            Satellite sat = satOpt.get();
-            String epoch = line1.substring(18, 32).trim();
-
-            Double inclination     = parse(line2, 8, 16);
-            Double raOfAscNode     = parse(line2, 17, 25);
-            Double eccentricity    = parseEcc(line2, 26, 33);
-            Double argOfPericenter = parse(line2, 34, 42);
-            Double meanAnomaly     = parse(line2, 43, 51);
-            Double meanMotion      = parse(line2, 52, 63);
-
-            OrbitalParameters p = new OrbitalParameters(
-                    sat, epoch, inclination, raOfAscNode,
-                    eccentricity, argOfPericenter, meanAnomaly, meanMotion);
-
-            p.setTleLine1(line1);
-            p.setTleLine2(line2);
-            p.setFetchedAt(LocalDateTime.now());
-
-            orbitalParametersRepository.save(p);
-            count++;
-
-            if (count % 500 == 0) {
-                log.info("   Progresso: {} satelliti salvati...", count);
-            }
-
-        } catch (Exception e) {
-            errors++;
-            if (errors <= 10) {
-                log.warn("⚠️ Errore alla riga {}: {} | '{}'",
-                        i, e.getMessage(),
-                        line1.substring(0, Math.min(30, line1.length())));
-            }
-        }
-    }
-
-    log.info("═══════════════════════════════════════════════════════════");
-    log.info("✅ PARSING COMPLETATO");
-    log.info("   Salvati:          {}", count);
-    log.info("   Saltati (no DB):  {}", skipped);
-    log.info("   Errori:           {}", errors);
-    log.info("═══════════════════════════════════════════════════════════");
-
-    return count;
-}
 
     private Double parse(String l, int a, int b) {
         try { return Double.parseDouble(l.substring(a, b).trim()); }
