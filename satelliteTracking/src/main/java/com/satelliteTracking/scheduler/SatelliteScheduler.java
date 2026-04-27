@@ -74,7 +74,6 @@ public class SatelliteScheduler {
             if (hours < FULL_UPDATE_HOURS) {
                 System.out.println("⏭️ Skip full update (ultimo aggiornamento " + hours + "h fa)");
                 System.out.println("   Prossimo update completo tra: " + (FULL_UPDATE_HOURS - hours) + "h");
-                System.out.println("ℹ️ Scheduling: il prossimo fetch completo sarà tra " + (FULL_UPDATE_HOURS - hours) + " ore.");
                 System.out.println("═══════════════════════════════════════════════════════════");
                 return;
             }
