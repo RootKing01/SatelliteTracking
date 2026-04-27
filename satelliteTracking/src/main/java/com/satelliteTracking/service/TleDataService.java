@@ -218,7 +218,7 @@ public class TleDataService {
         }
     }
 
-    private int parseAndSaveJson(String jsonData) {
+    int parseAndSaveJson(String jsonData) {
         log.info("🔍 Inizio parsing TLE (JSON)...");
         int count = 0;
         int skipped = 0;
