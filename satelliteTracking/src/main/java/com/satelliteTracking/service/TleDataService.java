@@ -53,7 +53,7 @@ public class TleDataService {
             log.info("🎯 Tentativo download da SPACE-TRACK...");
             boolean ok = fetchFromSpaceTrack();
 
-            if (!ok) {
+            if (!ok && hoursSinceLast <= 48) {
                 log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback CelesTrak completato");
@@ -119,11 +119,12 @@ public class TleDataService {
                 log.warn("⏳ Sono passate {} ore dall'ultimo aggiornamento: fallback obbligatorio a CelesTrak", hoursSinceLast);
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback CelesTrak forzato dopo {} ore", hoursSinceLast);
-                return false;
+                return true; // Interrompi qui, non chiamare fallback due volte
             }
 
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
+            log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
 
             if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
