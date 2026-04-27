@@ -65,6 +65,8 @@ public class SatelliteScheduler {
 
             if (minutes < 30) {
                 System.out.println("⏭️ Skip update: ultimo fetch troppo recente (" + minutes + " min fa)");
+                System.out.println("ℹ️ Nessun fetch necessario: i dati sono già aggiornati.");
+
                 return;
             }
 

@@ -92,7 +92,6 @@ public class SatellitePositionService {
         // Altitudine del satellite
         double altitudeKm = satPoint.getAltitude() / 1000.0;
         
-        // Calcolo illuminazione solare
         boolean isSunlit = computeSunlitStatus(pv.getPosition(), date, itrf);
         
         // Calcolo angolo di fase (semplificato: assumiamo opposizione se sunlit)

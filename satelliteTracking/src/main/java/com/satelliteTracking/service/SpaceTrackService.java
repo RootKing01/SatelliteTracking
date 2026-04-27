@@ -1,3 +1,4 @@
+
 package com.satelliteTracking.service;
 
 import jakarta.annotation.PostConstruct;
@@ -21,7 +22,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class SpaceTrackService {
-
     private static final Logger log = LoggerFactory.getLogger(SpaceTrackService.class);
 
     // Space-Track si aspetta questo formato per CREATION_DATE
@@ -151,8 +151,8 @@ public class SpaceTrackService {
         }
     }
 
+   
     private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
-
         StringBuilder allData = new StringBuilder();
         int offset = 0;
         final int limit = 1000;

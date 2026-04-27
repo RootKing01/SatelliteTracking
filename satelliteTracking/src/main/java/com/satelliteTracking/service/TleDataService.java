@@ -272,13 +272,11 @@ public class TleDataService {
     }
 
 
+
     private Double parse(String l, int a, int b) {
         try { return Double.parseDouble(l.substring(a, b).trim()); }
         catch (Exception e) { return null; }
     }
 
-    private Double parseEcc(String l, int a, int b) {
-        try { return Double.parseDouble("0." + l.substring(a, b).trim()); }
-        catch (Exception e) { return null; }
-    }
 }
+    
