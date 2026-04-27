@@ -53,7 +53,20 @@ public class TleDataService {
             log.info("🎯 Tentativo download da SPACE-TRACK...");
             boolean ok = fetchFromSpaceTrack();
 
-            if (!ok && hoursSinceLast <= 48) {
+            // Calcola ore dall'ultimo aggiornamento qui, se necessario
+            // (ma solo se fetchFromSpaceTrack non ha già gestito il fallback)
+            if (!ok) {
+                OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+                long hoursSinceLast = 0;
+                if (last != null) {
+                    hoursSinceLast = java.time.Duration.between(last.getFetchedAt(), java.time.LocalDateTime.now()).toHours();
+                }
+                if (hoursSinceLast <= 48) {
+                    log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
+                    celestrakService.fetchAndSaveStations();
+                    log.info("✅ Fallback CelesTrak completato");
+                }
+            }
                 log.warn("⚠️ SPACE-TRACK FALLITO - attivo fallback CelesTrak");
                 celestrakService.fetchAndSaveStations();
                 log.info("✅ Fallback CelesTrak completato");
