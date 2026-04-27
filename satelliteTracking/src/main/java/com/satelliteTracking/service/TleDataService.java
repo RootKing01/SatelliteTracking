@@ -125,6 +125,7 @@ public class TleDataService {
             // ⚡ FIX: passa LocalDateTime, non String epoch
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
+            // TODO: se il formato è JSON, chiamare parseAndSaveJson(tleData) anziché parseAndSave(tleData)
 
             if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
