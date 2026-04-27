@@ -1,4 +1,3 @@
-import React from 'react'
 import type { CommunityFeedItem } from '../../api/communityClient'
 
 interface CommunityFeedCardProps {

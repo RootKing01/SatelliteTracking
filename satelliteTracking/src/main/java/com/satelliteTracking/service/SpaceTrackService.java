@@ -11,8 +11,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,6 +23,10 @@ import java.util.stream.Collectors;
 public class SpaceTrackService {
 
     private static final Logger log = LoggerFactory.getLogger(SpaceTrackService.class);
+
+    // Space-Track si aspetta questo formato per CREATION_DATE
+    private static final DateTimeFormatter ST_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final WebClient webClient;
 
@@ -29,361 +36,342 @@ public class SpaceTrackService {
     @Value("${spacetrack.password}")
     private String password;
 
-    private String sessionCookie;
+    private volatile String sessionCookie;
+    private volatile LocalDateTime sessionCreatedAt;
+    private static final Duration SESSION_TTL = Duration.ofHours(2);
 
     public SpaceTrackService(WebClient.Builder builder) {
-        log.info("🔧 Inizializzazione SpaceTrackService con timeout 5 minuti");
-        
+        log.info("🔧 Inizializzazione SpaceTrackService");
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofMinutes(5));
-
         this.webClient = builder
                 .baseUrl("https://www.space-track.org")
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
 
-    // =========================
-    // LOGIN
-    // =========================
     @PostConstruct
     public void login() {
+        performLogin();
+    }
+
+    private synchronized void performLogin() {
         try {
             log.info("🔐 Tentativo login Space-Track...");
-            log.debug("   Username: {}", username);
-
             List<String> cookies = webClient.post()
                     .uri("/ajaxauth/login")
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .bodyValue("identity=" + username + "&password=" + password)
                     .exchangeToMono(resp -> {
                         List<String> setCookie = resp.headers().header(HttpHeaders.SET_COOKIE);
-                        return resp.bodyToMono(String.class)
-                                .map(body -> setCookie);
+                        return resp.bodyToMono(String.class).map(body -> setCookie);
                     })
                     .block();
 
             if (cookies != null && !cookies.isEmpty()) {
                 sessionCookie = cookies.get(0).split(";")[0];
+                sessionCreatedAt = LocalDateTime.now();
                 log.info("✅ Space-Track login SUCCESSO");
-                log.debug("   Cookie sessione: {}...", sessionCookie.substring(0, Math.min(30, sessionCookie.length())));
             } else {
-                log.error("❌ Login Space-Track FALLITO - nessun cookie ricevuto");
+                log.error("❌ Login fallito - nessun cookie ricevuto");
+                sessionCookie = null;
+                sessionCreatedAt = null;
             }
-
         } catch (Exception e) {
-            log.error("❌ Errore critico durante login SpaceTrack: {}", e.getMessage(), e);
+            log.error("❌ Errore login: {}", e.getMessage(), e);
+            sessionCookie = null;
+            sessionCreatedAt = null;
         }
     }
 
-    // =========================
-    // ENSURE LOGIN
-    // =========================
     private void ensureLogin() {
-        if (sessionCookie == null) {
-            log.warn("⚠️ Cookie sessione non presente, eseguo nuovo login...");
-            login();
-        } else {
-            log.debug("✓ Cookie sessione presente, procedo con la richiesta");
+        boolean expired = sessionCreatedAt != null &&
+                Duration.between(sessionCreatedAt, LocalDateTime.now()).compareTo(SESSION_TTL) > 0;
+        if (sessionCookie == null || expired) {
+            log.warn("⚠️ Sessione assente o scaduta, re-login...");
+            performLogin();
         }
     }
 
-    // =========================
-    // DELTA FETCH (per aggiornamenti incrementali)
-    // =========================
-    public String downloadDeltaTle(String lastEpoch) {
+    private boolean isHtmlResponse(String response) {
+        if (response == null || response.isBlank()) return false;
+        String t = response.trim();
+        return t.startsWith("<!DOCTYPE") || t.startsWith("<html") || t.startsWith("<!doctype");
+    }
 
-    log.info("📡 Inizio download DELTA TLE (chunked) da epoch: {}", lastEpoch);
-    ensureLogin();
+    private String formatForSpaceTrack(LocalDateTime dt) {
+        return dt.format(ST_FORMATTER);
+    }
 
-    try {
+    // =========================
+    // DELTA via GP_HISTORY (corretto per aggiornamenti incrementali)
+    // =========================
+
+    /**
+     * Scarica tutti i TLE pubblicati dopo lastFetchedAt usando GP_HISTORY.
+     * 
+     * PERCHÉ GP_HISTORY e non GP:
+     * - GP contiene solo l'ultimo TLE per satellite → filtrare CREATION_DATE su GP
+     *   restituisce solo satelliti il cui TLE ATTUALE è stato creato dopo quella data,
+     *   perdendo tutti i satelliti aggiornati prima ma non ancora ri-aggiornati.
+     * - GP_HISTORY contiene lo storico completo → filtrare CREATION_DATE restituisce
+     *   tutti i TLE pubblicati nell'intervallo, indipendentemente da aggiornamenti successivi.
+     */
+    public String downloadDeltaTle(LocalDateTime lastFetchedAt) {
+        String from = formatForSpaceTrack(lastFetchedAt);
+        String to = formatForSpaceTrack(LocalDateTime.now());
+        log.info("📡 DELTA FETCH via GP_HISTORY");
+        log.info("   CREATION_DATE range: {} → {}", from, to);
+        log.info("   💡 GP_HISTORY restituisce TUTTI i TLE pubblicati nell'intervallo");
+        ensureLogin();
+        try {
+            return downloadGpHistoryInternal(from, to, false, false);
+        } catch (Exception e) {
+            log.error("❌ Errore delta fetch: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Scarica TLE LEO pubblicati dopo lastFetchedAt usando GP_HISTORY.
+     */
+    public String downloadDeltaTleLeoOnly(LocalDateTime lastFetchedAt) {
+        String from = formatForSpaceTrack(lastFetchedAt);
+        String to = formatForSpaceTrack(LocalDateTime.now());
+        log.info("📡 DELTA FETCH LEO via GP_HISTORY");
+        log.info("   CREATION_DATE range: {} → {}", from, to);
+        ensureLogin();
+        try {
+            return downloadGpHistoryInternal(from, to, true, false);
+        } catch (Exception e) {
+            log.error("❌ Errore delta fetch LEO: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
         StringBuilder allData = new StringBuilder();
-
         int offset = 0;
         final int limit = 1000;
         int totalEntries = 0;
         int chunkNumber = 0;
+        String type = leoOnly ? "LEO" : "FULL";
 
         while (true) {
             chunkNumber++;
-
-            log.info("📦 Delta chunk #{} → offset={}, limit={}", chunkNumber, offset, limit);
+            log.info("📦 GP_HISTORY {} chunk #{} → offset={}, limit={}", type, chunkNumber, offset, limit);
 
             long startTime = System.currentTimeMillis();
             int currentOffset = offset;
+            String creationDateRange = from + "--" + to;
 
             String chunk = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/basicspacedata/query/class/gp")
-                            .queryParam("EPOCH", ">" + lastEpoch)
-                            .queryParam("DECAY_DATE", "null-val")
-                            .queryParam("orderby", "NORAD_CAT_ID,EPOCH desc")
-                            .queryParam("limit", limit)
-                            .queryParam("offset", currentOffset)
-                            .queryParam("format", "tle")
-                            .build()
-                    )
+                    .uri(uriBuilder -> {
+                        var builder = uriBuilder
+                                .path("/basicspacedata/query/class/gp_history")
+                                .queryParam("CREATION_DATE", creationDateRange)
+                                .queryParam("DECAY_DATE", "null-val")
+                                .queryParam("orderby", "CREATION_DATE asc")
+                                .queryParam("limit", limit)
+                                .queryParam("offset", currentOffset)
+                                .queryParam("format", "tle");
+                        if (leoOnly) {
+                            builder = builder.queryParam("MEAN_MOTION", ">11.25");
+                        }
+                        return builder.build();
+                    })
                     .header(HttpHeaders.COOKIE, sessionCookie)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(Duration.ofMinutes(2)); // timeout ridotto
+                    .exchangeToMono(response -> {
+                        int status = response.statusCode().value();
+                        log.debug("📡 HTTP {}", status);
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return response.bodyToMono(String.class).defaultIfEmpty("");
+                        } else {
+                            return response.bodyToMono(String.class)
+                                    .defaultIfEmpty("")
+                                    .flatMap(body -> {
+                                        log.error("❌ HTTP ERROR {}: {}",
+                                                status, body.substring(0, Math.min(300, body.length())));
+                                        return Mono.empty();
+                                    });
+                        }
+                    })
+                    .block(Duration.ofMinutes(3));
 
             long duration = System.currentTimeMillis() - startTime;
 
-            // Fine dati
             if (chunk == null) {
-                log.warn("⚠️ Chunk #{} NULL → possibile errore HTTP / timeout ({} ms)", chunkNumber, duration);
-                break;
+                log.warn("⚠️ Chunk #{} NULL ({} ms)", chunkNumber, duration);
+                return null;
+            }
+
+            if (isHtmlResponse(chunk)) {
+                log.error("❌ HTML response → sessione scaduta");
+                if (!isRetry) {
+                    log.info("🔄 Re-login e retry...");
+                    sessionCookie = null;
+                    performLogin();
+                    if (sessionCookie != null) {
+                        return downloadGpHistoryInternal(from, to, leoOnly, true);
+                    }
+                }
+                log.error("❌ Re-login fallito");
+                return null;
             }
 
             if (chunk.isBlank()) {
-                log.info("ℹ️ Chunk #{} vuoto → nessun altro delta disponibile ({} ms)", chunkNumber, duration);
+                log.info("ℹ️ Chunk #{} vuoto → fine dati ({} ms)", chunkNumber, duration);
                 break;
             }
 
-            int lines = chunk.split("\n").length;
-            int entries = lines / 2;
+            // GP_HISTORY in formato TLE restituisce 3 righe: nome + line1 + line2
+            long nonEmptyLines = chunk.lines().filter(l -> !l.isBlank()).count();
+            int entries = (int) (nonEmptyLines / 3);
 
             allData.append(chunk);
             totalEntries += entries;
 
-            log.info("✅ Chunk #{}: {} entries, {} bytes in {} ms",
-                    chunkNumber, entries, chunk.length(), duration);
+            log.info("✅ Chunk #{}: ~{} entries ({} righe), {} bytes in {} ms",
+                    chunkNumber, entries, nonEmptyLines, chunk.length(), duration);
 
-            // Ultimo chunk
-            if (entries < limit) {
-                log.info("✅ Ultimo chunk raggiunto ({} < {})", entries, limit);
+            if (nonEmptyLines < limit * 3L) {
+                log.info("✅ Ultimo chunk raggiunto");
                 break;
             }
 
             offset += limit;
-
-            // Piccolo rate limit per evitare throttling
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException ie) {
+            try { Thread.sleep(200); } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                log.warn("⚠️ Thread interrotto durante sleep");
             }
 
-            // Safety stop (evita loop infiniti in caso di bug)
-            if (offset > 200_000) {
-                log.warn("⚠️ Raggiunto limite sicurezza offset={}, interrompo", offset);
+            if (offset > 500_000) {
+                log.warn("⚠️ Safety stop offset={}", offset);
                 break;
             }
         }
 
         String result = allData.toString();
-
         if (result.isBlank()) {
-            log.info("ℹ️ Nessun aggiornamento TLE disponibile dopo epoch {}", lastEpoch);
+            log.info("ℹ️ Nessun aggiornamento disponibile nel range {} → {}", from, to);
             return "";
         }
 
-        log.info("🚀 DELTA COMPLETATO: {} entries totali, {} bytes",
-                totalEntries, result.length());
-
+        log.info("🚀 GP_HISTORY COMPLETATO: ~{} entries totali, {} bytes", totalEntries, result.length());
         return result;
-
-    } catch (WebClientResponseException e) {
-        log.error("❌ HTTP error durante delta fetch → Status: {} | Body: {}",
-                e.getStatusCode(),
-                e.getResponseBodyAsString().substring(0,
-                        Math.min(300, e.getResponseBodyAsString().length())));
-        return null;
-
-    } catch (Exception e) {
-        log.error("❌ Errore inatteso durante delta fetch: {}", e.getMessage(), e);
-        return null;
-    }
-}
-
-    // =========================
-    // SINGLE TLE (SAFE)
-    // =========================
-    public String downloadTleByNoradId(Long noradId) {
-
-        log.info("📡 Richiesta singolo TLE per NORAD_CAT_ID: {}", noradId);
-        ensureLogin();
-
-        try {
-            String result = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/basicspacedata/query/class/tle_latest")
-                            .queryParam("NORAD_CAT_ID", noradId)
-                            .queryParam("format", "tle")
-                            .build()
-                    )
-                    .header(HttpHeaders.COOKIE, sessionCookie)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (result != null && !result.isBlank()) {
-                log.info("✅ TLE scaricato con successo per NORAD {}: {} bytes", noradId, result.length());
-            } else {
-                log.warn("⚠️ Nessun TLE trovato per NORAD {}", noradId);
-            }
-            
-            return result;
-
-        } catch (WebClientResponseException e) {
-            log.error("❌ HTTP error per NORAD {} → Status: {} | Body: {}",
-                    noradId,
-                    e.getStatusCode(),
-                    e.getResponseBodyAsString());
-            return null;
-        }
     }
 
     // =========================
-    // BULK (CORRETTO: CHUNKED SINGLE QUERIES)
-    // =========================
-    public String downloadTleBatch(List<Long> noradIds) {
-
-        log.info("📦 Richiesta batch TLE per {} satelliti", noradIds.size());
-        log.debug("   NORAD IDs: {}", noradIds.stream().limit(10).map(String::valueOf).collect(Collectors.joining(", ")) + 
-                (noradIds.size() > 10 ? "..." : ""));
-        
-        ensureLogin();
-
-        try {
-            String ids = noradIds.stream()
-                    .map(String::valueOf)
-                    .collect(Collectors.joining(","));
-
-            String result = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/basicspacedata/query/class/tle_latest")
-                            .queryParam("NORAD_CAT_ID", ids)
-                            .queryParam("format", "tle")
-                            .build()
-                    )
-                    .header(HttpHeaders.COOKIE, sessionCookie)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (result != null && !result.isBlank()) {
-                int lines = result.split("\n").length;
-                log.info("✅ Batch scaricato: {} bytes, ~{} TLE", result.length(), lines / 2);
-            } else {
-                log.warn("⚠️ Batch vuoto per {} IDs richiesti", noradIds.size());
-            }
-            
-            return result;
-
-        } catch (WebClientResponseException e) {
-            log.error("❌ SpaceTrack batch error → Status: {} | Body: {}",
-                    e.getStatusCode(),
-                    e.getResponseBodyAsString());
-            return null;
-        }
-    }
-
-    // =========================
-    // DOWNLOAD IN CHUNKS - FULL DATASET
+    // DOWNLOAD COMPLETO via GP (solo per primo popolamento)
     // =========================
     public String downloadAllLatestTle() {
-
-        log.info("═════════════════════════════════════════════════════════");
-        log.info("🚀 INIZIO DOWNLOAD COMPLETO TLE DA SPACE-TRACK");
-        log.info("   Metodo: Download incrementale a chunk");
-        log.info("═════════════════════════════════════════════════════════");
-        
+        log.info("🚀 DOWNLOAD COMPLETO TLE via GP (ultimo TLE per satellite)");
         ensureLogin();
-
         try {
-            log.info("📥 Fase 1/2: Download dati in chunk da Space-Track...");
-            
             StringBuilder allData = new StringBuilder();
             int offset = 0;
-            int limit = 1000; // Chunk size
+            final int limit = 1000;
             int totalDownloaded = 0;
             int chunkNumber = 0;
 
             while (true) {
                 chunkNumber++;
-                log.info("📦 Chunk #{}: Richiesta offset={}, limit={}", chunkNumber, offset, limit);
-                
+                log.info("📦 GP Full chunk #{}: offset={}", chunkNumber, offset);
                 long startTime = System.currentTimeMillis();
-                
+
                 String chunk = webClient.get()
-                        .uri("/basicspacedata/query/class/gp/limit/" + limit + "/offset/" + offset + "/orderby/NORAD_CAT_ID,EPOCH desc/format/tle")
+                        .uri("/basicspacedata/query/class/gp/DECAY_DATE/null-val/limit/"
+                                + limit + "/offset/" + offset
+                                + "/orderby/NORAD_CAT_ID asc/format/tle")
                         .header(HttpHeaders.COOKIE, sessionCookie)
                         .retrieve()
                         .bodyToMono(String.class)
-                        .block(Duration.ofMinutes(2));
+                        .block(Duration.ofMinutes(3));
 
                 long duration = System.currentTimeMillis() - startTime;
 
                 if (chunk == null || chunk.isBlank()) {
-                    log.info("✅ Chunk #{}: Vuoto - fine download raggiunta (tempo: {}ms)", chunkNumber, duration);
-                    log.info("   Nessun altro dato disponibile da offset {}", offset);
+                    log.info("✅ Fine download ({} ms)", duration);
                     break;
                 }
 
-                // Conta quante entry TLE (ogni TLE = 2 linee)
-                int lines = chunk.split("\n").length;
-                int entries = lines / 2;
-                
+                if (isHtmlResponse(chunk)) {
+                    log.error("❌ HTML → sessione scaduta, re-login...");
+                    sessionCookie = null;
+                    performLogin();
+                    if (sessionCookie == null) return null;
+                    continue;
+                }
+
+                long nonEmptyLines = chunk.lines().filter(l -> !l.isBlank()).count();
+                int entries = (int)(nonEmptyLines / 2); // GP = 2 righe per satellite
                 allData.append(chunk);
                 totalDownloaded += entries;
-                
-                log.info("✅ Chunk #{}: Ricevuto {} entries, {} bytes in {}ms", 
-                        chunkNumber, entries, chunk.length(), duration);
-                log.info("   Progresso totale: {} entries scaricate", totalDownloaded);
 
-                // Se abbiamo ricevuto meno del limite, abbiamo finito
-                if (entries < limit) {
-                    log.info("✅ Chunk #{}: Ultimo chunk (size {} < limit {})", chunkNumber, entries, limit);
-                    break;
-                }
+                log.info("✅ Chunk #{}: {} entries in {} ms", chunkNumber, entries, duration);
 
+                if (nonEmptyLines < limit * 2L) break;
                 offset += limit;
-
-                // Safety: max 100 chunks (100k satelliti)
-                if (offset > 100000) {
-                    log.warn("⚠️ Raggiunto limite sicurezza (offset={}), interrompo download", offset);
+                if (offset > 100_000) {
+                    log.warn("⚠️ Safety stop");
                     break;
                 }
-
-                // Rate limiting: piccola pausa tra le richieste
-                log.debug("   Pausa 100ms prima del prossimo chunk...");
-                Thread.sleep(100);
+                Thread.sleep(200);
             }
 
             String result = allData.toString();
-            
             if (result.isBlank()) {
-                log.error("❌ ERRORE: Download completato ma nessun dato ricevuto!");
-                log.error("   Chunks processati: {}", chunkNumber);
+                log.error("❌ Nessun dato ricevuto");
                 return null;
             }
-
-            log.info("═════════════════════════════════════════════════════════");
-            log.info("✅✅✅ DOWNLOAD SPACE-TRACK COMPLETATO CON SUCCESSO!");
-            log.info("   Total entries: {}", totalDownloaded);
-            log.info("   Total bytes: {}", result.length());
-            log.info("   Total chunks: {}", chunkNumber);
-            log.info("═════════════════════════════════════════════════════════");
-            
+            log.info("✅ DOWNLOAD COMPLETO: {} entries, {} bytes", totalDownloaded, result.length());
             return result;
-
-        } catch (WebClientResponseException e) {
-            log.error("═════════════════════════════════════════════════════════");
-            log.error("❌ ERRORE HTTP DA SPACE-TRACK");
-            log.error("   Status code: {}", e.getStatusCode());
-            log.error("   Response body (prime 500 char): {}", 
-                    e.getResponseBodyAsString().substring(0, Math.min(500, e.getResponseBodyAsString().length())));
-            log.error("═════════════════════════════════════════════════════════");
-            return null;
         } catch (Exception e) {
-            log.error("═════════════════════════════════════════════════════════");
-            log.error("❌ ERRORE INATTESO DURANTE DOWNLOAD SPACE-TRACK");
-            log.error("   Tipo errore: {}", e.getClass().getSimpleName());
-            log.error("   Messaggio: {}", e.getMessage());
-            log.error("═════════════════════════════════════════════════════════", e);
+            log.error("❌ Errore: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    // Download singolo per NORAD ID
+    public String downloadTleByNoradId(Long noradId) {
+        log.info("📡 Singolo TLE per NORAD: {}", noradId);
+        ensureLogin();
+        try {
+            String result = webClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/basicspacedata/query/class/gp")
+                            .queryParam("NORAD_CAT_ID", noradId)
+                            .queryParam("format", "tle")
+                            .build())
+                    .header(HttpHeaders.COOKIE, sessionCookie)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (result != null && isHtmlResponse(result)) {
+                sessionCookie = null;
+                performLogin();
+                if (sessionCookie != null) {
+                    result = webClient.get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .path("/basicspacedata/query/class/gp")
+                                    .queryParam("NORAD_CAT_ID", noradId)
+                                    .queryParam("format", "tle")
+                                    .build())
+                            .header(HttpHeaders.COOKIE, sessionCookie)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block();
+                }
+            }
+
+            if (result != null && !result.isBlank()) {
+                log.info("✅ TLE per NORAD {}: {} bytes", noradId, result.length());
+            } else {
+                log.warn("⚠️ Nessun TLE per NORAD {}", noradId);
+            }
+            return result;
+        } catch (WebClientResponseException e) {
+            log.error("❌ HTTP error NORAD {}: {}", noradId, e.getStatusCode());
             return null;
         }
     }

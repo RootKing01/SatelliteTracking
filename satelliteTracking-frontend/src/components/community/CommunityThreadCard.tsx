@@ -1,4 +1,3 @@
-import React from 'react'
 import type { CommunityThread, CommunityComment } from '../../api/communityClient'
 import type { AuthUser } from '../../api/authClient'
 
