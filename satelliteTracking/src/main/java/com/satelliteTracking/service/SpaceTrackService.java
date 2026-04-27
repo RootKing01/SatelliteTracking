@@ -40,6 +40,7 @@ public class SpaceTrackService {
     private volatile String sessionCookie;
     private volatile LocalDateTime sessionCreatedAt;
     private static final Duration SESSION_TTL = Duration.ofHours(2);
+    private volatile boolean loginInProgress = false;
 
     public SpaceTrackService(WebClient.Builder builder) {
         log.info("🔧 Inizializzazione SpaceTrackService");
@@ -65,24 +66,32 @@ public class SpaceTrackService {
     private synchronized void performLogin() {
         try {
             log.info("🔐 Tentativo login Space-Track...");
+
             List<String> cookies = webClient.post()
                     .uri("/ajaxauth/login")
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .bodyValue("identity=" + username + "&password=" + password)
-                    .retrieve()
-                    .toEntity(String.class)
-                    .map(resp -> resp.getHeaders().get(HttpHeaders.SET_COOKIE))
+                    .exchangeToMono(resp -> {
+                        // Prendi i cookie dalle header
+                        List<String> setCookie = resp.headers().header(HttpHeaders.SET_COOKIE);
+                        // Consuma il body ma ritorna i cookie
+                        return resp.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .map(body -> setCookie);
+                    })
                     .block(Duration.ofSeconds(30));
 
             if (cookies != null && !cookies.isEmpty()) {
                 sessionCookie = cookies.get(0).split(";")[0];
                 sessionCreatedAt = LocalDateTime.now();
                 log.info("✅ Space-Track login SUCCESSO");
+                log.debug("🔑 Cookie: {}", sessionCookie);
             } else {
                 log.error("❌ Login fallito - nessun cookie ricevuto");
                 sessionCookie = null;
                 sessionCreatedAt = null;
             }
+
         } catch (Exception e) {
             log.error("❌ Errore login: {}", e.getMessage(), e);
             sessionCookie = null;
@@ -91,11 +100,40 @@ public class SpaceTrackService {
     }
 
     private void ensureLogin() {
+        if (loginInProgress) {
+            log.debug("⏳ Login già in corso, attendo...");
+            // Attendi che il login in corso finisca
+            int maxWait = 10;
+            while (loginInProgress && maxWait-- > 0) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return;
+        }
+
         boolean expired = sessionCreatedAt != null &&
-                Duration.between(sessionCreatedAt, LocalDateTime.now()).compareTo(SESSION_TTL) > 0;
+                Duration.between(sessionCreatedAt, LocalDateTime.now())
+                        .compareTo(SESSION_TTL) > 0;
+
         if (sessionCookie == null || expired) {
-            log.warn("⚠️ Sessione assente o scaduta, re-login...");
-            performLogin();
+            synchronized (this) {
+                // Double-check dopo aver acquisito il lock
+                if (sessionCookie == null || 
+                    (sessionCreatedAt != null && 
+                     Duration.between(sessionCreatedAt, LocalDateTime.now()).compareTo(SESSION_TTL) > 0)) {
+                    
+                    loginInProgress = true;
+                    try {
+                        log.warn("⚠️ Sessione assente o scaduta, re-login...");
+                        performLogin();
+                    } finally {
+                        loginInProgress = false;
+                    }
+                }
+            }
         }
     }
 
@@ -110,31 +148,30 @@ public class SpaceTrackService {
     }
 
     // =============================
-    // 🔥 METODI PUBBLICI (INVARIATI)
+    // 🔥 METODI PUBBLICI
     // =============================
 
     public String downloadDeltaTle(LocalDateTime lastFetchedAt) {
         ensureLogin();
-
-        // ⬇️ ORA USA CHUNK TEMPORALI
         return downloadDeltaChunked(lastFetchedAt, LocalDateTime.now(), false);
     }
 
     public String downloadDeltaTleLeoOnly(LocalDateTime lastFetchedAt) {
         ensureLogin();
-
-        // ⬇️ ORA USA CHUNK TEMPORALI
         return downloadDeltaChunked(lastFetchedAt, LocalDateTime.now(), true);
     }
 
     // =============================
-    // 🔥 NUOVO: CHUNK TEMPORALI
+    // 🔥 CHUNK TEMPORALI
     // =============================
     private String downloadDeltaChunked(LocalDateTime from, LocalDateTime to, boolean leoOnly) {
 
         StringBuilder finalResult = new StringBuilder();
         LocalDateTime cursor = from;
         int chunkIndex = 0;
+
+        log.info("📡 DELTA FETCH{} via GP_HISTORY (chunk temporali)", leoOnly ? " LEO" : "");
+        log.info("   CREATION_DATE range: {} → {}", formatForSpaceTrack(from), formatForSpaceTrack(to));
 
         while (cursor.isBefore(to)) {
 
@@ -151,16 +188,19 @@ public class SpaceTrackService {
             String chunk = downloadGpHistoryInternal(fromStr, toStr, leoOnly, false);
 
             if (chunk == null) {
-                log.warn("⚠️ Chunk temporale fallito, skip");
+                log.warn("⚠️ Chunk temporale #{} fallito, skip", chunkIndex);
                 cursor = next;
                 continue;
             }
 
             if (!chunk.equals("[]")) {
                 if (finalResult.length() > 0) {
+                    // Rimuovi ']' dal precedente e '[' dal nuovo per concatenare array JSON
                     finalResult.setLength(finalResult.length() - 1);
                     finalResult.append(",");
-                    chunk = chunk.substring(1);
+                    if (chunk.startsWith("[")) {
+                        chunk = chunk.substring(1);
+                    }
                 }
                 finalResult.append(chunk);
             }
@@ -174,17 +214,25 @@ public class SpaceTrackService {
             }
         }
 
-        return finalResult.length() == 0 ? "[]" : finalResult.toString();
+        String result = finalResult.length() == 0 ? "[]" : finalResult.toString();
+        
+        if (!result.equals("[]")) {
+            log.info("✅ CHUNK TEMPORALI COMPLETATI: {} chunk processati", chunkIndex);
+        } else {
+            log.info("ℹ️ Nessun aggiornamento disponibile nel range temporale");
+        }
+        
+        return result;
     }
 
     // =============================
-    // 🔥 CORE MODIFICATO
+    // 🔥 CORE GP_HISTORY
     // =============================
     private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
 
         StringBuilder allData = new StringBuilder();
         int offset = 0;
-        final int limit = 200; // ⬅️ RIDOTTO
+        final int limit = 200;
         int totalEntries = 0;
         int chunkNumber = 0;
         String type = leoOnly ? "LEO" : "FULL";
@@ -200,7 +248,7 @@ public class SpaceTrackService {
 
             String chunk = null;
 
-            // 🔁 RETRY
+            // 🔁 RETRY con backoff esponenziale
             for (int attempt = 1; attempt <= 3; attempt++) {
                 try {
                     chunk = webClient.get()
@@ -223,20 +271,21 @@ public class SpaceTrackService {
                             .header(HttpHeaders.COOKIE, sessionCookie)
                             .retrieve()
                             .bodyToMono(String.class)
-                            .block(Duration.ofMinutes(2)); // ⬅️ timeout ridotto
+                            .block(Duration.ofMinutes(2));
 
-                    break;
+                    break; // Successo, esci dal retry loop
 
                 } catch (Exception e) {
-                    log.warn("⚠️ Tentativo {} fallito", attempt);
+                    log.warn("⚠️ Tentativo {}/3 fallito: {}", attempt, e.getMessage());
 
                     if (attempt == 3) {
-                        log.error("❌ Chunk fallito definitivamente");
+                        log.error("❌ Chunk fallito definitivamente dopo 3 tentativi");
                         return null;
                     }
 
+                    // Backoff esponenziale: 1s, 2s, 4s
                     try {
-                        Thread.sleep(1000L * attempt);
+                        Thread.sleep(1000L * (long)Math.pow(2, attempt - 1));
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     }
@@ -253,20 +302,23 @@ public class SpaceTrackService {
             if (isHtmlResponse(chunk)) {
                 log.error("❌ HTML response → sessione scaduta");
                 if (!isRetry) {
+                    log.info("🔄 Re-login e retry...");
                     sessionCookie = null;
                     performLogin();
                     if (sessionCookie != null) {
                         return downloadGpHistoryInternal(from, to, leoOnly, true);
                     }
                 }
+                log.error("❌ Re-login fallito");
                 return null;
             }
 
             if (chunk.isBlank()) {
-                log.info("ℹ️ Chunk vuoto → fine dati");
+                log.info("ℹ️ Chunk #{} vuoto → fine dati ({} ms)", chunkNumber, duration);
                 break;
             }
 
+            // Conta entries nel JSON
             int entries = 0;
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -275,13 +327,16 @@ public class SpaceTrackService {
                     entries = root.size();
                 }
             } catch (Exception e) {
-                log.warn("⚠️ Errore parsing JSON");
+                log.warn("⚠️ Errore parsing JSON: {}", e.getMessage());
             }
 
+            // Concatena chunk JSON
             if (allData.length() > 0) {
-                allData.setLength(allData.length() - 1);
+                allData.setLength(allData.length() - 1); // Rimuovi ']'
                 allData.append(",");
-                chunk = chunk.substring(1);
+                if (chunk.startsWith("[")) {
+                    chunk = chunk.substring(1); // Rimuovi '['
+                }
             }
 
             allData.append(chunk);
@@ -289,7 +344,10 @@ public class SpaceTrackService {
 
             log.info("✅ Chunk #{}: {} entries in {} ms", chunkNumber, entries, duration);
 
-            if (entries < limit) break;
+            if (entries < limit) {
+                log.info("✅ Ultimo chunk raggiunto");
+                break;
+            }
 
             offset += limit;
 
@@ -299,12 +357,24 @@ public class SpaceTrackService {
                 Thread.currentThread().interrupt();
             }
 
-            if (offset > 500_000) break;
+            if (offset > 500_000) {
+                log.warn("⚠️ Safety stop offset={}", offset);
+                break;
+            }
         }
 
-        return allData.length() == 0 ? "[]" : allData.toString();
+        String result = allData.length() == 0 ? "[]" : allData.toString();
+        
+        if (!result.equals("[]")) {
+            log.info("🚀 GP_HISTORY interno completato: {} entries totali", totalEntries);
+        }
+        
+        return result;
     }
 
+    // =============================
+    // DOWNLOAD COMPLETO via GP
+    // =============================
     public String downloadAllLatestTle() {
         log.info("🚀 DOWNLOAD COMPLETO TLE via GP (ultimo TLE per satellite)");
         ensureLogin();
@@ -318,6 +388,7 @@ public class SpaceTrackService {
             while (true) {
                 chunkNumber++;
                 log.info("📦 GP Full chunk #{}: offset={}", chunkNumber, offset);
+                long startTime = System.currentTimeMillis();
 
                 String chunk = webClient.get()
                         .uri("/basicspacedata/query/class/gp/DECAY_DATE/null-val/limit/"
@@ -328,25 +399,56 @@ public class SpaceTrackService {
                         .bodyToMono(String.class)
                         .block(Duration.ofMinutes(5));
 
-                if (chunk == null || chunk.isBlank()) break;
+                long duration = System.currentTimeMillis() - startTime;
 
+                if (chunk == null || chunk.isBlank()) {
+                    log.info("✅ Fine download ({} ms)", duration);
+                    break;
+                }
+
+                if (isHtmlResponse(chunk)) {
+                    log.error("❌ HTML → sessione scaduta, re-login...");
+                    sessionCookie = null;
+                    performLogin();
+                    if (sessionCookie == null) return null;
+                    continue;
+                }
+
+                long nonEmptyLines = chunk.lines().filter(l -> !l.isBlank()).count();
+                int entries = (int)(nonEmptyLines / 2); // GP = 2 righe per satellite
                 allData.append(chunk);
-                offset += limit;
+                totalDownloaded += entries;
 
-                if (offset > 100_000) break;
+                log.info("✅ Chunk #{}: {} entries in {} ms", chunkNumber, entries, duration);
+
+                if (nonEmptyLines < limit * 2L) break;
+                offset += limit;
+                if (offset > 100_000) {
+                    log.warn("⚠️ Safety stop");
+                    break;
+                }
+                Thread.sleep(200);
             }
 
-            return allData.toString();
+            String result = allData.toString();
+            if (result.isBlank()) {
+                log.error("❌ Nessun dato ricevuto");
+                return null;
+            }
+            log.info("✅ DOWNLOAD COMPLETO: {} entries, {} bytes", totalDownloaded, result.length());
+            return result;
         } catch (Exception e) {
             log.error("❌ Errore: {}", e.getMessage(), e);
             return null;
         }
     }
 
+    // Download singolo per NORAD ID
     public String downloadTleByNoradId(Long noradId) {
+        log.info("📡 Singolo TLE per NORAD: {}", noradId);
         ensureLogin();
         try {
-            return webClient.get()
+            String result = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/basicspacedata/query/class/gp")
                             .queryParam("NORAD_CAT_ID", noradId)
@@ -357,6 +459,29 @@ public class SpaceTrackService {
                     .bodyToMono(String.class)
                     .block(Duration.ofMinutes(2));
 
+            if (result != null && isHtmlResponse(result)) {
+                sessionCookie = null;
+                performLogin();
+                if (sessionCookie != null) {
+                    result = webClient.get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .path("/basicspacedata/query/class/gp")
+                                    .queryParam("NORAD_CAT_ID", noradId)
+                                    .queryParam("format", "tle")
+                                    .build())
+                            .header(HttpHeaders.COOKIE, sessionCookie)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block(Duration.ofMinutes(2));
+                }
+            }
+
+            if (result != null && !result.isBlank()) {
+                log.info("✅ TLE per NORAD {}: {} bytes", noradId, result.length());
+            } else {
+                log.warn("⚠️ Nessun TLE per NORAD {}", noradId);
+            }
+            return result;
         } catch (WebClientResponseException e) {
             log.error("❌ HTTP error NORAD {}: {}", noradId, e.getStatusCode());
             return null;

@@ -216,84 +216,95 @@ public class TleDataService {
         }
     }
 
-    int parseAndSaveJson(String jsonData) {
-        log.info("🔍 Inizio parsing TLE (JSON)...");
-        int count = 0;
-        int skipped = 0;
-        int errors = 0;
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonData);
-            if (root.isArray()) {
-                for (com.fasterxml.jackson.databind.JsonNode node : root) {
-                    try {
-                        Long norad = node.path("NORAD_CAT_ID").asLong();
-                        java.util.Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
-                        Satellite sat;
+   // In TleDataService.java
 
-                        if (satOpt.isEmpty()) {
-                            log.info("🆕 Nuovo satellite scoperto: NORAD {}", norad);
-
-                            sat = new Satellite();
-                            sat.setNoradCatId(norad);
-
-                            String name = node.path("OBJECT_NAME").asText(null);
-                            String objectId = node.path("OBJECT_ID").asText(null);
-
-                            sat.setObjectName(name != null ? name : "UNKNOWN-" + norad);
-                            sat.setObjectId(objectId != null ? objectId : "UNKNOWN");
-
-                            String type = node.path("OBJECT_TYPE").asText("");
-                            switch (type) {
-                                case "PAYLOAD" -> sat.setSatelliteType("PAYLOAD");
-                                case "ROCKET BODY" -> sat.setSatelliteType("ROCKET_BODY");
-                                case "DEBRIS" -> sat.setSatelliteType("DEBRIS");
-                                default -> sat.setSatelliteType("UNKNOWN");
-                            }
-
-                            sat = satelliteRepository.save(sat);
-
-                        } else {
-                            sat = satOpt.get();
-                        }       
+int parseAndSaveJson(String jsonData) {
+    log.info("🔍 Inizio parsing TLE (JSON)...");
+    int count = 0;
+    int skipped = 0;
+    int created = 0; // ✅ NUOVO: conta satelliti creati
+    int errors = 0;
+    
+    try {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonData);
+        
+        if (root.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode node : root) {
+                try {
+                    Long norad = node.path("NORAD_CAT_ID").asLong();
+                    
+                    // ✅ MODIFICA: Cerca o crea il satellite
+                    java.util.Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
+                    Satellite sat;
+                    
+                    if (satOpt.isEmpty()) {
+                        // ✅ NUOVO: Crea il satellite se non esiste
+                        sat = new Satellite();
+                        sat.setNoradCatId(norad);
+                        sat.setObjectName(node.path("OBJECT_NAME").asText("UNKNOWN"));
+                        sat.setObjectId(node.path("OBJECT_ID").asText(""));
                         
-                        String epoch = node.path("EPOCH").asText();
-                        Double inclination = node.path("INCLINATION").asDouble();
-                        Double raOfAscNode = node.path("RA_OF_ASC_NODE").asDouble();
-                        Double eccentricity = node.path("ECCENTRICITY").asDouble();
-                        Double argOfPericenter = node.path("ARG_OF_PERICENTER").asDouble();
-                        Double meanAnomaly = node.path("MEAN_ANOMALY").asDouble();
+                        // Determina il tipo in base al mean motion
                         Double meanMotion = node.path("MEAN_MOTION").asDouble();
-                        String tleLine1 = node.path("TLE_LINE1").asText("");
-                        String tleLine2 = node.path("TLE_LINE2").asText("");
-                        OrbitalParameters p = new OrbitalParameters(
-                                sat, epoch, inclination, raOfAscNode,
-                                eccentricity, argOfPericenter, meanAnomaly, meanMotion);
-                        p.setTleLine1(tleLine1);
-                        p.setTleLine2(tleLine2);
-                        p.setFetchedAt(java.time.LocalDateTime.now());
-                        orbitalParametersRepository.save(p);
-                        count++;
-                    } catch (Exception e) {
-                        errors++;
-                        if (errors <= 10) {
-                            log.warn("⚠️ Errore JSON: {}", e.getMessage());
+                        if (meanMotion > 11.25) {
+                            sat.setSatelliteType("LEO");
+                        } else if (meanMotion > 1.0) {
+                            sat.setSatelliteType("MEO");
+                        } else {
+                            sat.setSatelliteType("GEO");
                         }
+                        
+                        sat = satelliteRepository.save(sat);
+                        created++;
+                        log.info("✨ Nuovo satellite creato: {} (NORAD {})", sat.getObjectName(), norad);
+                    } else {
+                        sat = satOpt.get();
+                    }
+                    
+                    // Salva i parametri orbitali
+                    String epoch = node.path("EPOCH").asText();
+                    Double inclination = node.path("INCLINATION").asDouble();
+                    Double raOfAscNode = node.path("RA_OF_ASC_NODE").asDouble();
+                    Double eccentricity = node.path("ECCENTRICITY").asDouble();
+                    Double argOfPericenter = node.path("ARG_OF_PERICENTER").asDouble();
+                    Double meanAnomaly = node.path("MEAN_ANOMALY").asDouble();
+                    Double meanMotion = node.path("MEAN_MOTION").asDouble();
+                    String tleLine1 = node.path("TLE_LINE1").asText("");
+                    String tleLine2 = node.path("TLE_LINE2").asText("");
+                    
+                    OrbitalParameters p = new OrbitalParameters(
+                            sat, epoch, inclination, raOfAscNode,
+                            eccentricity, argOfPericenter, meanAnomaly, meanMotion);
+                    p.setTleLine1(tleLine1);
+                    p.setTleLine2(tleLine2);
+                    p.setFetchedAt(java.time.LocalDateTime.now());
+                    
+                    orbitalParametersRepository.save(p);
+                    count++;
+                    
+                } catch (Exception e) {
+                    errors++;
+                    if (errors <= 10) {
+                        log.warn("⚠️ Errore processing satellite: {}", e.getMessage());
                     }
                 }
             }
-        } catch (Exception e) {
-            log.error("❌ Errore parsing JSON: {}", e.getMessage(), e);
         }
-        log.info("═══════════════════════════════════════════════════════════");
-        log.info("✅ PARSING JSON COMPLETATO");
-        log.info("   Salvati:          {}", count);
-        log.info("   Saltati (no DB):  {}", skipped);
-        log.info("   Errori:           {}", errors);
-        log.info("═══════════════════════════════════════════════════════════");
-        return count;
+    } catch (Exception e) {
+        log.error("❌ Errore parsing JSON: {}", e.getMessage(), e);
     }
-
+    
+    log.info("═══════════════════════════════════════════════════════════");
+    log.info("✅ PARSING JSON COMPLETATO");
+    log.info("   Salvati:          {}", count);
+    log.info("   Nuovi satelliti:  {}", created); // ✅ NUOVO
+    log.info("   Saltati (no DB):  {}", skipped);
+    log.info("   Errori:           {}", errors);
+    log.info("═══════════════════════════════════════════════════════════");
+    
+    return count;
+}
 
 
     private Double parse(String l, int a, int b) {

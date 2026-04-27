@@ -21,6 +21,8 @@ public interface OrbitalParametersRepository extends JpaRepository<OrbitalParame
     // ✅ FIX IMPORTANTE (CACHE PER NORAD ID)
     Optional<OrbitalParameters> findTopBySatellite_NoradCatIdOrderByFetchedAtDesc(Long noradCatId);
 
+    boolean existsBySatelliteAndEpoch(Satellite satellite, String epoch);
+
     @Query("""
         select op
         from OrbitalParameters op
