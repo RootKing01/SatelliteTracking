@@ -316,11 +316,39 @@ public class SatellitePositionService {
     /**
      * Determina se il satellite è illuminato dal Sole (semplificato)
      */
+    /**
+     * Determina se il satellite è illuminato dal Sole (fisica realistica)
+     * Usa Orekit per calcolare la posizione del Sole e verifica se il satellite è in ombra.
+     */
     private boolean computeSunlitStatus(Vector3D satPosition, AbsoluteDate date, Frame frame) {
-        // Semplificazione: considera sunlit se l'altitudine è > 200 km
-        // TODO: implementare calcolo ombra terrestre preciso con posizione solare
-        double altitude = satPosition.getNorm() - Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
-        return altitude > 200000; // 200 km
+        try {
+            // Ottieni la posizione del Sole nel frame richiesto
+            var sun = org.orekit.bodies.CelestialBodyFactory.getSun();
+            Vector3D sunPos = sun.getPVCoordinates(date, frame).getPosition();
+
+            // Vettore dal centro Terra al satellite e al Sole
+            Vector3D satVec = satPosition;
+            Vector3D sunVec = sunPos;
+
+            // Calcola se il satellite è in ombra (eclisse geometrica)
+            // Proietta il satellite sulla linea Sole-Terra
+            double satDotSun = Vector3D.dotProduct(satVec, sunVec);
+            double sunNormSq = sunVec.getNormSq();
+            double proj = satDotSun / sunNormSq;
+            Vector3D closestPoint = sunVec.scalarMultiply(proj);
+            double distanceToAxis = Vector3D.distance(satVec, closestPoint);
+
+            // Raggio della Terra (approssimato)
+            double earthRadius = Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+
+            // Se la distanza satellite-asse Sole-Terra è minore del raggio terrestre e il satellite è tra la Terra e il Sole, è in ombra
+            boolean inUmbra = (distanceToAxis < earthRadius) && (proj < 1.0) && (proj > 0.0);
+            return !inUmbra;
+        } catch (Exception e) {
+            // In caso di errore fallback alla vecchia logica
+            double altitude = satPosition.getNorm() - Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+            return altitude > 200000; // 200 km
+        }
     }
     
     /**
