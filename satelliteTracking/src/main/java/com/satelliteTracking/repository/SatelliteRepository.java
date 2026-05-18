@@ -12,4 +12,7 @@ public interface SatelliteRepository extends JpaRepository<Satellite, Long> {
 
     // Trova il primo satellite che contiene il nome richiesto (case-insensitive)
     Optional<Satellite> findFirstByObjectNameContainingIgnoreCaseOrderByIdAsc(String objectName);
+
+    // Trova un satellite per nome esatto
+    Optional<Satellite> findByObjectName(String objectName);
 }

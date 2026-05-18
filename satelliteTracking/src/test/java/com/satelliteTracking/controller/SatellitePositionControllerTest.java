@@ -2,6 +2,7 @@ package com.satelliteTracking.controller;
 
 import com.satelliteTracking.dto.SatellitePositionDTO;
 import com.satelliteTracking.service.SatellitePassService;
+import com.satelliteTracking.service.SpaceMissionService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
@@ -17,8 +18,12 @@ import static org.mockito.Mockito.when;
 class SatellitePositionControllerTest {
 
     private final SatellitePassService satellitePassService = Mockito.mock(SatellitePassService.class);
+    private final SpaceMissionService spaceMissionService = Mockito.mock(SpaceMissionService.class);
 
-    private final SatellitePositionController controller = new SatellitePositionController(satellitePassService);
+    private final SatellitePositionController controller = new SatellitePositionController(
+        satellitePassService,
+        spaceMissionService
+    );
 
     @Test
     void shouldReturnCurrentSatellitePosition() {

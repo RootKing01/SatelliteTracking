@@ -595,6 +595,7 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
       >
         {selectedStarlinkSatellite ? (
           <Entity
+            key={`starlink-${selectedStarlinkSatellite.satelliteId}`}
             id={`starlink-${selectedStarlinkSatellite.satelliteId}`}
             name={selectedStarlinkSatellite.satelliteName}
             description={`Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`}
@@ -615,6 +616,7 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
 
         {selectedVisibleSatellite ? (
           <Entity
+            key={`${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}`}
             id={`${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}`}
             name={selectedVisibleSatellite.satellite.satelliteName}
             description={`${selectedVisibleSatellite.group.label} | NORAD ${selectedVisibleSatellite.satellite.noradCatId}`}

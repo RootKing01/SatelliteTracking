@@ -4,7 +4,7 @@ export type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 
 export function createDefaultEnabledGroups(groups: readonly SatelliteGroupSource[]) {
   return Object.fromEntries(
-    groups.map((group) => [group.key, group.key === 'stations']),
+    groups.map((group) => [group.key, group.key === 'stations' || group.key === 'spaceMissions']),
   ) as Record<SatelliteGroupKey, boolean>
 }
 
@@ -17,7 +17,7 @@ export function buildEnabledGroupsFromPreset(
   }
 
   const navigationKeys = new Set<SatelliteGroupKey>(['gpsOps', 'galileo', 'glonassOps', 'beidou', 'sbas'])
-  const leoKeys = new Set<SatelliteGroupKey>(['starlink', 'oneweb', 'iridiumNext', 'planet', 'spire', 'cubesat'])
+  const leoKeys = new Set<SatelliteGroupKey>(['starlink', 'oneweb', 'iridiumNext', 'planet', 'spire', 'cubesat', 'spaceMissions'])
 
   return Object.fromEntries(
     groups.map((group) => {

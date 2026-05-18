@@ -61,6 +61,7 @@ public class SatellitePassService {
     private final PassTimeService passTimeService;
     private final PassVisibilityService passVisibilityService;
     private final PassPhotometryService passPhotometryService;
+    private final JplHorizonsClient jplHorizonsClient;
     
     // Posizione predefinita caricata da configuration (single source of truth)
     private final ObserverLocation defaultLocation;
@@ -107,6 +108,7 @@ public class SatellitePassService {
                                 PassTimeService passTimeService,
                                 PassVisibilityService passVisibilityService,
                                 PassPhotometryService passPhotometryService,
+                                JplHorizonsClient jplHorizonsClient,
                                 @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
                                 @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
                                 @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude,
@@ -116,6 +118,7 @@ public class SatellitePassService {
         this.passTimeService = passTimeService;
         this.passVisibilityService = passVisibilityService;
         this.passPhotometryService = passPhotometryService;
+        this.jplHorizonsClient = jplHorizonsClient;
         this.defaultLocation = new ObserverLocation(defaultLatitude, defaultLongitude, defaultAltitude, defaultLocationName);
     }
 
@@ -595,6 +598,11 @@ public class SatellitePassService {
             ? "all"
             : satelliteType.trim().toLowerCase();
 
+        // Se richieste le missioni spaziali, usa JPL Horizons
+        if ("space-missions".equals(normalizedType)) {
+            return getSpaceMissionPositions();
+        }
+
         PositionCacheEntry cachedEntry = positionsCache.get(normalizedType);
         if (cachedEntry != null && !cachedEntry.isExpired(POSITIONS_CACHE_TTL_MS)) {
             return cachedEntry.positions;
@@ -615,6 +623,72 @@ public class SatellitePassService {
 
         positionsCache.put(normalizedType, new PositionCacheEntry(positions));
         return positions;
+    }
+
+    /**
+     * Carica missioni spaziali dal database locale usando il calcolo di propagazione standard
+     */
+    private List<SatellitePositionDTO> getSpaceMissionPositions() {
+        try {
+            List<SatellitePositionDTO> positions = new ArrayList<>();
+            
+            // Carica satelliti di tipo "space-missions" dal DB locale
+            List<Satellite> spaceMissions = satelliteRepository.findAll().stream()
+                .filter(s -> "space-missions".equals(s.getSatelliteType()))
+                .collect(Collectors.toList());
+
+            AbsoluteDate currentDate = passTimeService.nowUtc();
+            
+            log.info("🚀 Loading {} space missions", spaceMissions.size());
+            
+            for (Satellite mission : spaceMissions) {
+                // Prova a caricare OrbitalParameters per la missione
+                Optional<OrbitalParameters> paramsOpt = orbitalParametersRepository
+                    .findTopBySatellite_NoradCatIdOrderByFetchedAtDesc(mission.getNoradCatId());
+                
+                if (paramsOpt.isEmpty()) {
+                    log.warn("⚠️ No orbital parameters for mission: {} (noradCatId={})", mission.getObjectName(), mission.getNoradCatId());
+                    continue;
+                }
+
+                OrbitalParameters params = paramsOpt.get();
+                log.info("📡 {} - NoradCatId: {}, Inclination: {}, MeanMotion: {}, Eccentricity: {}", 
+                    mission.getObjectName(), 
+                    mission.getNoradCatId(),
+                    params.getInclination(),
+                    params.getMeanMotion(),
+                    params.getEccentricity());
+
+                Optional<SatellitePositionDTO> positionOpt = buildCurrentSatellitePosition(
+                    mission,
+                    params,
+                    currentDate
+                );
+
+                if (positionOpt.isPresent()) {
+                    SatellitePositionDTO pos = positionOpt.get();
+                    log.info("✅ {} -> Lat: {:.2f}, Lon: {:.2f}, Alt: {:.0f}km", 
+                        mission.getObjectName(), 
+                        pos.latitudeDeg(), 
+                        pos.longitudeDeg(), 
+                        pos.altitudeKm());
+                    positions.add(pos);
+                } else {
+                    log.warn("⚠️ Failed to calculate position for {}", mission.getObjectName());
+                }
+            }
+
+            log.info("✅ Loaded {} space mission positions", positions.size());
+            return positions;
+
+        } catch (Exception e) {
+            log.error("❌ Error loading space mission positions: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    private long buildSyntheticMissionId(String objectId) {
+        return 9_000_000L + Integer.toUnsignedLong(objectId.hashCode());
     }
 
     private Optional<SatellitePositionDTO> buildCurrentSatellitePosition(Satellite satellite,

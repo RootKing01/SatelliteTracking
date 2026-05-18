@@ -21,6 +21,7 @@ export type SatelliteGroupKey =
   | 'education'
   | 'engineering'
   | 'military'
+  | 'spaceMissions'
 
 export interface SatelliteGroupSource {
   key: SatelliteGroupKey

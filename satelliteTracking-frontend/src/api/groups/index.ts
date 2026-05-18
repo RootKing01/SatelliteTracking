@@ -17,6 +17,7 @@ import { scienceGroup } from './science'
 import { spireGroup } from './spire'
 import { starlinkGroup } from './starlink'
 import { stationsGroup } from './stations'
+import { spaceMissionsGroup } from './spaceMissions'
 import { weatherGroup } from './weather'
 
 export const satelliteGroupSources = [
@@ -40,4 +41,5 @@ export const satelliteGroupSources = [
   educationGroup,
   engineeringGroup,
   militaryGroup,
+  spaceMissionsGroup,
 ] as const
