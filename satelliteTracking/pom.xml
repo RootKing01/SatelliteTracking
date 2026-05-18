@@ -113,11 +113,11 @@
 			<version>2025b.26</version>
 		</dependency>
 
-	<!-- Orekit per calcoli orbitali e propagazione SGP4 -->
+	<!-- Orekit per calcoli orbitali e propagazione con perturbazioni avanzate (drag + gravity J2) -->
 	<dependency>
 		<groupId>org.orekit</groupId>
 		<artifactId>orekit</artifactId>
-		<version>12.1</version>
+		<version>12.2</version>
 	</dependency>
 
 	<!-- Hipparchus per calcoli matematici (richiesto da Orekit) -->

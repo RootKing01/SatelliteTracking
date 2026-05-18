@@ -210,7 +210,7 @@ public class SpaceTrackService {
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                Thread.currentThread().interrupt(); 
             }
         }
 

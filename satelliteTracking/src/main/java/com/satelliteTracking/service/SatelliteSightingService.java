@@ -126,6 +126,9 @@ public class SatelliteSightingService {
         if (obs.visibility() != null && obs.visibility().equalsIgnoreCase("poor")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Errore, condizioni di visibilità scarse");
         }
+        if (obs.observingCondition() != null && obs.observingCondition().equalsIgnoreCase("daylight")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Errore, satellite non confermabile in pieno giorno");
+        }
         if (obs.observingCondition() != null && obs.observingCondition().equalsIgnoreCase("unknown")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Errore, condizioni di osservazione non determinabili");
         }

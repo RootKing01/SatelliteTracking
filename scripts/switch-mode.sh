@@ -27,13 +27,27 @@ EOF
 }
 
 do_down_all() {
-  echo "Stopping dev profile (if running)..."
-  sudo docker compose --profile dev down --remove-orphans || true
-  echo "Stopping prod profile (if running)..."
-  sudo docker compose --profile prod down --remove-orphans || true
-  echo "Stopping proxy profile (if running)..."
+  ./scripts/down.sh
+}
+
+ensure_docker_ready() {
+  sudo systemctl start docker.socket || true
+  sudo systemctl start docker || true
+}
+
+clear_stale_proxy_port() {
+  echo "Clearing any stale port 80 listeners..."
+  sudo pkill -f docker-proxy || true
+  sudo pkill -f containerd-proxy || true
+  if command -v fuser >/dev/null 2>&1; then
+    sudo fuser -k 80/tcp || true
+  fi
+}
+
+stop_proxy_profile() {
+  echo "Stopping proxy profile..."
   sudo docker compose --profile proxy down --remove-orphans || true
-  echo "All profiles stopped."
+  clear_stale_proxy_port
 }
 
 pick_profile() {
@@ -157,12 +171,13 @@ fi
 echo "Stopping opposite profile: $opposite"
 sudo docker compose --profile "$opposite" down --remove-orphans || true
 
-if [[ "$scope" == "local" ]]; then
-  echo "Stopping proxy profile for local mode..."
-  sudo docker compose --profile proxy down --remove-orphans || true
+if [[ "$scope" == "local" || "$scope" == "remote" ]]; then
+  stop_proxy_profile
 fi
 
 echo "Starting profile: $profile ($scope)"
+ensure_docker_ready
+do_down_all
 if [[ "$profile" == "dev" && "$scope" == "remote" && -n "${protocol:-}" ]]; then
   if [[ "$protocol" == "https" ]]; then
     export "$bind_key=$bind_val" VITE_DEV_USE_HTTPS=true

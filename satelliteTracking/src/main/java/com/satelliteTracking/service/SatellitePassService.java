@@ -9,7 +9,7 @@ import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
-import com.satelliteTracking.util.TLEConverter;
+import com.satelliteTracking.util.OrbitalPropagationUtils;
 import org.hipparchus.util.FastMath;
 import org.orekit.bodies.CelestialBodyFactory;
 import org.orekit.bodies.GeodeticPoint;
@@ -23,8 +23,7 @@ import org.orekit.propagation.events.EventSlopeFilter;
 import org.orekit.propagation.events.EventsLogger;
 import org.orekit.propagation.events.FilterType;
 import org.orekit.propagation.events.handlers.ContinueOnEvent;
-import org.orekit.propagation.analytical.tle.TLE;
-import org.orekit.propagation.analytical.tle.TLEPropagator;
+import org.orekit.propagation.Propagator;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
@@ -174,16 +173,14 @@ public class SatellitePassService {
             return passes;
         }
 
-        // Converti parametri orbitali in TLE
-        String[] tleLines = TLEConverter.buildTLE(
-            satellite.getNoradCatId(),
-            satellite.getObjectName(),
-            latestParams
-        );
-
         try {
-            TLE tle = new TLE(tleLines[1], tleLines[2]);
-            TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
+            var propagator = OrbitalPropagationUtils.buildOptimalPropagator(latestParams)
+                .orElse(null);
+
+            if (propagator == null) {
+                log.warn("Satellite {} skipped because orbital parameters are not sufficient for propagation", satellite.getObjectName());
+                return passes;
+            }
 
             Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
             OneAxisEllipsoid earth = new OneAxisEllipsoid(
@@ -362,7 +359,7 @@ public class SatellitePassService {
         return passes;
     }
 
-    private PassSample sampleAt(AbsoluteDate date, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+    private PassSample sampleAt(AbsoluteDate date, Propagator propagator, Frame itrf, TopocentricFrame topoFrame) {
         var pv = propagator.getPVCoordinates(date, itrf);
         var topoCoordinates = topoFrame.getTrackingCoordinates(pv.getPosition(), itrf, date);
 
@@ -375,11 +372,11 @@ public class SatellitePassService {
         );
     }
 
-    private double sampleElevationDegrees(TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame, AbsoluteDate date) {
+    private double sampleElevationDegrees(Propagator propagator, Frame itrf, TopocentricFrame topoFrame, AbsoluteDate date) {
         return sampleAt(date, propagator, itrf, topoFrame).elevation;
     }
 
-    private AbsoluteDate refineRiseOrSet(AbsoluteDate lower, AbsoluteDate upper, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+    private AbsoluteDate refineRiseOrSet(AbsoluteDate lower, AbsoluteDate upper, Propagator propagator, Frame itrf, TopocentricFrame topoFrame) {
         if (lower == null && upper == null) {
             return null;
         }
@@ -410,7 +407,7 @@ public class SatellitePassService {
         }
     }
 
-    private AbsoluteDate refinePeakTime(AbsoluteDate lower, AbsoluteDate upper, TLEPropagator propagator, Frame itrf, TopocentricFrame topoFrame) {
+    private AbsoluteDate refinePeakTime(AbsoluteDate lower, AbsoluteDate upper, Propagator propagator, Frame itrf, TopocentricFrame topoFrame) {
         if (lower == null && upper == null) {
             return null;
         }
@@ -627,14 +624,13 @@ public class SatellitePassService {
             return Optional.empty();
         }
 
-        String[] tleLines = TLEConverter.buildTLE(
-            satellite.getNoradCatId(),
-            satellite.getObjectName(),
-            latestParams
-        );
+        var propagator = OrbitalPropagationUtils.buildOptimalPropagator(latestParams)
+            .orElse(null);
 
-        TLE tle = new TLE(tleLines[1], tleLines[2]);
-        TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
+        if (propagator == null) {
+            log.warn("Skipping satellite {} because orbital parameters are not sufficient for current position calculation", satellite.getObjectName());
+            return Optional.empty();
+        }
 
         Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
         OneAxisEllipsoid earth = new OneAxisEllipsoid(

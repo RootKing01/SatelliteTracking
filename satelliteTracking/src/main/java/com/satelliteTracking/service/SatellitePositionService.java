@@ -3,6 +3,7 @@ package com.satelliteTracking.service;
 import com.satelliteTracking.dto.SatellitePositionDTO;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
+import com.satelliteTracking.util.OrbitalPropagationUtils;
 import org.hipparchus.geometry.euclidean.threed.Vector3D;
 import org.hipparchus.util.FastMath;
 import org.orekit.bodies.GeodeticPoint;
@@ -10,8 +11,6 @@ import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.frames.Frame;
 import org.orekit.frames.FramesFactory;
 import org.orekit.frames.TopocentricFrame;
-import org.orekit.propagation.analytical.tle.TLE;
-import org.orekit.propagation.analytical.tle.TLEPropagator;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
@@ -41,13 +40,8 @@ public class SatellitePositionService {
             double observerLon,
             double observerAlt
     ) {
-        String[] tleLines = com.satelliteTracking.util.TLEConverter.buildTLE(
-                satellite.getNoradCatId(),
-                satellite.getObjectName(),
-                params
-        );
-        TLE tle = new TLE(tleLines[1], tleLines[2]);
-        TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle);
+        var propagator = OrbitalPropagationUtils.buildOptimalPropagator(params)
+            .orElseThrow(() -> new IllegalArgumentException("Parametri orbitali non validi per il calcolo della posizione"));
         
         Frame itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
         OneAxisEllipsoid earth = new OneAxisEllipsoid(
@@ -85,8 +79,8 @@ public class SatellitePositionService {
         if (directionDeg < 0) directionDeg += 360.0;
         
         // Mean motion e periodo orbitale dal TLE
-        double meanMotion = tle.getMeanMotion() * 60.0; // rev/day -> rev/min
-        double orbitalPeriodMinutes = 1440.0 / (tle.getMeanMotion()); // minuti
+        double meanMotion = params.getMeanMotion() * 60.0; // rev/day -> rev/min
+        double orbitalPeriodMinutes = 1440.0 / (params.getMeanMotion()); // minuti
         double orbitalPeriodHours = orbitalPeriodMinutes / 60.0;
         
         // Altitudine del satellite
