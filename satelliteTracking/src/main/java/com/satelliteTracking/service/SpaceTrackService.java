@@ -64,38 +64,68 @@ public class SpaceTrackService {
     }
 
     private synchronized void performLogin() {
+        loginInProgress = true;
         try {
-            log.info("🔐 Tentativo login Space-Track...");
+            // 🔁 RETRY con backoff esponenziale (1s, 2s, 4s)
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    log.info("🔐 Tentativo login Space-Track {}/3...", attempt);
 
-            List<String> cookies = webClient.post()
-                    .uri("/ajaxauth/login")
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .bodyValue("identity=" + username + "&password=" + password)
-                    .exchangeToMono(resp -> {
-                        // Prendi i cookie dalle header
-                        List<String> setCookie = resp.headers().header(HttpHeaders.SET_COOKIE);
-                        // Consuma il body ma ritorna i cookie
-                        return resp.bodyToMono(String.class)
-                                .defaultIfEmpty("")
-                                .map(body -> setCookie);
-                    })
-                    .block(Duration.ofSeconds(30));
+                    List<String> cookies = webClient.post()
+                            .uri("/ajaxauth/login")
+                            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                            .bodyValue("identity=" + username + "&password=" + password)
+                            .exchangeToMono(resp -> {
+                                // Prendi i cookie dalle header
+                                List<String> setCookie = resp.headers().header(HttpHeaders.SET_COOKIE);
+                                // Consuma il body ma ritorna i cookie
+                                return resp.bodyToMono(String.class)
+                                        .defaultIfEmpty("")
+                                        .map(body -> setCookie);
+                            })
+                            .block(Duration.ofSeconds(60)); // Increased from 30s to 60s
 
-            if (cookies != null && !cookies.isEmpty()) {
-                sessionCookie = cookies.get(0).split(";")[0];
-                sessionCreatedAt = LocalDateTime.now();
-                log.info("✅ Space-Track login SUCCESSO");
-                log.debug("🔑 Cookie: {}", sessionCookie);
-            } else {
-                log.error("❌ Login fallito - nessun cookie ricevuto");
-                sessionCookie = null;
-                sessionCreatedAt = null;
+                    if (cookies != null && !cookies.isEmpty()) {
+                        sessionCookie = cookies.get(0).split(";")[0];
+                        sessionCreatedAt = LocalDateTime.now();
+                        log.info("✅ Space-Track login SUCCESSO (tentativo {}/3)", attempt);
+                        log.debug("🔑 Cookie: {}", sessionCookie);
+                        return; // Login succeeded, exit retry loop
+                    } else {
+                        log.warn("⚠️ Login tentativo {}/3 fallito - nessun cookie ricevuto", attempt);
+                        if (attempt == 3) {
+                            log.error("❌ Login definitivamente fallito dopo 3 tentativi");
+                            sessionCookie = null;
+                            sessionCreatedAt = null;
+                        }
+                    }
+
+                } catch (Exception e) {
+                    log.warn("⚠️ Login tentativo {}/3 fallito: {}", attempt, e.getMessage());
+
+                    if (attempt == 3) {
+                        log.error("❌ Login definitivamente fallito dopo 3 tentativi: {}", e.getMessage(), e);
+                        sessionCookie = null;
+                        sessionCreatedAt = null;
+                        return;
+                    }
+
+                    // Backoff esponenziale: 1s, 2s, 4s
+                    try {
+                        long backoffMs = 1000L * (long) Math.pow(2, attempt - 1);
+                        log.info("⏳ Attesa {} ms prima del retry...", backoffMs);
+                        Thread.sleep(backoffMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.error("❌ Retry interrotto: {}", ie.getMessage());
+                        sessionCookie = null;
+                        sessionCreatedAt = null;
+                        return;
+                    }
+                }
             }
-
-        } catch (Exception e) {
-            log.error("❌ Errore login: {}", e.getMessage(), e);
-            sessionCookie = null;
-            sessionCreatedAt = null;
+        } finally {
+            loginInProgress = false;
         }
     }
 
