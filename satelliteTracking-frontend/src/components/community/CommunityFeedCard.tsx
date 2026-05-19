@@ -7,6 +7,7 @@ interface CommunityFeedCardProps {
   satelliteNames: Record<string, string>
   onOpenThread: (targetType: string, targetId: string) => void
   onToggleLike: (threadId: number) => void
+  onFocusSatellite: (satelliteId: number) => void
   featured?: boolean
 }
 
@@ -17,6 +18,7 @@ export function CommunityFeedCard({
   satelliteNames,
   onOpenThread,
   onToggleLike,
+  onFocusSatellite,
   featured = false,
 }: CommunityFeedCardProps) {
   return (
@@ -57,6 +59,20 @@ export function CommunityFeedCard({
                 >
                   Apri thread
                 </button>
+                {item.targetType === 'SATELLITE' ? (
+                  <button
+                    type="button"
+                    className="community-focus-button"
+                    onClick={() => {
+                      const parsedId = Number(item.targetId)
+                      if (Number.isFinite(parsedId)) {
+                        onFocusSatellite(parsedId)
+                      }
+                    }}
+                  >
+                    Focus sat
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={item.likedByMe ? 'community-like-active' : ''}

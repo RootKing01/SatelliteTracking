@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { updateMissingSatelliteNames, fetchAndMapSatelliteNames } from '../../helpers/satelliteNameHelper'
 import { CommunityThreadCard } from '../community/CommunityThreadCard'
 import { CommunityCompose } from '../community/CommunityCompose'
@@ -28,12 +28,14 @@ type CommunityPanelProps = {
   authUser: AuthUser | null
   selectedSatelliteId: number | null
   selectedSatelliteName: string | null
+  onFocusSatellite: (satelliteId: number) => void
 }
 
 export function CommunityPanel({
   authUser,
   selectedSatelliteId,
   selectedSatelliteName,
+  onFocusSatellite,
 }: CommunityPanelProps) {
   const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
   // satelliteCatalog non più usato
@@ -87,6 +89,11 @@ export function CommunityPanel({
   const [sessionVerified, setSessionVerified] = useState(false)
   const [communitySessionValid, setCommunitySessionValid] = useState(false)
   const [replyToComment, setReplyToComment] = useState<CommunityComment | null>(null)
+  const [activeThreadOpen, setActiveThreadOpen] = useState(true)
+  const [featuredOpen, setFeaturedOpen] = useState(false)
+  const [allOpen, setAllOpen] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const activeThreadRef = useRef<HTMLDivElement | null>(null)
 
   const activeTarget = useMemo(() => {
     if (!selectedSatelliteId) {
@@ -249,6 +256,7 @@ export function CommunityPanel({
       const payload = await ensureCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
+      setActiveThreadOpen(true)
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorizedSession()
@@ -268,6 +276,22 @@ export function CommunityPanel({
     }
     void loadThread(activeTarget.targetType, activeTarget.targetId)
   }, [activeTarget?.targetId, activeTarget?.targetType, authUser?.id])
+
+  useEffect(() => {
+    if (!activeThread) {
+      return
+    }
+
+    setActiveThreadOpen(true)
+    setTimeout(() => {
+      activeThreadRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }, [activeThread?.id])
+
+  const handleOpenThread = async (targetType: string, targetId: string) => {
+    await loadThread(targetType, targetId)
+    setActiveThreadOpen(true)
+  }
 
   const applyLikeUpdateToCollections = (threadId: number, likesCount: number, likedByMe: boolean) => {
     const updater = (items: CommunityFeedItem[]) =>
@@ -476,59 +500,107 @@ export function CommunityPanel({
 
 
       {/* Thread attivo in cima, ora come componente */}
-      <CommunityThreadCard
-        activeThread={activeThread}
-        activeTarget={activeTarget}
-        selectedSatelliteName={selectedSatelliteName}
-        comments={comments}
-        commentsLoading={commentsLoading}
-        commentsError={commentsError}
-        authUser={authUser}
-        replyToComment={replyToComment}
-        editingCommentId={editingCommentId}
-        editingBody={editingBody}
-        postingComment={postingComment}
-        newCommentBody={newCommentBody}
-        setReplyToComment={setReplyToComment}
-        setEditingCommentId={setEditingCommentId}
-        setEditingBody={setEditingBody}
-        setNewCommentBody={setNewCommentBody}
-        handleToggleLike={handleToggleLike}
-        handleSubmitComment={handleSubmitComment}
-        handleSaveEdit={handleSaveEdit}
-        handleDeleteComment={handleDeleteComment}
-        handleReportComment={handleReportComment}
-        ensureThread={ensureThread}
-      />
+      <div className="community-section" ref={activeThreadRef}>
+        <button
+          type="button"
+          className="community-section-toggle"
+          onClick={() => setActiveThreadOpen((prev) => !prev)}
+        >
+          {activeThread
+            ? `Thread attivo: ${activeThread.title} ${activeThreadOpen ? '▾' : '▸'}`
+            : `Thread attivo ${activeThreadOpen ? '▾' : '▸'}`}
+        </button>
+        {activeThreadOpen ? (
+          <CommunityThreadCard
+            activeThread={activeThread}
+            activeTarget={activeTarget}
+            selectedSatelliteName={selectedSatelliteName}
+            comments={comments}
+            commentsLoading={commentsLoading}
+            commentsError={commentsError}
+            authUser={authUser}
+            replyToComment={replyToComment}
+            editingCommentId={editingCommentId}
+            editingBody={editingBody}
+            postingComment={postingComment}
+            newCommentBody={newCommentBody}
+            setReplyToComment={setReplyToComment}
+            setEditingCommentId={setEditingCommentId}
+            setEditingBody={setEditingBody}
+            setNewCommentBody={setNewCommentBody}
+            handleToggleLike={handleToggleLike}
+            handleSubmitComment={handleSubmitComment}
+            handleSaveEdit={handleSaveEdit}
+            handleDeleteComment={handleDeleteComment}
+            handleReportComment={handleReportComment}
+            ensureThread={ensureThread}
+            onFocusSatellite={onFocusSatellite}
+          />
+        ) : null}
+      </div>
 
-      <CommunityCompose
-        newThreadTitle={newThreadTitle}
-        setNewThreadTitle={setNewThreadTitle}
-        newThreadBody={newThreadBody}
-        setNewThreadBody={setNewThreadBody}
-        postingThread={postingThread}
-        handleCreateGeneralThread={handleCreateGeneralThread}
-      />
+      <div className="community-section">
+        <button
+          type="button"
+          className="community-section-toggle"
+          onClick={() => setComposeOpen((prev) => !prev)}
+        >
+          Nuovo thread generale {composeOpen ? '▾' : '▸'}
+        </button>
+        {composeOpen ? (
+          <CommunityCompose
+            newThreadTitle={newThreadTitle}
+            setNewThreadTitle={setNewThreadTitle}
+            newThreadBody={newThreadBody}
+            setNewThreadBody={setNewThreadBody}
+            postingThread={postingThread}
+            handleCreateGeneralThread={handleCreateGeneralThread}
+          />
+        ) : null}
+      </div>
 
+      <div className="community-section">
+        <button
+          type="button"
+          className="community-section-toggle"
+          onClick={() => setFeaturedOpen((prev) => !prev)}
+        >
+          Thread in evidenza ({featuredThreads.length}) {featuredOpen ? '▾' : '▸'}
+        </button>
+        {featuredOpen ? (
+          <CommunityFeedCard
+            title="Thread in evidenza"
+            threadsError={threadsError}
+            items={featuredThreads}
+            satelliteNames={satelliteNames}
+            onOpenThread={handleOpenThread}
+            onToggleLike={handleToggleLike}
+            onFocusSatellite={onFocusSatellite}
+            featured
+          />
+        ) : null}
+      </div>
 
-      <CommunityFeedCard
-        title="Thread in evidenza"
-        threadsError={threadsError}
-        items={featuredThreads}
-        satelliteNames={satelliteNames}
-        onOpenThread={loadThread}
-        onToggleLike={handleToggleLike}
-        featured
-      />
-
-      <CommunityFeedCard
-        title="Tutti i thread creati"
-        threadsError={threadsError}
-        items={allThreads}
-        satelliteNames={satelliteNames}
-        onOpenThread={loadThread}
-        onToggleLike={handleToggleLike}
-      />
+      <div className="community-section">
+        <button
+          type="button"
+          className="community-section-toggle"
+          onClick={() => setAllOpen((prev) => !prev)}
+        >
+          Tutti i thread ({allThreads.length}) {allOpen ? '▾' : '▸'}
+        </button>
+        {allOpen ? (
+          <CommunityFeedCard
+            title="Tutti i thread creati"
+            threadsError={threadsError}
+            items={allThreads}
+            satelliteNames={satelliteNames}
+            onOpenThread={handleOpenThread}
+            onToggleLike={handleToggleLike}
+            onFocusSatellite={onFocusSatellite}
+          />
+        ) : null}
+      </div>
     </section>
   )
 }

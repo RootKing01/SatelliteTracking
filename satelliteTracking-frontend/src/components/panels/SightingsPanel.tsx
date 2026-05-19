@@ -6,6 +6,7 @@ type SightingsPanelProps = {
   sightingsError: string
   sightingsLoading: boolean
   mySightings: SatelliteSighting[]
+  onFocusSightingSatellite: (satelliteId: number) => void
 }
 
 export function SightingsPanel({
@@ -13,6 +14,7 @@ export function SightingsPanel({
   sightingsError,
   sightingsLoading,
   mySightings,
+  onFocusSightingSatellite,
 }: SightingsPanelProps) {
   return (
     <section className="collapsible side-drawer" aria-label="Avvistamenti utente">
@@ -28,23 +30,35 @@ export function SightingsPanel({
         <p className="updated-at">Nessun avvistamento registrato.</p>
       ) : (
         <div className="sighting-list">
-          {mySightings.map((item) => (
-            <article key={item.id} className="sighting-item">
-              <strong>{item.satelliteName}</strong>
-              <small>NORAD {item.noradCatId}</small>
-              <small>{new Date(item.sightedAt).toLocaleString('it-IT')}</small>
-              <small>{item.observerLocationName}</small>
-              <small className={item.valid ? 'sighting-valid' : 'sighting-invalid'}>
-                {item.valid ? 'Valido' : 'Non valido'}
-              </small>
-              {item.estimatedMagnitude !== null ? (
-                <small>Magnitudine stimata: {item.estimatedMagnitude.toFixed(1)}</small>
-              ) : null}
-              {item.maxElevationDeg !== null ? (
-                <small>Elevazione max: {item.maxElevationDeg.toFixed(1)}deg</small>
-              ) : null}
-              <small>{item.validationMessage}</small>
-            </article>
+          {mySightings.map((item, index) => (
+            <details key={item.id} className="sighting-item" open={index === 0}>
+              <summary className="sighting-item-summary">
+                <strong>{item.satelliteName}</strong>
+                <small>{new Date(item.sightedAt).toLocaleString('it-IT')}</small>
+                <small className={item.valid ? 'sighting-valid' : 'sighting-invalid'}>
+                  {item.valid ? 'Valido' : 'Non valido'}
+                </small>
+              </summary>
+
+              <div className="sighting-item-body">
+                <small>NORAD {item.noradCatId}</small>
+                <small>{item.observerLocationName}</small>
+                {item.estimatedMagnitude !== null ? (
+                  <small>Magnitudine stimata: {item.estimatedMagnitude.toFixed(1)}</small>
+                ) : null}
+                {item.maxElevationDeg !== null ? (
+                  <small>Elevazione max: {item.maxElevationDeg.toFixed(1)}deg</small>
+                ) : null}
+                <small>{item.validationMessage}</small>
+                <button
+                  type="button"
+                  className="sighting-focus-button"
+                  onClick={() => onFocusSightingSatellite(item.satelliteId)}
+                >
+                  Focus satellite
+                </button>
+              </div>
+            </details>
           ))}
         </div>
       )}

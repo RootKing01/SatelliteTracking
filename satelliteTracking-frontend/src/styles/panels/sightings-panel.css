@@ -8,9 +8,61 @@
   border: 1px solid rgba(96, 250, 255, 0.2);
   border-radius: 8px;
   background: rgba(10, 27, 51, 0.7);
-  padding: 8px;
+  padding: 0;
   display: grid;
   gap: 2px;
+  overflow: hidden;
+}
+
+.sighting-item-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.sighting-item-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sighting-item[open] .sighting-item-summary {
+  background: rgba(7, 19, 36, 0.7);
+  border-bottom-color: rgba(96, 250, 255, 0.18);
+}
+
+.sighting-item-body {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px 8px;
+  animation: sighting-open 180ms ease;
+}
+
+@keyframes sighting-open {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sighting-focus-button {
+  margin-top: 6px;
+  width: fit-content;
+  border: 1px solid rgba(96, 250, 255, 0.38);
+  border-radius: 7px;
+  background: rgba(8, 21, 39, 0.9);
+  color: #d9f6ff;
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  cursor: pointer;
 }
 
 .sighting-item strong {

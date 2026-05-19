@@ -778,6 +778,38 @@ function App() {
       })
   }
 
+  const handleFocusBySatelliteId = useCallback(
+    (satelliteId: number) => {
+      const entityId = liveEntityIdBySatelliteId.get(satelliteId)
+      const selected = entityId ? satelliteLookupByEntityId.get(entityId) : undefined
+
+      if (entityId && selected) {
+        handlePickEntityId(entityId)
+        globeRef.current?.focusOnSatellite(
+          selected.satellite.longitudeDeg,
+          selected.satellite.latitudeDeg,
+          selected.satellite.altitudeKm,
+          entityId,
+        )
+        return
+      }
+
+      void fetchSatellitePositionById(satelliteId)
+        .then((fallbackPosition) => {
+          globeRef.current?.focusOnSatellite(
+            fallbackPosition.longitudeDeg,
+            fallbackPosition.latitudeDeg,
+            fallbackPosition.altitudeKm,
+            entityId,
+          )
+        })
+        .catch(() => {
+          setVisibilityError('Impossibile fare focus: satellite non disponibile nel feed live.')
+        })
+    },
+    [handlePickEntityId, liveEntityIdBySatelliteId, satelliteLookupByEntityId],
+  )
+
   useEffect(() => {
     if (!authUser) {
       setGroupPositions({})
@@ -1187,6 +1219,7 @@ function App() {
                               sightingsError={sightingsError}
                               sightingsLoading={sightingsLoading}
                               mySightings={mySightings}
+                              onFocusSightingSatellite={handleFocusBySatelliteId}
                             />
                           </div>
                         ) : null}
@@ -1197,6 +1230,7 @@ function App() {
                               authUser={authUser}
                               selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
                               selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
+                              onFocusSatellite={handleFocusBySatelliteId}
                             />
                           </div>
                         ) : null}
@@ -1234,6 +1268,15 @@ function App() {
           >
             {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
           </button>
+
+          <div className="quick-zoom quick-zoom-left" style={{ left: focusGlobeMode ? 10 : panelWidth + 20 }}>
+            <button type="button" onClick={() => globeRef.current?.zoomIn()} aria-label="Zoom rapido in">
+              +
+            </button>
+            <button type="button" onClick={() => globeRef.current?.zoomOut()} aria-label="Zoom rapido out">
+              -
+            </button>
+          </div>
           {selectedSatellite ? (
             <aside className="viewer-hud">
             <section className="details-card hud-details">

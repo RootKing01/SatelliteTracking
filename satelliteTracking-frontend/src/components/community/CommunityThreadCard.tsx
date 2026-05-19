@@ -24,6 +24,7 @@ interface CommunityThreadCardProps {
   handleDeleteComment: (commentId: number) => void
   handleReportComment: (commentId: number) => void
   ensureThread: (targetType: string, targetId: string) => void
+  onFocusSatellite: (satelliteId: number) => void
 }
 
 export function CommunityThreadCard({
@@ -49,6 +50,7 @@ export function CommunityThreadCard({
   handleDeleteComment,
   handleReportComment,
   ensureThread,
+  onFocusSatellite,
 }: CommunityThreadCardProps) {
   return (
     <div className="community-thread-card">
@@ -75,6 +77,20 @@ export function CommunityThreadCard({
           >
             {activeThread.likedByMe ? 'Unlike' : 'Like'} ({activeThread.likesCount})
           </button>
+          {activeThread.targetType === 'SATELLITE' ? (
+            <button
+              type="button"
+              className="community-focus-button"
+              onClick={() => {
+                const parsedId = Number(activeThread.targetId)
+                if (Number.isFinite(parsedId)) {
+                  onFocusSatellite(parsedId)
+                }
+              }}
+            >
+              Focus satellite
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -146,7 +162,7 @@ export function CommunityThreadCard({
                       <div className="community-reply-indicator" style={{marginBottom: 4}}>
                         Risposta a <strong>{parent.authorUsername}</strong>
                         <span style={{color:'#9bbad6', fontSize:'0.75em', marginLeft:4}}>
-                          {parent.body.length > 60 ? parent.body.slice(0, 57) + '' : parent.body}
+                          {parent.body.length > 60 ? parent.body.slice(0, 57) + '...' : parent.body}
                         </span>
                       </div>
                     )}

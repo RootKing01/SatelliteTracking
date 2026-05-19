@@ -38,6 +38,30 @@
   gap: 8px;
 }
 
+.community-section {
+  display: grid;
+  gap: 6px;
+}
+
+.community-section-toggle {
+  border: 1px solid rgba(96, 250, 255, 0.32);
+  border-radius: 9px;
+  background: rgba(8, 20, 37, 0.8);
+  color: #cceeff;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 220ms ease;
+}
+
+.community-section-toggle:hover {
+  border-color: rgba(119, 255, 250, 0.68);
+  background: rgba(10, 28, 50, 0.86);
+  box-shadow: 0 0 12px rgba(99, 246, 255, 0.16);
+}
+
 .community-feed-card,
 .community-thread-card {
   border: 1px solid rgba(96, 250, 255, 0.24);
@@ -46,6 +70,18 @@
   padding: 8px;
   display: grid;
   gap: 8px;
+  animation: community-fade-in 180ms ease;
+}
+
+@keyframes community-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .community-feed-card strong,
@@ -146,6 +182,11 @@
   padding: 5px 8px;
   font-size: 0.74rem;
   cursor: pointer;
+}
+
+.community-focus-button {
+  border-color: rgba(98, 219, 255, 0.62) !important;
+  color: #e7fbff !important;
 }
 
 .community-like-active {
