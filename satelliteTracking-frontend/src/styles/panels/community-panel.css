@@ -93,8 +93,8 @@
 .community-feed-list,
 .community-comment-list {
   display: grid;
-  gap: 6px;
-  max-height: 220px;
+  gap: 10px;
+  max-height: 320px;
   overflow: auto;
   scrollbar-width: none;
 }
@@ -108,18 +108,18 @@
 .community-comment-item {
   border: 1px solid rgba(96, 250, 255, 0.18);
   border-radius: 8px;
-  background: rgba(7, 17, 31, 0.78);
-  padding: 7px;
+  background: rgba(7, 17, 31, 0.88);
+  padding: 10px;
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 
 .community-feed-item p,
 .community-comment-item p {
   margin: 0;
-  color: #c7deef;
-  font-size: 0.78rem;
-  line-height: 1.32;
+  color: #cde9f6;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .community-comment-item.is-deleted {
@@ -129,7 +129,7 @@
 .community-comment-head {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   align-items: baseline;
 }
 
@@ -137,8 +137,8 @@
 .community-feed-item small,
 .community-feed-card small,
 .community-thread-card small {
-  color: #9bbad6;
-  font-size: 0.72rem;
+  color: #a6c6d8;
+  font-size: 0.78rem;
 }
 
 .community-compose,

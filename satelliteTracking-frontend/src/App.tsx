@@ -154,6 +154,37 @@ function App() {
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
+  // Measured height of the floating music widget so floating controls can follow it
+  const [musicWidgetHeight, setMusicWidgetHeight] = useState(0)
+
+  useEffect(() => {
+    let ro: ResizeObserver | null = null
+    const update = () => {
+      const el = document.querySelector('.music-float-player') as HTMLElement | null
+      if (el) setMusicWidgetHeight(el.offsetHeight)
+      else setMusicWidgetHeight(0)
+    }
+
+    update()
+
+    const el = document.querySelector('.music-float-player') as HTMLElement | null
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => update())
+      ro.observe(el)
+    }
+
+    window.addEventListener('resize', update)
+    const mo = new MutationObserver(update)
+    const root = document.body
+    mo.observe(root, { attributes: true, childList: true, subtree: true })
+
+    return () => {
+      if (ro && el) ro.unobserve(el)
+      window.removeEventListener('resize', update)
+      mo.disconnect()
+    }
+  }, [])
+
   const groupColorMap = useMemo(
     () =>
       Object.fromEntries(
@@ -1253,12 +1284,13 @@ function App() {
         <section className="viewer-section">
           <MusicFloatingPlayer floatingStyle={{ left: focusGlobeMode ? 10 : panelWidth + 20, top: 58 }} />
 
-          <CompassPanel
-            headingDeg={compass.headingDeg}
-            hideOnMobile={!selectedSatellite}
-            collapsed={compassCollapsed}
-            onToggleCollapsed={() => setCompassCollapsed((prev) => !prev)}
-          />
+          {selectedSatellite ? (
+            <CompassPanel
+              headingDeg={compass.headingDeg}
+              collapsed={compassCollapsed}
+              onToggleCollapsed={() => setCompassCollapsed((prev) => !prev)}
+            />
+          ) : null}
 
           <button
             type="button"
@@ -1269,7 +1301,13 @@ function App() {
             {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
           </button>
 
-          <div className="quick-zoom quick-zoom-left" style={{ left: focusGlobeMode ? 10 : panelWidth + 20 }}>
+          <div
+            className="quick-zoom quick-zoom-left"
+            style={{
+              left: focusGlobeMode ? 10 : panelWidth + 20,
+              top: musicWidgetHeight > 0 ? musicWidgetHeight + 70 : undefined,
+            }}
+          >
             <button type="button" onClick={() => globeRef.current?.zoomIn()} aria-label="Zoom rapido in">
               +
             </button>

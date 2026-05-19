@@ -68,12 +68,7 @@ public class CommunityService {
 
         CommunityThread thread = communityThreadRepository
             .findByTargetTypeAndTargetId(targetType, targetId)
-            .orElseGet(() -> {
-                if (user == null) {
-                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread non trovato");
-                }
-                return getOrCreateThread(targetType, targetId, user, buildDefaultThreadTitle(targetType, targetId));
-            });
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread non trovato"));
         List<CommunityCommentDTO> comments = communityCommentRepository
             .findByThreadIdOrderByCreatedAtAsc(thread.getId())
             .stream()
@@ -85,7 +80,22 @@ public class CommunityService {
 
     @Transactional
     public CommunityThreadWithCommentsDTO ensureThreadWithComments(String targetTypeRaw, String targetIdRaw) {
-        return getThreadWithComments(targetTypeRaw, targetIdRaw);
+        // Ensure (create if missing) requires authentication
+        AppUser user = authService.requireAuthenticatedUser();
+        CommunityTargetType targetType = parseTargetType(targetTypeRaw);
+        String targetId = normalizeRequired(targetIdRaw, "targetId", 128);
+
+        CommunityThread thread = communityThreadRepository
+            .findByTargetTypeAndTargetId(targetType, targetId)
+            .orElseGet(() -> getOrCreateThread(targetType, targetId, user, buildDefaultThreadTitle(targetType, targetId)));
+
+        List<CommunityCommentDTO> comments = communityCommentRepository
+            .findByThreadIdOrderByCreatedAtAsc(thread.getId())
+            .stream()
+            .map(this::toCommentDTO)
+            .toList();
+
+        return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments);
     }
 
     @Transactional
@@ -247,12 +257,19 @@ public class CommunityService {
         return communityThreadRepository
             .findByStatusOrderByLastCommentAtDesc("ACTIVE", PageRequest.of(0, 100))
             .stream()
-            .sorted(
-                Comparator
-                    .comparingLong((CommunityThread thread) -> communityThreadLikeRepository.countByThreadId(thread.getId()))
-                    .reversed()
-                    .thenComparing(CommunityThread::getLastCommentAt, Comparator.nullsLast(Comparator.reverseOrder()))
-            )
+            .sorted((a, b) -> {
+                long aLikes = communityThreadLikeRepository.countByThreadId(a.getId());
+                long bLikes = communityThreadLikeRepository.countByThreadId(b.getId());
+                long aScore = aLikes + a.getCommentCount();
+                long bScore = bLikes + b.getCommentCount();
+                if (aScore != bScore) return Long.compare(bScore, aScore);
+                java.time.LocalDateTime aLast = a.getLastCommentAt();
+                java.time.LocalDateTime bLast = b.getLastCommentAt();
+                if (aLast == null && bLast == null) return 0;
+                if (aLast == null) return 1; // nulls last
+                if (bLast == null) return -1;
+                return bLast.compareTo(aLast); // newest first
+            })
             .limit(normalizedLimit)
             .map(thread -> toFeedItemDTO(thread, user))
             .toList();

@@ -40,9 +40,16 @@ export function useCommunityComments(authUser: any, communitySessionValid: boole
       setActiveThread(payload.thread)
       setComments(payload.comments)
     } catch (error) {
-      setActiveThread(null)
-      setComments([])
-      setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+      // 404 means no thread exists yet for this target: treat silently
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if (error && typeof error === 'object' && 'response' in error && (error as any).response?.status === 404) {
+        setActiveThread(null)
+        setComments([])
+      } else {
+        setActiveThread(null)
+        setComments([])
+        setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+      }
     } finally {
       setCommentsLoading(false)
     }

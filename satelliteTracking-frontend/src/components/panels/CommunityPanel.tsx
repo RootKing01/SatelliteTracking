@@ -231,9 +231,15 @@ export function CommunityPanel({
         handleUnauthorizedSession()
         return
       }
-      setActiveThread(null)
-      setComments([])
-      setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+      // 404 means no thread exists yet for this target: treat silently
+      if (isAxiosError(error) && error.response?.status === 404) {
+        setActiveThread(null)
+        setComments([])
+      } else {
+        setActiveThread(null)
+        setComments([])
+        setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+      }
     } finally {
       setCommentsLoading(false)
     }

@@ -63,7 +63,7 @@
 
 .quick-zoom {
   position: absolute;
-  z-index: 18;
+  z-index: 60;
   display: grid;
   gap: 6px;
   padding: 4px;
