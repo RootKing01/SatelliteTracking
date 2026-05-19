@@ -1,3 +1,9 @@
+import {
+  useSearchResultSelect,
+  useReportSighting,
+  useCalculateVisibility,
+  useFocusBySatelliteId,
+} from './hooks/useInteractionHandlers'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { Color, Ion } from 'cesium'
@@ -6,7 +12,7 @@ import { type OrekitStatusResponse } from './api/orekitStatusClient'
 import { type SystemHealthResponse } from './api/systemHealthClient'
 import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
 import { fetchAllSatellitePositions, fetchSatellitePositionById } from './api/satellitePositionsClient'
-import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/sightingsClient'
+import { fetchMySightings, type SatelliteSighting } from './api/sightingsClient'
 import { type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
@@ -27,7 +33,6 @@ import {
 import {
   buildSearchResultItems,
   type SatelliteSearchScope,
-  type SearchResultItem,
 } from './helpers/searchHelpers'
 import {
   loadOrekitStatus,
@@ -38,11 +43,7 @@ import {
   downloadVisibilityResultsCsv,
   filterVisibilityResults,
 } from './helpers/visibilityHelpers'
-import {
-  buildVisibilitySummaryInfo,
-  createVisibilityErrorResetState,
-  fetchVisibilityPasses,
-} from './helpers/visibilityFlowHelpers'
+// visibility helpers moved to interactionHandlers where needed
 import { AuthPanel } from './components/auth/AuthPanel'
 import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
 import { PanelTopSection } from './components/layout/PanelTopSection'
@@ -282,40 +283,13 @@ function App() {
     handlePickEntityId(null)
   }, [handlePickEntityId])
 
-  const handleSearchResultSelect = useCallback(
-    async (item: SearchResultItem) => {
-      setSelectedPreset('custom')
-      setEnabledGroups((prev) =>
-        prev[item.groupKey] ? prev : { ...prev, [item.groupKey]: true },
-      )
-
-      handlePickEntityId(item.entityId)
-
-      const liveSelected = satelliteLookupByEntityId.get(item.entityId)
-      if (liveSelected) {
-        globeRef.current?.focusOnSatellite(
-          liveSelected.satellite.longitudeDeg,
-          liveSelected.satellite.latitudeDeg,
-          liveSelected.satellite.altitudeKm,
-          item.entityId,
-        )
-        return
-      }
-
-      try {
-        const fallbackPosition = await fetchSatellitePositionById(item.satelliteId)
-        globeRef.current?.focusOnSatellite(
-          fallbackPosition.longitudeDeg,
-          fallbackPosition.latitudeDeg,
-          fallbackPosition.altitudeKm,
-          item.entityId,
-        )
-      } catch {
-        // Ignore fallback errors: la selezione rimane attiva e il focus avverra al refresh live.
-      }
-    },
-    [handlePickEntityId, satelliteLookupByEntityId],
-  )
+  const handleSearchResultSelect = useSearchResultSelect({
+    setSelectedPreset,
+    setEnabledGroups,
+    handlePickEntityId,
+    satelliteLookupByEntityId,
+    globeRef,
+  })
 
   useEffect(() => {
     if (!selectedEntityId || selectedSatellite) {
@@ -569,46 +543,22 @@ function App() {
     }
   }, [authUser, openPane])
 
-  const handleReportSighting = async () => {
-    if (!selectedSatellite || reportingSighting) {
-      return
-    }
-
-    const hasBrowserCoords = sightingLatitude !== null && sightingLongitude !== null
-    const hasCity = sightingCity.trim().length > 0
-
-    if (!hasBrowserCoords && !hasCity) {
-      setSightingsError('Inserisci una citta o usa la posizione del browser.')
-      return
-    }
-
-    setReportingSighting(true)
-    setSightingInfo('')
-    setSightingsError('')
-
-    try {
-      const created = await reportSighting({
-        satelliteId: selectedSatellite.satellite.satelliteId,
-        city: hasBrowserCoords ? undefined : sightingCity.trim(),
-        latitude: hasBrowserCoords ? sightingLatitude ?? undefined : undefined,
-        longitude: hasBrowserCoords ? sightingLongitude ?? undefined : undefined,
-        altitudeMeters: hasBrowserCoords ? (sightingAltitude ?? undefined) : undefined,
-      })
-      setMySightings((prev) => [created, ...prev])
-      setSightingInfo(created.validationMessage)
-      setOpenPane('sightings')
-    } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 401) {
-        setAuthUser(null)
-        setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        setAuthError('Sessione non valida per registrare l\'avvistamento.')
-        return
-      }
-      setSightingsError(extractAuthErrorMessage(error, 'Errore durante la registrazione avvistamento'))
-    } finally {
-      setReportingSighting(false)
-    }
-  }
+  const handleReportSighting = useReportSighting({
+    getSelectedSatellite: () => selectedSatellite,
+    getReportingSighting: () => reportingSighting,
+    getSightingLatitude: () => sightingLatitude,
+    getSightingLongitude: () => sightingLongitude,
+    getSightingAltitude: () => sightingAltitude,
+    getSightingCity: () => sightingCity,
+    setSightingsError: (s: string) => setSightingsError(s),
+    setReportingSighting: (b: boolean) => setReportingSighting(b),
+    setSightingInfo: (s: string) => setSightingInfo(s),
+    setMySightings: (updater: any) => setMySightings(updater),
+    setOpenPane: (p: string) => setOpenPane(p as any),
+    setAuthUser: (u: any) => setAuthUser(u),
+    setAuthInfo: (s: string) => setAuthInfo(s),
+    setAuthError: (s: string) => setAuthError(s),
+  })
 
   const handleUseBrowserLocation = () => {
     handleUseBrowserLocationImpl({
@@ -634,48 +584,24 @@ function App() {
     })
   }
 
-  const handleCalculateVisibility = async () => {
-    if (visibilityLoading) {
-      return
-    }
-
-    setVisibilityLoading(true)
-    setVisibilityError('')
-    setVisibilityInfo('')
-
-    try {
-      const results = await fetchVisibilityPasses({
-        city: visibilityCity,
-        hours: visibilityHours,
-        minElevation: visibilityMinElevation,
-        latitude: visibilityLatitude,
-        longitude: visibilityLongitude,
-        altitude: visibilityAltitude,
-      })
-
-      setVisibilityAllResults(results)
-      setVisibilityResults(results.slice(0, 30))
-      if (results.length === 0) {
-        setVisibilityOverlayOpen(false)
-      }
-      setVisibilityInfo(buildVisibilitySummaryInfo(results.length))
-    } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 401) {
-        setAuthUser(null)
-        setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        setAuthError('Sessione non valida per il calcolo visibilita.')
-        return
-      }
-
-      const resetState = createVisibilityErrorResetState()
-      setVisibilityAllResults(resetState.allResults)
-      setVisibilityResults(resetState.previewResults)
-      setVisibilityOverlayOpen(!resetState.closeOverlay)
-      setVisibilityError(extractAuthErrorMessage(error, 'Errore durante il calcolo della visibilita'))
-    } finally {
-      setVisibilityLoading(false)
-    }
-  }
+  const handleCalculateVisibility = useCalculateVisibility({
+    getVisibilityLoading: () => visibilityLoading,
+    setVisibilityLoading: (b: boolean) => setVisibilityLoading(b),
+    setVisibilityError: (s: string) => setVisibilityError(s),
+    setVisibilityInfo: (s: string) => setVisibilityInfo(s),
+    visibilityCity,
+    visibilityHours,
+    visibilityMinElevation,
+    getVisibilityLatitude: () => visibilityLatitude,
+    getVisibilityLongitude: () => visibilityLongitude,
+    getVisibilityAltitude: () => visibilityAltitude,
+    setVisibilityAllResults: (r: any[]) => setVisibilityAllResults(r),
+    setVisibilityResults: (r: any[]) => setVisibilityResults(r),
+    setVisibilityOverlayOpen: (b: boolean) => setVisibilityOverlayOpen(b),
+    setAuthUser: (u: any) => setAuthUser(u),
+    setAuthInfo: (s: string) => setAuthInfo(s),
+    setAuthError: (s: string) => setAuthError(s),
+  })
 
   const openVisibilityFullResultsOverlay = useCallback(() => {
     if (visibilityAllResults.length === 0) {
@@ -695,68 +621,22 @@ function App() {
     downloadVisibilityResultsCsv(visibilityOverlayFilteredResults)
   }, [visibilityOverlayFilteredResults])
 
+  const focusBySatelliteHandler = useFocusBySatelliteId({
+    liveEntityIdBySatelliteId,
+    satelliteLookupByEntityId,
+    handlePickEntityId,
+    globeRef,
+    fetchSatellitePositionById,
+    setVisibilityError,
+  })
+
   const handleFocusFromVisibility = (pass: UpcomingPass) => {
-    const entityId = liveEntityIdBySatelliteId.get(pass.satelliteId)
-    const selected = entityId ? satelliteLookupByEntityId.get(entityId) : undefined
-
-    if (entityId && selected) {
-      setVisibilityError('')
-      handlePickEntityId(entityId)
-      globeRef.current?.focusOnSatellite(
-        selected.satellite.longitudeDeg,
-        selected.satellite.latitudeDeg,
-        selected.satellite.altitudeKm,
-        entityId,
-      )
-      return
-    }
-
-    void fetchSatellitePositionById(pass.satelliteId)
-      .then((fallbackPosition) => {
-        setVisibilityError('')
-        globeRef.current?.focusOnSatellite(
-          fallbackPosition.longitudeDeg,
-          fallbackPosition.latitudeDeg,
-          fallbackPosition.altitudeKm,
-          entityId,
-        )
-      })
-      .catch(() => {
-        setVisibilityError('Impossibile fare focus: posizione live non disponibile per questo satellite.')
-      })
+    focusBySatelliteHandler(pass)
   }
 
-  const handleFocusBySatelliteId = useCallback(
-    (satelliteId: number) => {
-      const entityId = liveEntityIdBySatelliteId.get(satelliteId)
-      const selected = entityId ? satelliteLookupByEntityId.get(entityId) : undefined
-
-      if (entityId && selected) {
-        handlePickEntityId(entityId)
-        globeRef.current?.focusOnSatellite(
-          selected.satellite.longitudeDeg,
-          selected.satellite.latitudeDeg,
-          selected.satellite.altitudeKm,
-          entityId,
-        )
-        return
-      }
-
-      void fetchSatellitePositionById(satelliteId)
-        .then((fallbackPosition) => {
-          globeRef.current?.focusOnSatellite(
-            fallbackPosition.longitudeDeg,
-            fallbackPosition.latitudeDeg,
-            fallbackPosition.altitudeKm,
-            entityId,
-          )
-        })
-        .catch(() => {
-          setVisibilityError('Impossibile fare focus: satellite non disponibile nel feed live.')
-        })
-    },
-    [handlePickEntityId, liveEntityIdBySatelliteId, satelliteLookupByEntityId],
-  )
+  const handleFocusBySatelliteId = useCallback((satelliteId: number) => {
+    focusBySatelliteHandler(satelliteId)
+  }, [focusBySatelliteHandler])
 
   useEffect(() => {
     if (!authUser) {

@@ -41,7 +41,9 @@ export function CommunityFeedCard({
                   ? `SATELLITE (${satelliteNames[item.targetId]})`
                   : (item.targetType === 'SIGHTING' || item.targetType === 'PASS') && satelliteNames[item.targetId]
                     ? `${item.targetType} (${satelliteNames[item.targetId]})`
-                    : `${item.targetType} #${item.targetId}`}
+                    : item.targetType === 'GENERAL'
+                      ? item.targetType
+                      : `${item.targetType} #${item.targetId}`}
               </small>
               <small>{item.commentCount} commenti · {item.likesCount} like</small>
               {featured && (
