@@ -10,11 +10,8 @@ import { fetchMySightings, reportSighting, type SatelliteSighting } from './api/
 import { type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
-import { extractAuthErrorMessage, extractGeolocationErrorMessage } from './helpers/appErrorHelpers'
-import {
-  getBrowserGeolocationPrecheckError,
-  requestBrowserLocation,
-} from './helpers/browserGeolocationHelpers'
+import { extractAuthErrorMessage } from './helpers/appErrorHelpers'
+import { handleUseBrowserLocationImpl, handleUseBrowserLocationForVisibilityImpl } from './helpers/locationHelpers'
 import {
   executeLoginFlow,
   executeLogoutFlow,
@@ -55,6 +52,7 @@ import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
+import useMusicWidgetHeight, { computeQuickZoomTop } from './helpers/appHelpers'
 
 const ionToken =
   import.meta.env.VITE_CESIUM_TOKEN ?? import.meta.env.VITE_CESIUM_ION_TOKEN
@@ -155,35 +153,7 @@ function App() {
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
   // Measured height of the floating music widget so floating controls can follow it
-  const [musicWidgetHeight, setMusicWidgetHeight] = useState(0)
-
-  useEffect(() => {
-    let ro: ResizeObserver | null = null
-    const update = () => {
-      const el = document.querySelector('.music-float-player') as HTMLElement | null
-      if (el) setMusicWidgetHeight(el.offsetHeight)
-      else setMusicWidgetHeight(0)
-    }
-
-    update()
-
-    const el = document.querySelector('.music-float-player') as HTMLElement | null
-    if (el && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => update())
-      ro.observe(el)
-    }
-
-    window.addEventListener('resize', update)
-    const mo = new MutationObserver(update)
-    const root = document.body
-    mo.observe(root, { attributes: true, childList: true, subtree: true })
-
-    return () => {
-      if (ro && el) ro.unobserve(el)
-      window.removeEventListener('resize', update)
-      mo.disconnect()
-    }
-  }, [])
+  const musicWidgetHeight = useMusicWidgetHeight()
 
   const groupColorMap = useMemo(
     () =>
@@ -410,10 +380,9 @@ function App() {
   }, [])
 
   const resetAuthFields = () => {
-    setAuthUsernameOrEmail('')
-    setAuthUsername('')
-    setAuthEmail('')
-    setAuthPassword('')
+    // delegate to helper to keep App small
+    const { default: clearAuthFields } = require('./helpers/authHelpers') as typeof import('./helpers/authHelpers')
+    clearAuthFields(setAuthUsernameOrEmail, setAuthUsername, setAuthEmail, setAuthPassword)
   }
 
   useEffect(() => {
@@ -642,79 +611,27 @@ function App() {
   }
 
   const handleUseBrowserLocation = () => {
-    if (locatingBrowser) {
-      return
-    }
-
-    const precheckError = getBrowserGeolocationPrecheckError(
-      Boolean(navigator.geolocation),
-      window.isSecureContext,
-    )
-    if (precheckError) {
-      setSightingsError(precheckError)
-      return
-    }
-
-    const geolocation = navigator.geolocation
-    if (!geolocation) {
-      setSightingsError('Geolocalizzazione non disponibile nel browser.')
-      return
-    }
-
-    setLocatingBrowser(true)
-    setSightingsError('')
-
-    void requestBrowserLocation(geolocation)
-      .then((location) => {
-        setSightingLatitude(location.latitude)
-        setSightingLongitude(location.longitude)
-        setSightingAltitude(location.altitude)
-        setSightingInfo('Posizione browser acquisita.')
-      })
-      .catch((error) => {
-        setSightingsError(extractGeolocationErrorMessage(error as GeolocationPositionError))
-      })
-      .finally(() => {
-        setLocatingBrowser(false)
-      })
+    handleUseBrowserLocationImpl({
+      locatingBrowser,
+      setLocatingBrowser,
+      setSightingsError,
+      setSightingLatitude,
+      setSightingLongitude,
+      setSightingAltitude,
+      setSightingInfo,
+    })
   }
 
   const handleUseBrowserLocationForVisibility = () => {
-    if (visibilityLocatingBrowser) {
-      return
-    }
-
-    const precheckError = getBrowserGeolocationPrecheckError(
-      Boolean(navigator.geolocation),
-      window.isSecureContext,
-    )
-    if (precheckError) {
-      setVisibilityError(precheckError)
-      return
-    }
-
-    const geolocation = navigator.geolocation
-    if (!geolocation) {
-      setVisibilityError('Geolocalizzazione non disponibile nel browser.')
-      return
-    }
-
-    setVisibilityLocatingBrowser(true)
-    setVisibilityError('')
-
-    void requestBrowserLocation(geolocation)
-      .then((location) => {
-        setVisibilityLatitude(location.latitude)
-        setVisibilityLongitude(location.longitude)
-        setVisibilityAltitude(location.altitude)
-        setVisibilityInfo('Posizione browser attiva per il calcolo visibilita.')
-      })
-      .catch((error) => {
-        setVisibilityError(extractGeolocationErrorMessage(error as GeolocationPositionError))
-      })
-      .finally(() => {
-        setVisibilityLocatingBrowser(false)
-      })
+    handleUseBrowserLocationForVisibilityImpl({
+      visibilityLocatingBrowser,
+      setVisibilityLocatingBrowser,
+      setVisibilityError,
+      setVisibilityLatitude,
+      setVisibilityLongitude,
+      setVisibilityAltitude,
+      setVisibilityInfo,
+    })
   }
 
   const handleCalculateVisibility = async () => {
@@ -1305,7 +1222,7 @@ function App() {
             className="quick-zoom quick-zoom-left"
             style={{
               left: focusGlobeMode ? 10 : panelWidth + 20,
-              top: musicWidgetHeight > 0 ? musicWidgetHeight + 70 : undefined,
+              top: computeQuickZoomTop(musicWidgetHeight),
             }}
           >
             <button type="button" onClick={() => globeRef.current?.zoomIn()} aria-label="Zoom rapido in">
