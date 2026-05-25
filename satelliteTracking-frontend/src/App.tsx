@@ -945,7 +945,6 @@ function App() {
             <section className="panel-component panel-component-main">
               <div className="panel-layout">
                 <section className="panel-left">
-                  <p className="updated-at">Live feed /api/satellites/positions</p>
                   <p className="updated-at">Visibili: {totalVisibleCount} satelliti</p>
 
                   <div className="sidebar-split">
