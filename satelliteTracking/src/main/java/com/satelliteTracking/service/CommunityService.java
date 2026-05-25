@@ -253,23 +253,45 @@ public class CommunityService {
     public List<CommunityFeedItemDTO> getFeaturedThreads(int limit) {
         AppUser user = authService.getAuthenticatedUserOrNull();
         int normalizedLimit = Math.max(1, Math.min(limit, 20));
+        // Fetch a reasonably large page then compute a score based on likes and comments.
+        // Prefer threads with positive engagement (score>0). If none have positive
+        // engagement, fall back to top N by last comment date so the UI isn't empty.
+        List<CommunityThread> candidates = communityThreadRepository
+            .findByStatusOrderByLastCommentAtDesc("ACTIVE", PageRequest.of(0, 100));
 
-        return communityThreadRepository
-            .findByStatusOrderByLastCommentAtDesc("ACTIVE", PageRequest.of(0, 100))
-            .stream()
-            .sorted((a, b) -> {
-                long aLikes = communityThreadLikeRepository.countByThreadId(a.getId());
-                long bLikes = communityThreadLikeRepository.countByThreadId(b.getId());
-                long aScore = aLikes + a.getCommentCount();
-                long bScore = bLikes + b.getCommentCount();
-                if (aScore != bScore) return Long.compare(bScore, aScore);
-                java.time.LocalDateTime aLast = a.getLastCommentAt();
-                java.time.LocalDateTime bLast = b.getLastCommentAt();
-                if (aLast == null && bLast == null) return 0;
-                if (aLast == null) return 1; // nulls last
-                if (bLast == null) return -1;
-                return bLast.compareTo(aLast); // newest first
+        // Compute score and sort by score desc, then by last comment desc.
+        var scored = candidates.stream()
+            .map(t -> new Object() {
+                final CommunityThread thread = t;
+                final long likes = communityThreadLikeRepository.countByThreadId(t.getId());
+                final long score = likes * 2 + t.getCommentCount(); // weight likes higher
             })
+            .sorted((a, b) -> {
+                int cmp = Long.compare(b.score, a.score);
+                if (cmp != 0) return cmp;
+                java.time.LocalDateTime aLast = a.thread.getLastCommentAt();
+                java.time.LocalDateTime bLast = b.thread.getLastCommentAt();
+                if (aLast == null && bLast == null) return 0;
+                if (aLast == null) return 1;
+                if (bLast == null) return -1;
+                return bLast.compareTo(aLast);
+            })
+            .toList();
+
+        // Filter only positively engaged threads for featured list
+        List<CommunityThread> positiveFeatured = scored.stream()
+            .filter(x -> x.score > 0)
+            .map(x -> x.thread)
+            .limit(normalizedLimit)
+            .toList();
+
+        if (!positiveFeatured.isEmpty()) {
+            return positiveFeatured.stream().map(thread -> toFeedItemDTO(thread, user)).toList();
+        }
+
+        // Fallback: return top N threads by last comment date
+        return scored.stream()
+            .map(x -> x.thread)
             .limit(normalizedLimit)
             .map(thread -> toFeedItemDTO(thread, user))
             .toList();
