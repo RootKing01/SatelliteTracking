@@ -97,6 +97,7 @@ export function CommunityThreadCard({
       {activeTarget ? (
         <button
           type="button"
+          className="community-thread-cta"
           disabled={commentsLoading}
           onClick={() => {
             if (activeTarget) ensureThread(activeTarget.targetType, activeTarget.targetId)

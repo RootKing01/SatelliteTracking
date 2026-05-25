@@ -147,7 +147,7 @@ public class TleDataService {
             log.info("✅ Dati delta ricevuti: {} bytes", tleData.length());
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSaveJson(tleData);
+            int saved = parseAndSaveJson(tleData, true);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             if (saved == 0) {
@@ -200,9 +200,16 @@ public class TleDataService {
             }
 
             log.info("✅ Dati delta LEO ricevuti: {} bytes", tleData.length());
+            
+            // 🔍 DEBUG: mostra le prime 2000 char del JSON per vedere se OBJECT_NAME è presente
+            if (tleData.length() < 2000) {
+                log.info("🔍 [DEBUG] JSON completo:\n{}", tleData);
+            } else {
+                log.info("🔍 [DEBUG] JSON preview (primi 2000 char):\n{}", tleData.substring(0, 2000));
+            }
 
             long startParse = System.currentTimeMillis();
-            int saved = parseAndSaveJson(tleData);
+            int saved = parseAndSaveJson(tleData, true);
             long parseDuration = System.currentTimeMillis() - startParse;
 
             log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
@@ -219,6 +226,10 @@ public class TleDataService {
    // In TleDataService.java
 
 int parseAndSaveJson(String jsonData) {
+    return parseAndSaveJson(jsonData, false);
+}
+
+int parseAndSaveJson(String jsonData, boolean leoOnly) {
     log.info("🔍 Inizio parsing TLE (JSON)...");
     int count = 0;
     int skipped = 0;
@@ -232,7 +243,35 @@ int parseAndSaveJson(String jsonData) {
         if (root.isArray()) {
             for (com.fasterxml.jackson.databind.JsonNode node : root) {
                 try {
+                    if (node.has("error")) {
+                        skipped++;
+                        if (skipped <= 10) {
+                            log.warn("⚠️ Space-Track error response: {}", node.path("error").asText());
+                        }
+                        continue;
+                    }
+
                     Long norad = node.path("NORAD_CAT_ID").asLong();
+                    String objectName = node.path("OBJECT_NAME").asText("");
+
+                    if (norad <= 0) {
+                        skipped++;
+                        if (skipped <= 10) {
+                            log.warn("⚠️ Record saltato: NORAD_CAT_ID non valido");
+                        }
+                        continue;
+                    }
+
+                    Double meanMotion = node.path("MEAN_MOTION").asDouble();
+
+                    if (leoOnly && meanMotion <= 11.25) {
+                        skipped++;
+                        continue;
+                    }
+                    
+                    // 🔍 DEBUG: stampa i valori estratti
+                    log.debug("🔍 [DEBUG] Parsing satellite: NORAD={}, OBJECT_NAME='{}'", 
+                        norad, objectName);
                     
                     // ✅ MODIFICA: Cerca o crea il satellite
                     java.util.Optional<Satellite> satOpt = satelliteRepository.findByNoradCatId(norad);
@@ -242,11 +281,10 @@ int parseAndSaveJson(String jsonData) {
                         // ✅ NUOVO: Crea il satellite se non esiste
                         sat = new Satellite();
                         sat.setNoradCatId(norad);
-                        sat.setObjectName(node.path("OBJECT_NAME").asText("UNKNOWN"));
+                        sat.setObjectName(objectName.isBlank() ? "UNKNOWN" : objectName);
                         sat.setObjectId(node.path("OBJECT_ID").asText(""));
                         
                         // Determina il tipo in base al mean motion
-                        Double meanMotion = node.path("MEAN_MOTION").asDouble();
                         if (meanMotion > 11.25) {
                             sat.setSatelliteType("LEO");
                         } else if (meanMotion > 1.0) {
@@ -269,7 +307,6 @@ int parseAndSaveJson(String jsonData) {
                     Double eccentricity = node.path("ECCENTRICITY").asDouble();
                     Double argOfPericenter = node.path("ARG_OF_PERICENTER").asDouble();
                     Double meanAnomaly = node.path("MEAN_ANOMALY").asDouble();
-                    Double meanMotion = node.path("MEAN_MOTION").asDouble();
                     String tleLine1 = node.path("TLE_LINE1").asText("");
                     String tleLine2 = node.path("TLE_LINE2").asText("");
                     

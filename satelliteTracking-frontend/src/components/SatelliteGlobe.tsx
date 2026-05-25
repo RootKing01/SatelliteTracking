@@ -7,13 +7,14 @@ import {
   EllipsoidTerrainProvider,
   HeadingPitchRoll,
   HeadingPitchRange,
-  Math as CesiumMath,
+  HorizontalOrigin,
   OpenStreetMapImageryProvider,
   PointPrimitive,
   PointPrimitiveCollection,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
   defined,
+  VerticalOrigin,
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, Viewer, type CesiumComponentRef } from 'resium'
@@ -24,15 +25,18 @@ const earthRotationSpeed = 0.00015
 const initialCameraDestination = Cartesian3.fromDegrees(-20, -6, 24000000)
 const initialCameraOrientation = new HeadingPitchRoll(0, -1.5, 0)
 
-export type CompassState = {
-  headingDeg: number
-  pitchDeg: number
-  altitudeKm: number
-}
-
 export type VisibleSatelliteItem = {
   group: SatelliteGroupSource
   satellite: SatellitePosition
+}
+
+type SelectedSatelliteTarget = {
+  entityId: string
+  satelliteName: string
+  description: string
+  longitudeDeg: number
+  latitudeDeg: number
+  altitudeKm: number
 }
 
 export type SatelliteGlobeHandle = {
@@ -56,7 +60,6 @@ type SatelliteGlobeProps = {
   starlinkSatellites: SatellitePosition[]
   visibleEntitySatellites: VisibleSatelliteItem[]
   onPickEntityId: (entityId: string | null) => void
-  onCompassChange: (compass: CompassState) => void
 }
 
 export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>(
@@ -69,7 +72,6 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
       starlinkSatellites,
       visibleEntitySatellites,
       onPickEntityId,
-      onCompassChange,
     },
     ref,
   ) => {
@@ -101,6 +103,30 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         }, false),
       [],
     )
+    const selectedReticleImage = useMemo(() => {
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <path d="M10 20V10h10" stroke="#7ff9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M54 20V10H44" stroke="#7ff9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 44v10h10" stroke="#7ff9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M54 44v10H44" stroke="#7ff9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="32" r="3.5" fill="#7ff9ff" fill-opacity="0.98"/>
+        </svg>
+      `.trim()
+
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    }, [])
+    const selectedReticleHaloImage = useMemo(() => {
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none">
+          <rect x="16" y="16" width="64" height="64" rx="8" stroke="#7ff9ff" stroke-width="2" stroke-opacity="0.18"/>
+          <rect x="24" y="24" width="48" height="48" rx="6" stroke="#7ff9ff" stroke-width="2" stroke-opacity="0.14"/>
+          <circle cx="48" cy="48" r="20" fill="#7ff9ff" fill-opacity="0.06"/>
+        </svg>
+      `.trim()
+
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    }, [])
     const selectedStarlinkSatellite = useMemo(() => {
       if (!selectedEntityId || !selectedEntityId.startsWith('starlink-')) {
         return null
@@ -126,6 +152,31 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         ) ?? null
       )
     }, [selectedEntityId, visibleEntitySatellites])
+    const selectedTarget = useMemo<SelectedSatelliteTarget | null>(() => {
+      if (selectedStarlinkSatellite) {
+        return {
+          entityId: `starlink-${selectedStarlinkSatellite.satelliteId}`,
+          satelliteName: selectedStarlinkSatellite.satelliteName,
+          description: `Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`,
+          longitudeDeg: selectedStarlinkSatellite.longitudeDeg,
+          latitudeDeg: selectedStarlinkSatellite.latitudeDeg,
+          altitudeKm: selectedStarlinkSatellite.altitudeKm,
+        }
+      }
+
+      if (selectedVisibleSatellite) {
+        return {
+          entityId: `${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}`,
+          satelliteName: selectedVisibleSatellite.satellite.satelliteName,
+          description: `${selectedVisibleSatellite.group.label} | NORAD ${selectedVisibleSatellite.satellite.noradCatId}`,
+          longitudeDeg: selectedVisibleSatellite.satellite.longitudeDeg,
+          latitudeDeg: selectedVisibleSatellite.satellite.latitudeDeg,
+          altitudeKm: selectedVisibleSatellite.satellite.altitudeKm,
+        }
+      }
+
+      return null
+    }, [selectedStarlinkSatellite, selectedVisibleSatellite])
     useEffect(() => {
       if (viewerReadyTick > 0) {
         return
@@ -295,22 +346,20 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         return
       }
 
-      const dpr = window.devicePixelRatio || 1
-      viewer.resolutionScale = Math.min(1.5, Math.max(1, dpr))
-      viewer.scene.highDynamicRange = true
-      viewer.scene.postProcessStages.fxaa.enabled = true
-      viewer.scene.globe.maximumScreenSpaceError = 2
-      viewer.scene.globe.tileCacheSize = 450
+      viewer.resolutionScale = 1
+      viewer.scene.highDynamicRange = false
+      viewer.scene.postProcessStages.fxaa.enabled = false
+      viewer.scene.globe.maximumScreenSpaceError = 4
+      viewer.scene.globe.tileCacheSize = 160
       viewer.scene.globe.baseColor = Color.fromCssColorString('#0b1d33')
       viewer.scene.globe.depthTestAgainstTerrain = true
       viewer.scene.globe.translucency.enabled = false
-      viewer.scene.globe.showGroundAtmosphere = true
+      viewer.scene.globe.showGroundAtmosphere = false
       if (viewer.scene.skyAtmosphere) {
-        viewer.scene.skyAtmosphere.show = true
+        viewer.scene.skyAtmosphere.show = false
       }
-      viewer.scene.fog.enabled = true
-      viewer.scene.fog.density = 0.00005
-      viewer.scene.globe.enableLighting = true
+      viewer.scene.fog.enabled = false
+      viewer.scene.globe.enableLighting = false
 
       const controller = viewer.scene.screenSpaceCameraController
       controller.minimumZoomDistance = 15000
@@ -345,22 +394,8 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         duration: 1.1,
       })
 
-      const updateCompass = () => {
-        const headingDeg = ((CesiumMath.toDegrees(viewer.camera.heading) % 360) + 360) % 360
-        const pitchDeg = CesiumMath.toDegrees(viewer.camera.pitch)
-        const altitudeKm = viewer.camera.positionCartographic.height / 1000
-
-        onCompassChange({ headingDeg, pitchDeg, altitudeKm })
-      }
-
-      viewer.camera.percentageChanged = 0.0005
-      updateCompass()
-      viewer.camera.changed.addEventListener(updateCompass)
-
-      return () => {
-        viewer.camera.changed.removeEventListener(updateCompass)
-      }
-    }, [onCompassChange, viewerReadyTick])
+      viewer.camera.percentageChanged = 0.002
+    }, [viewerReadyTick])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement
@@ -592,6 +627,8 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         homeButton={false}
         navigationHelpButton={false}
         sceneModePicker={false}
+        infoBox={false}
+        selectionIndicator={false}
       >
         {selectedStarlinkSatellite ? (
           <Entity
@@ -633,6 +670,47 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
             }}
           />
+        ) : null}
+
+        {selectedTarget ? (
+          <>
+            <Entity
+              key={`${selectedTarget.entityId}-reticle-halo`}
+              id={`${selectedTarget.entityId}-reticle-halo`}
+              position={Cartesian3.fromDegrees(
+                selectedTarget.longitudeDeg,
+                selectedTarget.latitudeDeg,
+                Math.max(0, selectedTarget.altitudeKm * 1000),
+              )}
+              billboard={{
+                image: selectedReticleHaloImage,
+                width: 88,
+                height: 88,
+                horizontalOrigin: HorizontalOrigin.CENTER,
+                verticalOrigin: VerticalOrigin.CENTER,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              }}
+            />
+            <Entity
+              key={`${selectedTarget.entityId}-reticle`}
+              id={`${selectedTarget.entityId}-reticle`}
+              name={`${selectedTarget.satelliteName} mirino`}
+              description={selectedTarget.description}
+              position={Cartesian3.fromDegrees(
+                selectedTarget.longitudeDeg,
+                selectedTarget.latitudeDeg,
+                Math.max(0, selectedTarget.altitudeKm * 1000),
+              )}
+              billboard={{
+                image: selectedReticleImage,
+                width: 58,
+                height: 58,
+                horizontalOrigin: HorizontalOrigin.CENTER,
+                verticalOrigin: VerticalOrigin.CENTER,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              }}
+            />
+          </>
         ) : null}
 
         {selectedVisibleSatellite ? (

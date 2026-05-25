@@ -4,11 +4,14 @@ import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -20,6 +23,7 @@ import java.util.*;
 public class SpaceMissionService {
 
     private static final Logger log = LoggerFactory.getLogger(SpaceMissionService.class);
+    private static final long SYNC_INTERVAL_HOURS = 3;
 
     private final JplHorizonsClient jplHorizonsClient;
     private final SatelliteRepository satelliteRepository;
@@ -127,10 +131,29 @@ public class SpaceMissionService {
         }
     }
 
+    @EventListener(ApplicationReadyEvent.class)
+    public void syncOnStartupIfNeeded() {
+        OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+
+        if (lastUpdate == null) {
+            log.info("🚀 Missioni spaziali: primo avvio, avvio sincronizzazione iniziale");
+            syncSpaceMissions();
+            return;
+        }
+
+        long hoursSinceLastUpdate = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toHours();
+        if (hoursSinceLastUpdate >= SYNC_INTERVAL_HOURS) {
+            log.info("🚀 Missioni spaziali: dati vecchi di {}h, avvio sincronizzazione", hoursSinceLastUpdate);
+            syncSpaceMissions();
+        } else {
+            log.info("ℹ️ Missioni spaziali già aggiornate: ultimo fetch {}h fa, skip startup sync", hoursSinceLastUpdate);
+        }
+    }
+
     /**
-     * Sincronizza periodicamente ogni 12 ore
+     * Sincronizza periodicamente ogni 3 ore
      */
-    @Scheduled(fixedDelay = 12 * 60 * 60 * 1000, initialDelay = 60000)
+    @Scheduled(fixedDelay = 3 * 60 * 60 * 1000, initialDelay = 600000)
     public void scheduledSync() {
         syncSpaceMissions();
     }

@@ -59,4 +59,26 @@ test.describe('Authentication Register', () => {
 
     await expect(page.locator('.auth-error')).toBeVisible({ timeout: 5000 })
   })
+
+  test('should require matching passwords on registration', async ({ page, browserName }, testInfo) => {
+    await page.goto('/')
+    await page.click('button:has-text("Iscrizione")')
+
+    const uniqueSuffix = `${Date.now()}-${browserName}-${testInfo.workerIndex}-${Math.random().toString(36).slice(2, 8)}`
+    const uniqueUsername = `testuser-confirm-${uniqueSuffix}`
+    const uniqueEmail = `test-confirm-${uniqueSuffix}@example.com`
+
+    const usernameInput = page.locator('label:has-text("Username") input')
+    const emailInput = page.locator('label:has-text("Email") input')
+    const passwordInput = page.locator('label:has-text("Password") input').first()
+    const passwordConfirmInput = page.locator('label:has-text("Conferma password") input')
+
+    await usernameInput.fill(uniqueUsername)
+    await emailInput.fill(uniqueEmail)
+    await passwordInput.fill('TestPassword123!')
+    await passwordConfirmInput.fill('DifferentPassword123!')
+    await page.click('button:has-text("Registrati")')
+
+    await expect(page.locator('.auth-error')).toHaveText(/password non coincidono/i, { timeout: 5000 })
+  })
 })

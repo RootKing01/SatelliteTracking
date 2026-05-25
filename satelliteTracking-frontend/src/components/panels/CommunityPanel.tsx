@@ -87,7 +87,7 @@ export function CommunityPanel({
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [editingBody, setEditingBody] = useState('')
   const [sessionVerified, setSessionVerified] = useState(false)
-  const [communitySessionValid, setCommunitySessionValid] = useState(false)
+  const [, setCommunitySessionValid] = useState(false)
   const [replyToComment, setReplyToComment] = useState<CommunityComment | null>(null)
   const [activeThreadOpen, setActiveThreadOpen] = useState(true)
   const [featuredOpen, setFeaturedOpen] = useState(false)
@@ -116,61 +116,62 @@ export function CommunityPanel({
     setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
   }, [])
 
+  const handleThreadAuthFailure = useCallback(
+    async (fallbackMessage: string) => {
+      try {
+        const response = await getCurrentUser()
+        if (response.authenticated && response.user) {
+          setCommentsError(fallbackMessage)
+          return
+        }
+      } catch {
+        // Se anche /me fallisce, allora la sessione è davvero scaduta.
+      }
+
+      handleUnauthorizedSession()
+    },
+    [handleUnauthorizedSession],
+  )
+
   useEffect(() => {
     if (!authUser) {
       setSessionVerified(true)
       setCommunitySessionValid(false)
+      setThreadsError('')
+      setCommentsError('')
       return
     }
 
-    let cancelled = false
-    setSessionVerified(false)
-
-    void getCurrentUser()
-      .then((response) => {
-        if (cancelled) {
-          return
-        }
-
-        const isValid = Boolean(response.authenticated && response.user)
-        setCommunitySessionValid(isValid)
-        if (!isValid) {
-          setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-          setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        }
-      })
-      .catch(() => {
-        if (cancelled) {
-          return
-        }
-        setCommunitySessionValid(false)
-        setThreadsError('Sessione non verificabile. Esegui di nuovo l\'accesso.')
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setSessionVerified(true)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
+    setSessionVerified(true)
+    setCommunitySessionValid(true)
+    setThreadsError('')
+    setCommentsError('')
   }, [authUser])
+
+  useEffect(() => {
+    setActiveThread(null)
+    setComments([])
+    setCommentsError('')
+    setReplyToComment(null)
+    setActiveThreadOpen(false)
+    setCommentsLoading(false)
+  }, [activeTarget?.targetId, activeTarget?.targetType])
 
 
   // Polling per aggiornare la lista thread ogni 5 secondi
 
   // Polling ottimizzato: aggiorna solo se cambia
   useEffect(() => {
-    if (!authUser || !sessionVerified || !communitySessionValid) {
+    if (!authUser) {
       setFeaturedThreads([])
       setAllThreads([])
       setActiveThread(null)
-      if (!communitySessionValid && sessionVerified) {
-        setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-      } else {
-        setThreadsError('')
-      }
+      setThreadsError('')
+      setCommentsError('')
+      return
+    }
+
+    if (!sessionVerified) {
       return
     }
 
@@ -207,11 +208,10 @@ export function CommunityPanel({
       controller.abort()
       clearInterval(interval)
     }
-  }, [authUser, communitySessionValid, sessionVerified])
+  }, [authUser, sessionVerified])
 
   const loadThread = async (targetType: string, targetId: string) => {
-    if (!authUser || !communitySessionValid) {
-      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    if (!authUser) {
       return
     }
 
@@ -228,7 +228,7 @@ export function CommunityPanel({
       setComments(payload.comments)
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        handleUnauthorizedSession()
+        void handleThreadAuthFailure('Impossibile caricare i commenti del thread selezionato.')
         return
       }
       // 404 means no thread exists yet for this target: treat silently
@@ -246,8 +246,7 @@ export function CommunityPanel({
   }
 
   const ensureThread = async (targetType: string, targetId: string) => {
-    if (!authUser || !communitySessionValid) {
-      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    if (!authUser) {
       return
     }
 
@@ -265,7 +264,7 @@ export function CommunityPanel({
       setActiveThreadOpen(true)
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        handleUnauthorizedSession()
+        void handleThreadAuthFailure('Impossibile aprire o creare il thread del satellite selezionato.')
         return
       }
       setActiveThread(null)
@@ -275,13 +274,6 @@ export function CommunityPanel({
       setCommentsLoading(false)
     }
   }
-
-  useEffect(() => {
-    if (!activeTarget || !authUser) {
-      return
-    }
-    void loadThread(activeTarget.targetType, activeTarget.targetId)
-  }, [activeTarget?.targetId, activeTarget?.targetType, authUser?.id])
 
   useEffect(() => {
     if (!activeThread) {
@@ -329,8 +321,7 @@ export function CommunityPanel({
   }
 
   const handleCreateGeneralThread = async () => {
-    if (!communitySessionValid) {
-      setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    if (!authUser) {
       return
     }
 
@@ -375,8 +366,7 @@ export function CommunityPanel({
   }
 
   const handleSubmitComment = async () => {
-    if (!communitySessionValid) {
-      setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    if (!authUser) {
       return
     }
 

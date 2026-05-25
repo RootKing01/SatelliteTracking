@@ -14,11 +14,13 @@ type AuthPanelProps = {
   authUsername: string
   authEmail: string
   authPassword: string
+  authPasswordConfirm: string
   onSwitchMode: (mode: AuthMode) => void
   onAuthUsernameOrEmailChange: (value: string) => void
   onAuthUsernameChange: (value: string) => void
   onAuthEmailChange: (value: string) => void
   onAuthPasswordChange: (value: string) => void
+  onAuthPasswordConfirmChange: (value: string) => void
   onSubmit: () => void
 }
 
@@ -32,23 +34,25 @@ export function AuthPanel({
   authUsername,
   authEmail,
   authPassword,
+  authPasswordConfirm,
   onSwitchMode,
   onAuthUsernameOrEmailChange,
   onAuthUsernameChange,
   onAuthEmailChange,
   onAuthPasswordChange,
+  onAuthPasswordConfirmChange,
   onSubmit,
 }: AuthPanelProps) {
 
   if (authChecking) {
     return (
       <main className="auth-shell">
-        <div>
-          <h1>Satellite Tracker</h1>
-        </div>
         <section className="auth-card glass">
+          <div className="auth-card-header">
+            <h1>Satellite Tracker</h1>
+          </div>
           <img src={logo} alt="Satellite Tracker Logo" className="auth-logo" />
-          <p>Verifica sessione in corso...</p>
+          <p className="auth-status">Verifica sessione in corso...</p>
         </section>
       </main>
     )
@@ -56,15 +60,17 @@ export function AuthPanel({
 
   return (
     <main className="auth-shell">
-      <div>
-        <h1>Satellite Tracker</h1>
-      </div>
+      <div className="auth-ambient auth-ambient-left" aria-hidden="true" />
+      <div className="auth-ambient auth-ambient-right" aria-hidden="true" />
       <section className="auth-card glass">
+        <div className="auth-card-header">
+          <h1>Satellite Tracker</h1>
+          <p className="auth-subtitle">Traccia in live satelliti, conferma gli avvistamenti, sii protagonista nei thread della community</p>
+        </div>
         <div className="auth-logo-glow-wrap">
           <img src={logo} alt="Satellite Tracker Logo" className="auth-logo auth-logo-glow" />
         </div>
         <div className="auth-separator-glow"></div>
-        <p className="auth-welcome">Benvenuto! Accedi o crea un account per iniziare a tracciare i satelliti.</p>
         <p className="auth-info">{authInfo}</p>
         <div className="auth-switcher">
           <button
@@ -90,49 +96,67 @@ export function AuthPanel({
           }}
         >
           {authMode === 'login' ? (
-            <label>
-              Username o email
+            <label className="auth-field">
+              <span>Username o email</span>
               <input
                 value={authUsernameOrEmail}
                 onChange={(event) => onAuthUsernameOrEmailChange(event.target.value)}
                 autoComplete="username"
+                placeholder="demo@satellitetracker.local"
                 required
               />
             </label>
           ) : (
-            <>
-              <label>
-                Username
+            <div className="auth-register-grid">
+              <label className="auth-field">
+                <span>Username</span>
                 <input
                   value={authUsername}
                   onChange={(event) => onAuthUsernameChange(event.target.value)}
                   autoComplete="username"
+                  placeholder="nomeutente"
                   required
                 />
               </label>
-              <label>
-                Email
+              <label className="auth-field">
+                <span>Email</span>
                 <input
                   type="email"
                   value={authEmail}
                   onChange={(event) => onAuthEmailChange(event.target.value)}
                   autoComplete="email"
+                  placeholder="nome@dominio.it"
                   required
                 />
               </label>
-            </>
+            </div>
           )}
 
-          <label>
-            Password
+          <label className="auth-field">
+            <span>Password</span>
             <input
               type="password"
               value={authPassword}
               onChange={(event) => onAuthPasswordChange(event.target.value)}
               autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              placeholder={authMode === 'login' ? 'Inserisci la password' : 'Crea una password forte'}
               required
             />
           </label>
+
+          {authMode === 'register' ? (
+            <label className="auth-field">
+              <span>Conferma password</span>
+              <input
+                type="password"
+                value={authPasswordConfirm}
+                onChange={(event) => onAuthPasswordConfirmChange(event.target.value)}
+                autoComplete="new-password"
+                placeholder="Ripeti la password"
+                required
+              />
+            </label>
+          ) : null}
 
           {authError ? <p className="auth-error highlight-error">{authError}</p> : null}
 
@@ -147,5 +171,5 @@ export function AuthPanel({
         </div>
       </section>
     </main>
-  );
+  )
 }

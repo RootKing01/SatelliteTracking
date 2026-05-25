@@ -47,8 +47,8 @@ import {
 import { AuthPanel } from './components/auth/AuthPanel'
 import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
 import { PanelTopSection } from './components/layout/PanelTopSection'
-import { SatelliteGlobe, type CompassState, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
-import { CommunityPanel, CompassPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
+import { SatelliteGlobe, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
+import { CommunityPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
@@ -102,16 +102,10 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [showBackSideSatellites, setShowBackSideSatellites] = useState(false)
-  const [compassCollapsed, setCompassCollapsed] = useState(false)
   const [refreshTuningIndex, setRefreshTuningIndex] = useState(1)
   const latestRequestIdRef = useRef(0)
   const inFlightRequestRef = useRef(false)
   const latestGroupPositionsRef = useRef<GroupPositionsState>({})
-  const [compass, setCompass] = useState<CompassState>({
-    headingDeg: 0,
-    pitchDeg: 0,
-    altitudeKm: 0,
-  })
   const [authChecking, setAuthChecking] = useState(true)
   const [authSubmitting, setAuthSubmitting] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -120,6 +114,7 @@ function App() {
   const [authUsername, setAuthUsername] = useState('')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState('')
   const [authError, setAuthError] = useState('')
   const [authInfo, setAuthInfo] = useState('Accedi con il profilo base oppure registrane uno nuovo.')
   const [orekitStatus, setOrekitStatus] = useState<OrekitStatusResponse | null>(null)
@@ -349,14 +344,11 @@ function App() {
     }
   }, [allGroups, catalogByGroup, searchScope])
 
-  const handleCompassChange = useCallback((nextCompass: CompassState) => {
-    setCompass(nextCompass)
-  }, [])
-
   const resetAuthFields = () => {
     // delegate to helper to keep App small
     const { default: clearAuthFields } = require('./helpers/authHelpers') as typeof import('./helpers/authHelpers')
     clearAuthFields(setAuthUsernameOrEmail, setAuthUsername, setAuthEmail, setAuthPassword)
+    setAuthPasswordConfirm('')
   }
 
   useEffect(() => {
@@ -457,6 +449,11 @@ function App() {
       return
     }
 
+    if (authPassword !== authPasswordConfirm) {
+      setAuthError('Le password non coincidono.')
+      return
+    }
+
     setAuthSubmitting(true)
     setAuthError('')
 
@@ -465,6 +462,7 @@ function App() {
         username: authUsername,
         email: authEmail,
         password: authPassword,
+        passwordConfirm: authPasswordConfirm,
       })
 
       if (!result.user) {
@@ -476,6 +474,7 @@ function App() {
       setAuthUser(result.user)
       setAuthInfo(result.info)
       resetAuthFields()
+      setAuthPasswordConfirm('')
     } finally {
       setAuthSubmitting(false)
     }
@@ -498,6 +497,7 @@ function App() {
 
       setAuthUser(null)
       setMySightings([])
+      resetAuthFields()
       setAuthInfo('Sessione chiusa, esegui un nuovo accesso.')
     } finally {
       setAuthSubmitting(false)
@@ -865,14 +865,17 @@ function App() {
         authUsername={authUsername}
         authEmail={authEmail}
         authPassword={authPassword}
+        authPasswordConfirm={authPasswordConfirm}
         onSwitchMode={(mode) => {
           setAuthMode(mode)
           setAuthError('')
+          setAuthPasswordConfirm('')
         }}
         onAuthUsernameOrEmailChange={setAuthUsernameOrEmail}
         onAuthUsernameChange={setAuthUsername}
         onAuthEmailChange={setAuthEmail}
         onAuthPasswordChange={setAuthPassword}
+        onAuthPasswordConfirmChange={setAuthPasswordConfirm}
         onSubmit={() => {
           if (authMode === 'login') {
             void submitLogin()
@@ -999,7 +1002,6 @@ function App() {
                               refreshIntervalMs={refreshIntervalMs}
                               refreshProfileLabel={selectedRefreshTuning.label}
                               refreshTuningIndex={refreshTuningIndex}
-                              compass={compass}
                               onZoomIn={() => globeRef.current?.zoomIn()}
                               onZoomOut={() => globeRef.current?.zoomOut()}
                               onGoHome={() => globeRef.current?.goToInitialView()}
@@ -1080,14 +1082,6 @@ function App() {
 
         <section className="viewer-section">
           <MusicFloatingPlayer floatingStyle={{ left: focusGlobeMode ? 10 : panelWidth + 20, top: 58 }} />
-
-          {selectedSatellite ? (
-            <CompassPanel
-              headingDeg={compass.headingDeg}
-              collapsed={compassCollapsed}
-              onToggleCollapsed={() => setCompassCollapsed((prev) => !prev)}
-            />
-          ) : null}
 
           <button
             type="button"
@@ -1219,7 +1213,6 @@ function App() {
             starlinkSatellites={starlinkSatellites}
             visibleEntitySatellites={visibleEntitySatellites}
             onPickEntityId={handlePickEntityId}
-            onCompassChange={handleCompassChange}
           />
         </section>
 

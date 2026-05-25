@@ -1,4 +1,3 @@
-import type { CompassState } from '../SatelliteGlobe'
 import '../../styles/panels/satellites-panel.css'
 
 type SatellitesPanelProps = {
@@ -9,7 +8,6 @@ type SatellitesPanelProps = {
   refreshIntervalMs: number
   refreshProfileLabel: string
   refreshTuningIndex: number
-  compass: CompassState
   onZoomIn: () => void
   onZoomOut: () => void
   onGoHome: () => void
@@ -27,7 +25,6 @@ export function SatellitesPanel({
   refreshIntervalMs,
   refreshProfileLabel,
   refreshTuningIndex,
-  compass,
   onZoomIn,
   onZoomOut,
   onGoHome,
@@ -92,9 +89,6 @@ export function SatellitesPanel({
             <span>Stabile</span>
           </div>
         </div>
-        <div className="compass-row"><span>Heading</span><strong>{compass.headingDeg.toFixed(1)}deg</strong></div>
-        <div className="compass-row"><span>Pitch</span><strong>{compass.pitchDeg.toFixed(1)}deg</strong></div>
-        <div className="compass-row"><span>Quota camera</span><strong>{compass.altitudeKm.toFixed(0)} km</strong></div>
       </section>
     </section>
   )

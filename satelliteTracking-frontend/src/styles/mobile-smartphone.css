@@ -15,7 +15,6 @@
   }
 
   /* NASCONDI ELEMENTI NON ESSENZIALI SU MOBILE */
-  .viewer-compass,
   .group-meta,
   .sync-footer-card,
   .refresh-guard-note {
@@ -609,7 +608,6 @@
   }
 
   /* NASCONDI ANCORA PIÙ ELEMENTI IN LANDSCAPE */
-  .viewer-compass,
   .group-meta,
   .sync-footer-card,
   .refresh-guard-note,

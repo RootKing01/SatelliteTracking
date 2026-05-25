@@ -55,9 +55,22 @@ export async function executeRegisterFlow(payload: {
   username: string
   email: string
   password: string
+  passwordConfirm: string
 }): Promise<AuthFlowResult> {
   try {
-    const response = await register(payload)
+    if (payload.password !== payload.passwordConfirm) {
+      return {
+        user: null,
+        info: '',
+        error: 'Le password non coincidono.',
+      }
+    }
+
+    const response = await register({
+      username: payload.username,
+      email: payload.email,
+      password: payload.password,
+    })
     if (!response.authenticated || !response.user) {
       return {
         user: null,

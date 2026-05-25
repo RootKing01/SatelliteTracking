@@ -200,8 +200,8 @@ public class SpaceTrackService {
         LocalDateTime cursor = from;
         int chunkIndex = 0;
 
-        log.info("📡 DELTA FETCH{} via GP_HISTORY (chunk temporali)", leoOnly ? " LEO" : "");
-        log.info("   CREATION_DATE range: {} → {}", formatForSpaceTrack(from), formatForSpaceTrack(to));
+        log.info("📡 DELTA FETCH{} via GP (chunk temporali)", leoOnly ? " LEO" : "");
+        log.info("   EPOCH range: {} → {}", formatForSpaceTrack(from), formatForSpaceTrack(to));
 
         while (cursor.isBefore(to)) {
 
@@ -256,7 +256,7 @@ public class SpaceTrackService {
     }
 
     // =============================
-    // 🔥 CORE GP_HISTORY
+    // 🔥 CORE GP
     // =============================
     private String downloadGpHistoryInternal(String from, String to, boolean leoOnly, boolean isRetry) {
 
@@ -270,11 +270,11 @@ public class SpaceTrackService {
         while (true) {
 
             chunkNumber++;
-            log.info("📦 GP_HISTORY {} chunk #{} → offset={}, limit={}", type, chunkNumber, offset, limit);
+            log.info("📦 GP {} chunk #{} → offset={}, limit={}", type, chunkNumber, offset, limit);
 
             long startTime = System.currentTimeMillis();
             int currentOffset = offset;
-            String creationDateRange = from + "--" + to;
+            String epochRange = from + "--" + to;
 
             String chunk = null;
 
@@ -284,17 +284,12 @@ public class SpaceTrackService {
                     chunk = webClient.get()
                             .uri(uriBuilder -> {
                                 var builder = uriBuilder
-                                        .path("/basicspacedata/query/class/gp_history")
-                                        .queryParam("CREATION_DATE", creationDateRange)
+                                        .path("/basicspacedata/query/class/gp")
+                                        .queryParam("EPOCH", epochRange)
                                         .queryParam("DECAY_DATE", "null-val")
-                                        .queryParam("orderby", "CREATION_DATE asc")
                                         .queryParam("limit", limit)
                                         .queryParam("offset", currentOffset)
                                         .queryParam("format", "json");
-
-                                if (leoOnly) {
-                                    builder = builder.queryParam("MEAN_MOTION", ">11.25");
-                                }
 
                                 return builder.build();
                             })
@@ -396,7 +391,7 @@ public class SpaceTrackService {
         String result = allData.length() == 0 ? "[]" : allData.toString();
         
         if (!result.equals("[]")) {
-            log.info("🚀 GP_HISTORY interno completato: {} entries totali", totalEntries);
+            log.info("🚀 GP interno completato: {} entries totali", totalEntries);
         }
         
         return result;

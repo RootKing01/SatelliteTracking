@@ -15,6 +15,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -22,6 +24,8 @@ import java.util.Optional;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
     private final AppUserRepository appUserRepository;
@@ -57,6 +61,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
                                 );
                             SecurityContextHolder.getContext().setAuthentication(authentication);
+                            log.info("utente loggato: {}", user.getUsername());
                         }
                     }
                 } catch (Exception ignored) {
@@ -73,27 +78,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7).trim();
             if (!token.isEmpty()) {
-                System.out.println("[JWT FILTER] Bearer token trovato nell'header Authorization");
                 return token;
             }
         }
 
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
-            System.out.println("[JWT FILTER] Nessun cookie presente nella richiesta");
             return null;
         }
 
         for (Cookie cookie : cookies) {
-            System.out.println("[JWT FILTER] Cookie presente: " + cookie.getName() + "=" + cookie.getValue());
             if (jwtCookieName.equals(cookie.getName())) {
                 String value = cookie.getValue();
-                System.out.println("[JWT FILTER] JWT cookie trovato: " + value);
                 return value == null || value.isBlank() ? null : value;
             }
         }
 
-        System.out.println("[JWT FILTER] Nessun JWT cookie trovato");
         return null;
     }
 }

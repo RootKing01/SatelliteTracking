@@ -24,10 +24,15 @@
 }
 
 .auth-shell {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100dvh;
+  height: auto;
   display: grid;
   place-items: center;
+  place-content: center;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
   background:
     radial-gradient(circle at 16% 18%, rgba(62, 196, 255, 0.16), transparent 46%),
     radial-gradient(circle at 80% 22%, rgba(58, 126, 248, 0.2), transparent 48%),
@@ -533,14 +538,6 @@
   margin-top: 8px;
   color: #9de4ff;
   font-size: 0.8rem;
-}
-
-.compass-card {
-  margin-top: 8px;
-  border: 1px solid rgba(216, 237, 255, 0.14);
-  border-radius: 10px;
-  background: transparent;
-  padding: 8px;
 }
 
 .refresh-guard-note {
