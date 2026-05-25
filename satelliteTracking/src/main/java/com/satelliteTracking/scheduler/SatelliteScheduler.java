@@ -5,6 +5,7 @@ import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.OrbitalParameters;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
+import com.satelliteTracking.service.SpaceMissionService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
 import com.satelliteTracking.service.TleDataService;
@@ -27,15 +28,18 @@ public class SatelliteScheduler {
     private static final long LEO_UPDATE_HOURS = 3;      // Aggiornamento LEO ogni 3 ore
 
     private final TleDataService tleDataService;
+    private final SpaceMissionService spaceMissionService;
     private final SatellitePassService passService;
     private final TelegramNotificationService telegramNotificationService;
     private final OrbitalParametersRepository orbitalParametersRepository;
 
     public SatelliteScheduler(TleDataService tleDataService,
+                              SpaceMissionService spaceMissionService,
                               SatellitePassService passService,
                               TelegramNotificationService telegramNotificationService,
                               OrbitalParametersRepository orbitalParametersRepository) {
         this.tleDataService = tleDataService;
+        this.spaceMissionService = spaceMissionService;
         this.passService = passService;
         this.telegramNotificationService = telegramNotificationService;
         this.orbitalParametersRepository = orbitalParametersRepository;
@@ -56,7 +60,8 @@ public class SatelliteScheduler {
         System.out.println("🔄 [Full Update] Verifica aggiornamento TLE completo...");
         System.out.println("═══════════════════════════════════════════════════════════");
 
-        OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+        OrbitalParameters lastUpdate = orbitalParametersRepository
+            .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
 
         if (lastUpdate != null) {
             
@@ -114,7 +119,8 @@ public class SatelliteScheduler {
         System.out.println("🛰️  [LEO Update] Verifica aggiornamento TLE LEO...");
         System.out.println("═══════════════════════════════════════════════════════════");
 
-        OrbitalParameters lastUpdate = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+        OrbitalParameters lastUpdate = orbitalParametersRepository
+            .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
 
         if (lastUpdate == null) {
             System.out.println("⏭️ Skip LEO update: database non inizializzato");
@@ -156,6 +162,28 @@ public class SatelliteScheduler {
 
         } catch (Exception e) {
             System.err.println("❌ [LEO Update] Errore: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 🚀 Sincronizzazione missioni spaziali ogni 3 ore
+     * Job separato dai TLE Space-Track così non altera il timing LEO.
+     */
+    @Scheduled(fixedDelay = 3 * 60 * 60 * 1000, initialDelay = 600000)
+    public void syncSpaceMissions() {
+        System.out.println("═══════════════════════════════════════════════════════════");
+        System.out.println("🚀 [Mission Sync] Verifica sincronizzazione missioni...");
+        System.out.println("═══════════════════════════════════════════════════════════");
+
+        try {
+            spaceMissionService.syncSpaceMissions();
+
+            System.out.println("═══════════════════════════════════════════════════════════");
+            System.out.println("✅ [Mission Sync] Sincronizzazione missioni terminata");
+            System.out.println("═══════════════════════════════════════════════════════════");
+        } catch (Exception e) {
+            System.err.println("❌ [Mission Sync] Errore: " + e.getMessage());
             e.printStackTrace();
         }
     }

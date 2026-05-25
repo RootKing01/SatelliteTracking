@@ -55,7 +55,8 @@ public class TleDataService {
 
             // Se fetchFromSpaceTrack non ha già gestito il fallback, esegui qui solo se necessario
             if (!ok) {
-                OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+                OrbitalParameters last = orbitalParametersRepository
+                        .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
                 long hoursSinceLast = 0;
                 if (last != null) {
                     hoursSinceLast = java.time.Duration.between(last.getFetchedAt(), java.time.LocalDateTime.now()).toHours();
@@ -95,22 +96,33 @@ public class TleDataService {
             boolean ok = fetchLeoFromSpaceTrack();
             if (!ok) {
                 log.warn("⚠️ Aggiornamento LEO fallito");
+                log.warn("⚠️ Attivo fallback CelesTrak per mantenere aggiornati i dati disponibili");
+                celestrakService.fetchAndSaveStations();
+                log.info("✅ Fallback CelesTrak completato per aggiornamento LEO");
             } else {
                 log.info("✅ AGGIORNAMENTO TLE LEO COMPLETATO");
             }
         } catch (Exception e) {
             log.error("❌ Errore durante aggiornamento LEO: {}", e.getMessage(), e);
+            try {
+                log.warn("⚠️ Fallback CelesTrak d'emergenza per LEO...");
+                celestrakService.fetchAndSaveStations();
+                log.info("✅ Fallback CelesTrak d'emergenza completato");
+            } catch (Exception fe) {
+                log.error("❌ Anche il fallback CelesTrak per LEO è fallito: {}", fe.getMessage(), fe);
+            }
         }
     }
 
     private boolean fetchFromSpaceTrack() {
         log.info("───────────────────────────────────────────────────────────");
         log.info("📡 Fetch DELTA da Space-Track (tutti i satelliti)");
-        log.info("   💡 Filtro su CREATION_DATE (non EPOCH) per delta corretti");
+        log.info("   💡 Filtro su EPOCH via REST path per delta corretti");
         log.info("───────────────────────────────────────────────────────────");
 
         try {
-            OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+            OrbitalParameters last = orbitalParametersRepository
+                    .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
 
             if (last == null) {
                 log.warn("⚠️ Database vuoto, impossibile fare delta - usa CelesTrak prima");
@@ -176,7 +188,8 @@ public class TleDataService {
         log.info("───────────────────────────────────────────────────────────");
 
         try {
-            OrbitalParameters last = orbitalParametersRepository.findTopByOrderByFetchedAtDesc();
+            OrbitalParameters last = orbitalParametersRepository
+                    .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
 
             if (last == null) {
                 log.warn("⚠️ Database vuoto, skip LEO update");
@@ -211,6 +224,12 @@ public class TleDataService {
             long startParse = System.currentTimeMillis();
             int saved = parseAndSaveJson(tleData, true);
             long parseDuration = System.currentTimeMillis() - startParse;
+
+            if (saved == 0) {
+                log.warn("⚠️ Nessun satellite LEO salvato dal delta Space-Track");
+                log.warn("   Potrebbe essere un problema di dati incompleti, mapping o database non allineato");
+                return false;
+            }
 
             log.info("✅ SPACE-TRACK DELTA LEO COMPLETATO");
             log.info("   Satelliti LEO aggiornati: {}", saved);
@@ -309,8 +328,24 @@ int parseAndSaveJson(String jsonData, boolean leoOnly) {
                     Double meanAnomaly = node.path("MEAN_ANOMALY").asDouble();
                     String tleLine1 = node.path("TLE_LINE1").asText("");
                     String tleLine2 = node.path("TLE_LINE2").asText("");
+
+                    if (orbitalParametersRepository.existsBySatelliteAndEpoch(sat, epoch)) {
+                        skipped++;
+                        if (skipped <= 10) {
+                            log.debug("↩️ Parametri già presenti per NORAD {} epoch {}", norad, epoch);
+                        }
+                        continue;
+                    }
                     
-                    OrbitalParameters p = new OrbitalParameters(
+                        // set object type raw and inferred
+                        String rawType = node.path("OBJECT_TYPE").asText(null);
+                        sat.setObjectTypeRaw(rawType);
+                        String inferred = (meanMotion > 11.25) ? "LEO" : (meanMotion > 1.0 ? "MEO" : "GEO");
+                        sat.setObjectTypeInferred(inferred);
+
+                        sat = satelliteRepository.save(sat);
+
+                        OrbitalParameters p = new OrbitalParameters(
                             sat, epoch, inclination, raOfAscNode,
                             eccentricity, argOfPericenter, meanAnomaly, meanMotion);
                     p.setTleLine1(tleLine1);

@@ -603,6 +603,10 @@ public class SatellitePassService {
             return getSpaceMissionPositions();
         }
 
+        if ("pending".equals(normalizedType) || "pending-enrichment".equals(normalizedType)) {
+            return getPendingClassificationPositions();
+        }
+
         PositionCacheEntry cachedEntry = positionsCache.get(normalizedType);
         if (cachedEntry != null && !cachedEntry.isExpired(POSITIONS_CACHE_TTL_MS)) {
             return cachedEntry.positions;
@@ -614,14 +618,36 @@ public class SatellitePassService {
         List<SatellitePositionDTO> positions = latestParametersBySatelliteId.values().parallelStream()
             .filter(parameters -> parameters.getSatellite() != null)
             .filter(parameters -> normalizedType.equals("all") ||
-                (parameters.getSatellite().getSatelliteType() != null &&
-                    parameters.getSatellite().getSatelliteType().equalsIgnoreCase(normalizedType)))
+                (parameters.getSatellite().getEffectiveType() != null &&
+                    parameters.getSatellite().getEffectiveType().equalsIgnoreCase(normalizedType)))
             .map(parameters -> buildCurrentSatellitePosition(parameters.getSatellite(), parameters, currentDate))
             .flatMap(Optional::stream)
             .sorted(Comparator.comparing(SatellitePositionDTO::satelliteId))
             .collect(Collectors.toList());
 
         positionsCache.put(normalizedType, new PositionCacheEntry(positions));
+        return positions;
+    }
+
+    public List<SatellitePositionDTO> getPendingClassificationPositions() {
+        String cacheKey = "pending";
+        PositionCacheEntry cachedEntry = positionsCache.get(cacheKey);
+        if (cachedEntry != null && !cachedEntry.isExpired(POSITIONS_CACHE_TTL_MS)) {
+            return cachedEntry.positions;
+        }
+
+        AbsoluteDate currentDate = passTimeService.nowUtc();
+        Map<Long, OrbitalParameters> latestParametersBySatelliteId = loadLatestOrbitalParameters();
+
+        List<SatellitePositionDTO> positions = latestParametersBySatelliteId.values().parallelStream()
+            .filter(parameters -> parameters.getSatellite() != null)
+            .filter(parameters -> isPendingClassification(parameters.getSatellite()))
+            .map(parameters -> buildCurrentSatellitePosition(parameters.getSatellite(), parameters, currentDate))
+            .flatMap(Optional::stream)
+            .sorted(Comparator.comparing(SatellitePositionDTO::satelliteId))
+            .collect(Collectors.toList());
+
+        positionsCache.put(cacheKey, new PositionCacheEntry(positions));
         return positions;
     }
 
@@ -691,6 +717,15 @@ public class SatellitePassService {
         return 9_000_000L + Integer.toUnsignedLong(objectId.hashCode());
     }
 
+    private boolean isPendingClassification(Satellite satellite) {
+        if (satellite == null) {
+            return false;
+        }
+
+        String rawType = satellite.getObjectTypeRaw();
+        return rawType == null || rawType.isBlank() || "UNKNOWN".equalsIgnoreCase(rawType);
+    }
+
     private Optional<SatellitePositionDTO> buildCurrentSatellitePosition(Satellite satellite,
                                                                          OrbitalParameters latestParams,
                                                                          AbsoluteDate currentDate) {
@@ -749,6 +784,7 @@ public class SatellitePassService {
             satellite.getId(),
             satellite.getObjectName(),
             satellite.getSatelliteType(),
+            satellite.getEffectiveType(),
             satellite.getObjectId(),
             satellite.getNoradCatId(),
             calculatedAtUtc,

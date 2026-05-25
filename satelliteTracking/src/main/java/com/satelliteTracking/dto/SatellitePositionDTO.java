@@ -6,6 +6,7 @@ public record SatellitePositionDTO(
     Long satelliteId,
     String satelliteName,
     String satelliteType,
+    String effectiveType,
     String objectId,
     Long noradCatId,
     LocalDateTime calculatedAtUtc,

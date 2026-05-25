@@ -40,6 +40,11 @@ public class SatellitePositionController {
         return ResponseEntity.ok(satellitePassService.getCurrentSatellitePositions(type));
     }
 
+    @GetMapping("/positions/pending")
+    public ResponseEntity<List<SatellitePositionDTO>> getPendingSatellitePositions() {
+        return ResponseEntity.ok(satellitePassService.getPendingClassificationPositions());
+    }
+
     @GetMapping("/space-missions")
     public ResponseEntity<List<Map<String, String>>> getAvailableSpaceMissions() {
         return ResponseEntity.ok(spaceMissionService.getAvailableMissions());

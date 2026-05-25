@@ -20,14 +20,15 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class SpaceTrackService {
 
     private static final Logger log = LoggerFactory.getLogger(SpaceTrackService.class);
 
-    private static final DateTimeFormatter ST_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        private static final DateTimeFormatter ST_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     private final WebClient webClient;
 
@@ -41,6 +42,8 @@ public class SpaceTrackService {
     private volatile LocalDateTime sessionCreatedAt;
     private static final Duration SESSION_TTL = Duration.ofHours(2);
     private volatile boolean loginInProgress = false;
+    private volatile LocalDateTime satcatCooldownUntil;
+    private static final Duration SATCAT_COOLDOWN = Duration.ofHours(2);
 
     public SpaceTrackService(WebClient.Builder builder) {
         log.info("🔧 Inizializzazione SpaceTrackService");
@@ -199,6 +202,8 @@ public class SpaceTrackService {
         StringBuilder finalResult = new StringBuilder();
         LocalDateTime cursor = from;
         int chunkIndex = 0;
+        int successfulChunks = 0;
+        boolean encounteredHardFailure = false;
 
         log.info("📡 DELTA FETCH{} via GP (chunk temporali)", leoOnly ? " LEO" : "");
         log.info("   EPOCH range: {} → {}", formatForSpaceTrack(from), formatForSpaceTrack(to));
@@ -207,7 +212,7 @@ public class SpaceTrackService {
 
             chunkIndex++;
 
-            LocalDateTime next = cursor.plusHours(2);
+            LocalDateTime next = cursor.plusMinutes(60);
             if (next.isAfter(to)) next = to;
 
             String fromStr = formatForSpaceTrack(cursor);
@@ -219,6 +224,7 @@ public class SpaceTrackService {
 
             if (chunk == null) {
                 log.warn("⚠️ Chunk temporale #{} fallito, skip", chunkIndex);
+                encounteredHardFailure = true;
                 cursor = next;
                 continue;
             }
@@ -233,21 +239,31 @@ public class SpaceTrackService {
                     }
                 }
                 finalResult.append(chunk);
+                successfulChunks++;
             }
 
             cursor = next;
 
             try {
-                Thread.sleep(500);
+                // Piccola attesa random per evitare burst sincronizzati
+                long wait = 1000L + ThreadLocalRandom.current().nextInt(0, 1000);
+                Thread.sleep(wait);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); 
             }
+        }
+
+        if (successfulChunks == 0 && encounteredHardFailure) {
+            log.error("❌ Nessun chunk Space-Track riuscito: fallback consigliato");
+            return null;
         }
 
         String result = finalResult.length() == 0 ? "[]" : finalResult.toString();
         
         if (!result.equals("[]")) {
             log.info("✅ CHUNK TEMPORALI COMPLETATI: {} chunk processati", chunkIndex);
+        } else if (encounteredHardFailure) {
+            log.warn("⚠️ CHUNK TEMPORALI completati con errori, ma nessun dato valido ricevuto");
         } else {
             log.info("ℹ️ Nessun aggiornamento disponibile nel range temporale");
         }
@@ -274,7 +290,6 @@ public class SpaceTrackService {
 
             long startTime = System.currentTimeMillis();
             int currentOffset = offset;
-            String epochRange = from + "--" + to;
 
             String chunk = null;
 
@@ -284,12 +299,19 @@ public class SpaceTrackService {
                     chunk = webClient.get()
                             .uri(uriBuilder -> {
                                 var builder = uriBuilder
-                                        .path("/basicspacedata/query/class/gp")
-                                        .queryParam("EPOCH", epochRange)
-                                        .queryParam("DECAY_DATE", "null-val")
-                                        .queryParam("limit", limit)
-                                        .queryParam("offset", currentOffset)
-                                        .queryParam("format", "json");
+                                        .path("/basicspacedata/query/class/gp/DECAY_DATE/null-val/EPOCH");
+
+                                        // Use EPOCH range syntax: from--to (ISO 'T' formatted)
+                                        builder = builder.pathSegment(from + "--" + to);
+
+                                if (leoOnly) {
+                                    builder = builder.pathSegment("MEAN_MOTION", ">11.25");
+                                }
+
+                                builder = builder
+                                        .pathSegment("limit", String.valueOf(limit))
+                                        .pathSegment("offset", String.valueOf(currentOffset))
+                                        .pathSegment("format", "json");
 
                                 return builder.build();
                             })
@@ -301,16 +323,24 @@ public class SpaceTrackService {
                     break; // Successo, esci dal retry loop
 
                 } catch (Exception e) {
-                    log.warn("⚠️ Tentativo {}/3 fallito: {}", attempt, e.getMessage());
+                    log.warn("⚠️ Tentativo {}/3 fallito: {}: {}", attempt, e.getClass().getSimpleName(), e.getMessage());
+
+                    if (e instanceof WebClientResponseException responseException) {
+                        String responseBody = responseException.getResponseBodyAsString();
+                        if (responseBody != null && !responseBody.isBlank()) {
+                            log.warn("   Risposta HTTP Space-Track: {}", responseBody.substring(0, Math.min(500, responseBody.length())));
+                        }
+                        log.warn("   Status HTTP: {}", responseException.getStatusCode());
+                    }
 
                     if (attempt == 3) {
                         log.error("❌ Chunk fallito definitivamente dopo 3 tentativi");
                         return null;
                     }
 
-                    // Backoff esponenziale: 1s, 2s, 4s
+                    // Backoff esponenziale: 2s, 4s, 8s (aggressivamente più conservativo)
                     try {
-                        Thread.sleep(1000L * (long)Math.pow(2, attempt - 1));
+                        Thread.sleep(2000L * (long)Math.pow(2, attempt - 1));
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     }
@@ -511,5 +541,58 @@ public class SpaceTrackService {
             log.error("❌ HTTP error NORAD {}: {}", noradId, e.getStatusCode());
             return null;
         }
+    }
+
+    // Download SATCAT info for a NORAD id
+    public String downloadSatcatByNoradId(Long noradId) {
+        if (isSatcatRateLimited()) {
+            log.warn("⏸️ SATCAT in cooldown fino a {}: skip NORAD {}", satcatCooldownUntil, noradId);
+            return null;
+        }
+
+        ensureLogin();
+        try {
+            String result = webClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/basicspacedata/query/class/satcat/NORAD_CAT_ID/" + noradId + "/format/json")
+                            .build())
+                    .header(HttpHeaders.COOKIE, sessionCookie)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block(Duration.ofMinutes(2));
+
+            if (result != null && isHtmlResponse(result)) {
+                sessionCookie = null;
+                performLogin();
+                if (sessionCookie != null) {
+                    result = webClient.get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .path("/basicspacedata/query/class/satcat/NORAD_CAT_ID/" + noradId + "/format/json")
+                                    .build())
+                            .header(HttpHeaders.COOKIE, sessionCookie)
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block(Duration.ofMinutes(2));
+                }
+            }
+
+            return result;
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 429) {
+                satcatCooldownUntil = LocalDateTime.now().plus(SATCAT_COOLDOWN);
+                log.error("❌ HTTP 429 SATCAT NORAD {}: cooldown fino a {}", noradId, satcatCooldownUntil);
+                return null;
+            }
+            log.error("❌ HTTP error SATCAT NORAD {}: {}", noradId, e.getStatusCode());
+            return null;
+        }
+    }
+
+    public boolean isSatcatRateLimited() {
+        return satcatCooldownUntil != null && LocalDateTime.now().isBefore(satcatCooldownUntil);
+    }
+
+    public LocalDateTime getSatcatCooldownUntil() {
+        return satcatCooldownUntil;
     }
 }

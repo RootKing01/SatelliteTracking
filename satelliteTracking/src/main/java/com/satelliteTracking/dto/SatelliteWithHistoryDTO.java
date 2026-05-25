@@ -10,6 +10,7 @@ public record SatelliteWithHistoryDTO(
     String objectName,
     String objectId,
     Long noradCatId,
+    String effectiveType,
     List<OrbitalParametersDTO> orbitalHistory
 ) {
     public static SatelliteWithHistoryDTO fromEntity(Satellite satellite) {
@@ -23,6 +24,7 @@ public record SatelliteWithHistoryDTO(
             satellite.getObjectName(),
             satellite.getObjectId(),
             satellite.getNoradCatId(),
+            satellite.getEffectiveType(),
             history
         );
     }

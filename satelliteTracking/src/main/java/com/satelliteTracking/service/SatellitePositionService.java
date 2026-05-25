@@ -125,10 +125,11 @@ public class SatellitePositionService {
         );
         
         return new SatellitePositionDTO(
-                satellite.getId(),
-                satellite.getObjectName(),
-                satellite.getSatelliteType(),
-                satellite.getObjectId(),
+            satellite.getId(),
+            satellite.getObjectName(),
+            satellite.getSatelliteType(),
+            satellite.getEffectiveType(),
+            satellite.getObjectId(),
                 satellite.getNoradCatId(),
                 calculatedAtUtc,
                 FastMath.toDegrees(satPoint.getLatitude()),

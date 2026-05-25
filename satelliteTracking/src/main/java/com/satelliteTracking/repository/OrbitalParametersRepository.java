@@ -18,6 +18,8 @@ public interface OrbitalParametersRepository extends JpaRepository<OrbitalParame
 
     OrbitalParameters findTopByOrderByFetchedAtDesc();
 
+    OrbitalParameters findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(Long noradCatId);
+
     // ✅ FIX IMPORTANTE (CACHE PER NORAD ID)
     Optional<OrbitalParameters> findTopBySatellite_NoradCatIdOrderByFetchedAtDesc(Long noradCatId);
 

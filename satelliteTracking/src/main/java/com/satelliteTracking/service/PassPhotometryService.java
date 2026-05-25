@@ -52,7 +52,7 @@ public class PassPhotometryService {
             }
         }
 
-        String satelliteType = satellite.getSatelliteType();
+        String satelliteType = satellite.getEffectiveType();
         if (satelliteType != null && satelliteType.equalsIgnoreCase("starlink")) {
             return 4.5;
         }

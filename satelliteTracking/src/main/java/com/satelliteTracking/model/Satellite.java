@@ -29,6 +29,12 @@ public class Satellite{
     @Column(nullable = false)
     private String satelliteType;  // es. "starlink", "weather", "stations", etc.
 
+    @Column(name = "object_type_raw")
+    private String objectTypeRaw;
+
+    @Column(name = "object_type_inferred")
+    private String objectTypeInferred;
+
     //Relazione con i parametri orbitali (storico)
     @OneToMany(mappedBy = "satellite", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrbitalParameters> orbitalParametersList = new ArrayList<>();
@@ -48,6 +54,20 @@ public class Satellite{
     public void addOrbitalParameters(OrbitalParameters parameters) {
         orbitalParametersList.add(parameters);
         parameters.setSatellite(this);
+    }
+
+    // Restituisce il tipo operativo effettivo seguendo la priorità:
+    // 1) objectTypeRaw se presente e diverso da UNKNOWN
+    // 2) objectTypeInferred se presente
+    // 3) satelliteType (valore storico)
+    public String getEffectiveType() {
+        if (objectTypeRaw != null && !objectTypeRaw.isBlank() && !"UNKNOWN".equalsIgnoreCase(objectTypeRaw)) {
+            return objectTypeRaw;
+        }
+        if (objectTypeInferred != null && !objectTypeInferred.isBlank()) {
+            return objectTypeInferred;
+        }
+        return satelliteType;
     }
 }
 

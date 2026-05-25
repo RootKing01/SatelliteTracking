@@ -87,6 +87,7 @@ class SatelliteSightingServiceTest {
                 42L,
                 "TESTSAT",
                 "LEO",
+                "LEO",
                 "1998-067A",
                 25544L,
                 now,

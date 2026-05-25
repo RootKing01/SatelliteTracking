@@ -7,6 +7,7 @@ public record SatelliteDTO(
     String objectName,
     String objectId,
     Long noradCatId,
+    String effectiveType,
     OrbitalParametersDTO latestOrbitalParameters
 ) {
     public static SatelliteDTO fromEntity(Satellite satellite, OrbitalParametersDTO latestParams) {
@@ -15,6 +16,7 @@ public record SatelliteDTO(
             satellite.getObjectName(),
             satellite.getObjectId(),
             satellite.getNoradCatId(),
+            satellite.getEffectiveType(),
             latestParams
         );
     }
