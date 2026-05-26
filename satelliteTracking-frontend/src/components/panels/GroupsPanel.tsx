@@ -1,4 +1,5 @@
 import type { SatelliteGroupKey } from '../../api/groups/types'
+import { memo } from 'react'
 import '../../styles/panels/groups-panel.css'
 
 type SatelliteSearchScope = 'enabled' | 'all' | SatelliteGroupKey
@@ -45,7 +46,7 @@ type GroupsPanelProps = {
   onToggleGroup: (groupKey: SatelliteGroupKey) => void
 }
 
-export function GroupsPanel({
+function GroupsPanelBase({
   allSelected,
   selectedPreset,
   searchScope,
@@ -161,3 +162,5 @@ export function GroupsPanel({
     </section>
   )
 }
+
+export const GroupsPanel = memo(GroupsPanelBase)

@@ -25,6 +25,7 @@ public class CelestrakService {
     private final WebClient webClient;
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
+    private final SatelliteAuditFileService satelliteAuditFileService;
 
     private final AtomicBoolean isDownloading = new AtomicBoolean(false);
 
@@ -34,7 +35,8 @@ public class CelestrakService {
     };
 
     public CelestrakService(SatelliteRepository satelliteRepository,
-                            OrbitalParametersRepository orbitalParametersRepository) {
+                            OrbitalParametersRepository orbitalParametersRepository,
+                            SatelliteAuditFileService satelliteAuditFileService) {
 
         log.info("🔧 Inizializzazione CelestrakService");
         
@@ -45,6 +47,7 @@ public class CelestrakService {
 
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
+        this.satelliteAuditFileService = satelliteAuditFileService;
         
         log.info("   Gruppi satelliti configurati: {}", String.join(", ", SATELLITE_GROUPS));
     }
@@ -106,6 +109,20 @@ public class CelestrakService {
                                 s.setNoradCatId(dto.noradCatId());
                                 log.debug("      Nuovo satellite: NORAD {} - {}", 
                                         dto.noradCatId(), dto.objectName());
+                            satelliteAuditFileService.appendNewSatellite(
+                                "celestrak",
+                                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC),
+                                String.format(
+                                    "norad=%s | objectName=%s | objectId=%s | group=%s | epoch=%s | meanMotion=%s | inclination=%s",
+                                    dto.noradCatId(),
+                                    dto.objectName(),
+                                    dto.objectId(),
+                                    group,
+                                    dto.epoch(),
+                                    dto.meanMotion(),
+                                    dto.inclination()
+                                )
+                            );
                                 return s;
                             });
 

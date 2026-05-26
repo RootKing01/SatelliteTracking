@@ -1,7 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
   BoundingSphere,
-  CallbackProperty,
   Cartesian3,
   Color,
   EllipsoidTerrainProvider,
@@ -13,7 +12,7 @@ import {
   PointPrimitiveCollection,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
-  defined,
+  Math as CesiumMath,
   VerticalOrigin,
   type Viewer as CesiumViewer,
 } from 'cesium'
@@ -62,7 +61,7 @@ type SatelliteGlobeProps = {
   onPickEntityId: (entityId: string | null) => void
 }
 
-export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>(
+const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>(
   (
     {
       autoRotate,
@@ -84,25 +83,12 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
     const groupNextEntityIdsRef = useRef<Set<string>>(new Set())
     const autoRotateRef = useRef(autoRotate)
     const pauseAutoRotateUntilRef = useRef(0)
+    const lastAutoRotateTickRef = useRef(0)
+    const autoRotateIntervalRef = useRef<number | null>(null)
     const [viewerReadyTick, setViewerReadyTick] = useState(0)
     const terrainProvider = useMemo(() => new EllipsoidTerrainProvider(), [])
-    const selectedPulsePixelSize = useMemo(
-      () =>
-        new CallbackProperty((time) => {
-          const elapsed = time?.secondsOfDay ?? 0
-          return 16 + Math.sin(elapsed * 4) * 3
-        }, false),
-      [],
-    )
-    const selectedPulseColor = useMemo(
-      () =>
-        new CallbackProperty((time) => {
-          const elapsed = time?.secondsOfDay ?? 0
-          const alpha = 0.18 + (Math.sin(elapsed * 4) + 1) * 0.12
-          return Color.fromAlpha(Color.WHITE, alpha)
-        }, false),
-      [],
-    )
+    const selectedPulsePixelSize = 18
+    const selectedPulseColor = useMemo(() => Color.fromAlpha(Color.WHITE, 0.28), [])
     const selectedReticleImage = useMemo(() => {
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -182,19 +168,19 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         return
       }
 
-      let frameId = 0
+      let timeoutId = 0
       const waitForViewer = () => {
         if (viewerRef.current?.cesiumElement) {
           setViewerReadyTick(1)
           return
         }
-        frameId = window.requestAnimationFrame(waitForViewer)
+        timeoutId = window.setTimeout(waitForViewer, 50)
       }
 
       waitForViewer()
 
       return () => {
-        window.cancelAnimationFrame(frameId)
+        window.clearTimeout(timeoutId)
       }
     }, [viewerReadyTick])
 
@@ -348,6 +334,8 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
 
       viewer.resolutionScale = 1
       viewer.scene.highDynamicRange = false
+      viewer.scene.requestRenderMode = true
+      viewer.scene.maximumRenderTimeChange = Infinity
       viewer.scene.postProcessStages.fxaa.enabled = false
       viewer.scene.globe.maximumScreenSpaceError = 4
       viewer.scene.globe.tileCacheSize = 160
@@ -374,24 +362,13 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         )
       }
 
-      const introDestination = Cartesian3.fromDegrees(-20, -6, 31000000)
       viewer.camera.setView({
-        destination: introDestination,
-        orientation: {
-          heading: initialCameraOrientation.heading,
-          pitch: initialCameraOrientation.pitch,
-          roll: initialCameraOrientation.roll,
-        },
-      })
-
-      viewer.camera.flyTo({
         destination: initialCameraDestination,
         orientation: {
           heading: initialCameraOrientation.heading,
           pitch: initialCameraOrientation.pitch,
           roll: initialCameraOrientation.roll,
         },
-        duration: 1.1,
       })
 
       viewer.camera.percentageChanged = 0.002
@@ -403,20 +380,32 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
         return
       }
 
-      const rotateEarth = () => {
+      if (autoRotateIntervalRef.current !== null) {
+        window.clearInterval(autoRotateIntervalRef.current)
+      }
+
+      autoRotateIntervalRef.current = window.setInterval(() => {
+        if (!viewerRef.current?.cesiumElement) {
+          return
+        }
+
         if (Date.now() < pauseAutoRotateUntilRef.current) {
           return
         }
 
-        if (autoRotateRef.current) {
+        const now = Date.now()
+        if (autoRotateRef.current && now - lastAutoRotateTickRef.current >= 100) {
+          lastAutoRotateTickRef.current = now
           viewer.scene.camera.rotateRight(earthRotationSpeed)
+          viewer.scene.requestRender()
         }
-      }
-
-      viewer.clock.onTick.addEventListener(rotateEarth)
+      }, 100)
 
       return () => {
-        viewer.clock.onTick.removeEventListener(rotateEarth)
+        if (autoRotateIntervalRef.current !== null) {
+          window.clearInterval(autoRotateIntervalRef.current)
+          autoRotateIntervalRef.current = null
+        }
       }
     }, [viewerReadyTick])
 
@@ -438,52 +427,88 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
       const starlinkColor = groupColorMap.starlink
       const nextIds = starlinkNextIdsRef.current
       nextIds.clear()
+      // Process updates in chunks to avoid blocking the scheduler/message loop
+      const CHUNK = 100
+      let idx = 0
+      const pendingTimeouts: number[] = []
+      const pendingIdleIds: number[] = []
 
-      for (const satellite of starlinkSatellites) {
-        const satelliteId = satellite.satelliteId
-        nextIds.add(satelliteId)
-
-        const entityId = `starlink-${satelliteId}`
-        const isSelected = selectedEntityId === entityId
-        const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
-        let primitive = starlinkPrimitiveByIdRef.current.get(satelliteId)
-
-        if (!primitive) {
-          primitive = collection.add({
-            position: Cartesian3.fromDegrees(
-              satellite.longitudeDeg,
-              satellite.latitudeDeg,
-              altitudeMeters,
-            ),
-            color: starlinkColor,
-            pixelSize: isSelected ? 6 : 4,
-            outlineColor: Color.WHITE,
-            outlineWidth: isSelected ? 3 : 0,
-            disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
-            id: {
-              entityId,
-            },
-          })
-          starlinkPrimitiveByIdRef.current.set(satelliteId, primitive)
-          continue
+      const scheduleNext = (fn: () => void) => {
+        if ((window as any).requestIdleCallback) {
+          const id = (window as any).requestIdleCallback(fn, { timeout: 50 }) as number
+          pendingIdleIds.push(id)
+        } else {
+          pendingTimeouts.push(window.setTimeout(fn, 0))
         }
-
-        primitive.position = Cartesian3.fromDegrees(
-          satellite.longitudeDeg,
-          satellite.latitudeDeg,
-          altitudeMeters,
-        )
-        primitive.color = starlinkColor
-        primitive.pixelSize = isSelected ? 6 : 4
-        primitive.outlineColor = Color.WHITE
-        primitive.outlineWidth = isSelected ? 3 : 0
-        primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
       }
 
-      for (const [satelliteId, primitive] of starlinkPrimitiveByIdRef.current) {
-        if (!nextIds.has(satelliteId)) {
-          collection.remove(primitive)
-          starlinkPrimitiveByIdRef.current.delete(satelliteId)
+      const processChunk = () => {
+        const end = Math.min(idx + CHUNK, starlinkSatellites.length)
+        for (; idx < end; idx++) {
+          const satellite = starlinkSatellites[idx]
+          const satelliteId = satellite.satelliteId
+          nextIds.add(satelliteId)
+
+          const entityId = `starlink-${satelliteId}`
+          const isSelected = selectedEntityId === entityId
+          const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
+          let primitive = starlinkPrimitiveByIdRef.current.get(satelliteId)
+
+          if (!primitive) {
+            primitive = collection.add({
+              position: Cartesian3.fromDegrees(
+                satellite.longitudeDeg,
+                satellite.latitudeDeg,
+                altitudeMeters,
+              ),
+              color: starlinkColor,
+              pixelSize: isSelected ? 6 : 4,
+              outlineColor: Color.WHITE,
+              outlineWidth: isSelected ? 3 : 0,
+              disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
+              id: {
+                entityId,
+              },
+            })
+            starlinkPrimitiveByIdRef.current.set(satelliteId, primitive)
+            continue
+          }
+
+          primitive.position = Cartesian3.fromDegrees(
+            satellite.longitudeDeg,
+            satellite.latitudeDeg,
+            altitudeMeters,
+          )
+          primitive.color = starlinkColor
+          primitive.pixelSize = isSelected ? 6 : 4
+          primitive.outlineColor = Color.WHITE
+          primitive.outlineWidth = isSelected ? 3 : 0
+          primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
+        }
+
+        if (idx < starlinkSatellites.length) {
+          scheduleNext(processChunk)
+        } else {
+          // cleanup removed primitives after finishing updates
+          for (const [satelliteId, primitive] of starlinkPrimitiveByIdRef.current) {
+            if (!nextIds.has(satelliteId)) {
+              collection.remove(primitive)
+              starlinkPrimitiveByIdRef.current.delete(satelliteId)
+            }
+          }
+        }
+      }
+
+      processChunk()
+
+      return () => {
+        for (const t of pendingTimeouts) {
+          window.clearTimeout(t)
+        }
+        for (const id of pendingIdleIds) {
+          if ((window as any).cancelIdleCallback) {
+            (window as any).cancelIdleCallback(id)
+          }
         }
       }
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, starlinkSatellites])
@@ -506,51 +531,87 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
       const nextEntityIds = groupNextEntityIdsRef.current
       nextEntityIds.clear()
 
-      for (const { group, satellite } of visibleEntitySatellites) {
-        const entityId = `${group.key}-${satellite.satelliteId}`
-        nextEntityIds.add(entityId)
+      // Chunk updates to avoid blocking the main thread when many entities are present
+      const CHUNK = 100
+      let idx = 0
+      const pendingTimeouts: number[] = []
+      const pendingIdleIds: number[] = []
 
-        const isSelected = selectedEntityId === entityId
-        const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
-        const groupColor = groupColorMap[group.key]
-        let primitive = groupPrimitiveByEntityIdRef.current.get(entityId)
-
-        if (!primitive) {
-          primitive = collection.add({
-            position: Cartesian3.fromDegrees(
-              satellite.longitudeDeg,
-              satellite.latitudeDeg,
-              altitudeMeters,
-            ),
-            color: groupColor,
-            pixelSize: isSelected ? 13 : 7,
-            outlineColor: Color.WHITE,
-            outlineWidth: isSelected ? 3 : 1,
-            disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
-            id: {
-              entityId,
-            },
-          })
-          groupPrimitiveByEntityIdRef.current.set(entityId, primitive)
-          continue
+      const scheduleNext = (fn: () => void) => {
+        if ((window as any).requestIdleCallback) {
+          const id = (window as any).requestIdleCallback(fn, { timeout: 50 }) as number
+          pendingIdleIds.push(id)
+        } else {
+          pendingTimeouts.push(window.setTimeout(fn, 0))
         }
-
-        primitive.position = Cartesian3.fromDegrees(
-          satellite.longitudeDeg,
-          satellite.latitudeDeg,
-          altitudeMeters,
-        )
-        primitive.color = groupColor
-        primitive.pixelSize = isSelected ? 13 : 7
-        primitive.outlineColor = Color.WHITE
-        primitive.outlineWidth = isSelected ? 3 : 1
-        primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
       }
 
-      for (const [entityId, primitive] of groupPrimitiveByEntityIdRef.current) {
-        if (!nextEntityIds.has(entityId)) {
-          collection.remove(primitive)
-          groupPrimitiveByEntityIdRef.current.delete(entityId)
+      const processChunk = () => {
+        const end = Math.min(idx + CHUNK, visibleEntitySatellites.length)
+        for (; idx < end; idx++) {
+          const { group, satellite } = visibleEntitySatellites[idx]
+          const entityId = `${group.key}-${satellite.satelliteId}`
+          nextEntityIds.add(entityId)
+
+          const isSelected = selectedEntityId === entityId
+          const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
+          const groupColor = groupColorMap[group.key]
+          let primitive = groupPrimitiveByEntityIdRef.current.get(entityId)
+
+          if (!primitive) {
+            primitive = collection.add({
+              position: Cartesian3.fromDegrees(
+                satellite.longitudeDeg,
+                satellite.latitudeDeg,
+                altitudeMeters,
+              ),
+              color: groupColor,
+              pixelSize: isSelected ? 13 : 7,
+              outlineColor: Color.WHITE,
+              outlineWidth: isSelected ? 3 : 1,
+              disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
+              id: {
+                entityId,
+              },
+            })
+            groupPrimitiveByEntityIdRef.current.set(entityId, primitive)
+            continue
+          }
+
+          primitive.position = Cartesian3.fromDegrees(
+            satellite.longitudeDeg,
+            satellite.latitudeDeg,
+            altitudeMeters,
+          )
+          primitive.color = groupColor
+          primitive.pixelSize = isSelected ? 13 : 7
+          primitive.outlineColor = Color.WHITE
+          primitive.outlineWidth = isSelected ? 3 : 1
+          primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
+        }
+
+        if (idx < visibleEntitySatellites.length) {
+          scheduleNext(processChunk)
+        } else {
+          for (const [entityId, primitive] of groupPrimitiveByEntityIdRef.current) {
+            if (!nextEntityIds.has(entityId)) {
+              collection.remove(primitive)
+              groupPrimitiveByEntityIdRef.current.delete(entityId)
+            }
+          }
+        }
+      }
+
+      processChunk()
+
+      return () => {
+        for (const t of pendingTimeouts) {
+          window.clearTimeout(t)
+        }
+        for (const id of pendingIdleIds) {
+          if ((window as any).cancelIdleCallback) {
+            (window as any).cancelIdleCallback(id)
+          }
         }
       }
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, visibleEntitySatellites])
@@ -565,7 +626,7 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
 
       clickHandler.setInputAction((event: { position: unknown }) => {
         const picked = viewer.scene.pick(event.position as Parameters<typeof viewer.scene.pick>[0])
-        if (!defined(picked)) {
+        if (!picked) {
           onPickEntityId(null)
           return
         }
@@ -734,5 +795,7 @@ export const SatelliteGlobe = forwardRef<SatelliteGlobeHandle, SatelliteGlobePro
     )
   },
 )
+
+export const SatelliteGlobe = memo(SatelliteGlobeBase)
 
 SatelliteGlobe.displayName = 'SatelliteGlobe'

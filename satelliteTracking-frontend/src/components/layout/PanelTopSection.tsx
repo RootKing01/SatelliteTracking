@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { OrekitStatusResponse } from '../../api/orekitStatusClient'
 import type { SystemHealthResponse } from '../../api/systemHealthClient'
 
@@ -12,7 +13,7 @@ type PanelTopSectionProps = {
   onLogout: () => void
 }
 
-export function PanelTopSection({
+function PanelTopSectionBase({
   username,
   orekitStatus,
   orekitStatusLoading,
@@ -118,3 +119,5 @@ export function PanelTopSection({
     </section>
   )
 }
+
+export const PanelTopSection = memo(PanelTopSectionBase)

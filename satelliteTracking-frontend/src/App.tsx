@@ -4,7 +4,7 @@ import {
   useCalculateVisibility,
   useFocusBySatelliteId,
 } from './hooks/useInteractionHandlers'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { Color, Ion } from 'cesium'
 import { getCurrentUser, type AuthUser } from './api/authClient'
@@ -238,8 +238,11 @@ function App() {
   }, [visibilityAllResults, visibilityOverlayQuery])
 
   const groupRows = useMemo(
-    () => buildGroupRows(allGroups, enabledGroups, groupPositions, groupLoading, groupErrors),
-    [allGroups, enabledGroups, groupErrors, groupLoading, groupPositions],
+    () =>
+      openPane === 'groups'
+        ? buildGroupRows(allGroups, enabledGroups, groupPositions, groupLoading, groupErrors)
+        : [],
+    [allGroups, enabledGroups, groupErrors, groupLoading, groupPositions, openPane],
   )
 
   useEffect(() => {
@@ -248,15 +251,17 @@ function App() {
 
   const searchResultItems = useMemo(
     () =>
-      buildSearchResultItems({
-        allGroups,
-        enabledGroups,
-        groupPositions,
-        catalogByGroup,
-        searchScope,
-        searchQuery,
-      }),
-    [allGroups, catalogByGroup, enabledGroups, groupPositions, searchQuery, searchScope],
+      openPane === 'groups'
+        ? buildSearchResultItems({
+            allGroups,
+            enabledGroups,
+            groupPositions,
+            catalogByGroup,
+            searchScope,
+            searchQuery,
+          })
+        : [],
+    [allGroups, catalogByGroup, enabledGroups, groupPositions, openPane, searchQuery, searchScope],
   )
 
   const handlePickEntityId = useCallback(
@@ -278,6 +283,42 @@ function App() {
     handlePickEntityId(null)
   }, [handlePickEntityId])
 
+  const searchScopeOptions = useMemo(
+    () => allGroups.map((group) => ({ key: group.key, label: group.label })),
+    [allGroups],
+  )
+
+  const handleToggleAllGroups = useCallback(() => {
+    const nextValue = !allSelected
+    setSelectedPreset('custom')
+    setEnabledGroups(
+      Object.fromEntries(allGroups.map((group) => [group.key, nextValue])) as Record<
+        SatelliteGroupKey,
+        boolean
+      >,
+    )
+  }, [allGroups, allSelected])
+
+  const handlePresetChange = useCallback(
+    (presetValue: string) => {
+      const preset = presetValue as GroupPreset
+      setSelectedPreset(preset)
+      const nextEnabled = buildEnabledGroupsFromPreset(allGroups, preset)
+      if (nextEnabled) {
+        setEnabledGroups(nextEnabled)
+      }
+    },
+    [allGroups],
+  )
+
+  const handleSearchScopeChange = useCallback((scopeValue: string) => {
+    setSearchScope(scopeValue as SatelliteSearchScope)
+  }, [])
+
+  const handleSearchQueryChange = useCallback((query: string) => {
+    setSearchQuery(query)
+  }, [])
+
   const handleSearchResultSelect = useSearchResultSelect({
     setSelectedPreset,
     setEnabledGroups,
@@ -285,6 +326,49 @@ function App() {
     satelliteLookupByEntityId,
     globeRef,
   })
+
+  const handleSearchResultSelectCallback = useCallback(
+    (item: Parameters<typeof handleSearchResultSelect>[0]) => {
+      void handleSearchResultSelect(item)
+    },
+    [handleSearchResultSelect],
+  )
+
+  const handleToggleGroupCallback = useCallback((groupKey: SatelliteGroupKey) => {
+    setSelectedPreset('custom')
+    setEnabledGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }))
+  }, [])
+
+  const handleZoomIn = useCallback(() => globeRef.current?.zoomIn(), [])
+  const handleZoomOut = useCallback(() => globeRef.current?.zoomOut(), [])
+  const handleGoHome = useCallback(() => globeRef.current?.goToInitialView(), [])
+  const handleAlignAxis = useCallback(() => globeRef.current?.alignToEarthAxis(), [])
+  const handleToggleAutoRotate = useCallback(() => {
+    setAutoRotate((prev) => !prev)
+  }, [])
+  const handleToggleBackSideSatellites = useCallback(() => {
+    setShowBackSideSatellites((prev) => !prev)
+  }, [])
+  const handleRefreshTuningIndexChange = useCallback((value: number) => {
+    setRefreshTuningIndex(value)
+  }, [])
+
+  const handlePingSystemHealth = useCallback(() => {
+    setSystemHealthLoading(true)
+    setSystemHealthError('')
+    void loadSystemHealth()
+      .then(({ status, error }) => {
+        setSystemHealth(status)
+        setSystemHealthError(error)
+        console.log('[HEALTH CHECK]', status, error)
+      })
+      .finally(() => {
+        setSystemHealthLoading(false)
+      })
+  }, [])
 
   useEffect(() => {
     if (!selectedEntityId || selectedSatellite) {
@@ -328,14 +412,16 @@ function App() {
         return { key: group.key, catalog }
       }),
     ).then((results) => {
-      setCatalogByGroup((prev) => {
-        const next = { ...prev }
-        for (const result of results) {
-          if (result.status === 'fulfilled') {
-            next[result.value.key] = result.value.catalog
+      startTransition(() => {
+        setCatalogByGroup((prev) => {
+          const next = { ...prev }
+          for (const result of results) {
+            if (result.status === 'fulfilled') {
+              next[result.value.key] = result.value.catalog
+            }
           }
-        }
-        return next
+          return next
+        })
       })
     })
 
@@ -763,20 +849,24 @@ function App() {
       })
 
       if (unauthorizedDetected) {
-        setAuthUser(null)
-        setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        setAuthInfo('Sessione non valida per le API live.')
-        setGroupPositions({})
-        setGroupErrors({})
-        setGroupLoading({})
-        setHasLoadedOnce(false)
+        startTransition(() => {
+          setAuthUser(null)
+          setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+          setAuthInfo('Sessione non valida per le API live.')
+          setGroupPositions({})
+          setGroupErrors({})
+          setGroupLoading({})
+          setHasLoadedOnce(false)
+        })
         return
       }
 
-      setGroupPositions(nextPositions)
-      setGroupErrors(nextErrors)
-      setGroupLoading(nextLoading)
-      setHasLoadedOnce(true)
+      startTransition(() => {
+        setGroupPositions(nextPositions)
+        setGroupErrors(nextErrors)
+        setGroupLoading(nextLoading)
+        setHasLoadedOnce(true)
+      })
     }
 
     const finalizeLoadRequest = (requestId: number) => {
@@ -822,34 +912,6 @@ function App() {
       setIsRefreshing(false)
     }
   }, [activeGroups, authUser, refreshIntervalMs])
-
-  const toggleGroup = (key: SatelliteGroupKey) => {
-    setSelectedPreset('custom')
-    setEnabledGroups((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }))
-  }
-
-  const toggleAllGroups = () => {
-    const nextValue = !allSelected
-    setSelectedPreset('custom')
-    setEnabledGroups(
-      Object.fromEntries(allGroups.map((group) => [group.key, nextValue])) as Record<
-        SatelliteGroupKey,
-        boolean
-      >,
-    )
-  }
-
-  const applyGroupPreset = (preset: GroupPreset) => {
-    const nextEnabled = buildEnabledGroupsFromPreset(allGroups, preset)
-    if (!nextEnabled) {
-      return
-    }
-
-    setEnabledGroups(nextEnabled)
-  }
 
   const panelWidth = 470
 
@@ -925,20 +987,7 @@ function App() {
                 onLogout={() => {
                   void handleLogout()
                 }}
-                onPingSystemHealth={() => {
-                  setSystemHealthLoading(true)
-                  setSystemHealthError('')
-                  void loadSystemHealth()
-                    .then(({ status, error }) => {
-                      setSystemHealth(status)
-                      setSystemHealthError(error)
-                      // Logga il risultato in console
-                      console.log('[HEALTH CHECK]', status, error)
-                    })
-                    .finally(() => {
-                      setSystemHealthLoading(false)
-                    })
-                }}
+                onPingSystemHealth={handlePingSystemHealth}
               />
             </section>
 
@@ -966,27 +1015,14 @@ function App() {
                               searchScope={searchScope}
                               searchQuery={searchQuery}
                               searchResultItems={searchResultItems}
-                              searchScopeOptions={allGroups.map((group) => ({
-                                key: group.key,
-                                label: group.label,
-                              }))}
+                              searchScopeOptions={searchScopeOptions}
                               groupRows={groupRows}
-                              onToggleAll={toggleAllGroups}
-                              onPresetChange={(presetValue) => {
-                                const preset = presetValue as GroupPreset
-                                setSelectedPreset(preset)
-                                applyGroupPreset(preset)
-                              }}
-                              onSearchScopeChange={(scopeValue) => {
-                                setSearchScope(scopeValue)
-                              }}
-                              onSearchQueryChange={setSearchQuery}
-                              onSearchResultSelect={(item) => {
-                                void handleSearchResultSelect(item)
-                              }}
-                              onToggleGroup={(groupKey) => {
-                                toggleGroup(groupKey)
-                              }}
+                              onToggleAll={handleToggleAllGroups}
+                              onPresetChange={handlePresetChange}
+                              onSearchScopeChange={handleSearchScopeChange}
+                              onSearchQueryChange={handleSearchQueryChange}
+                              onSearchResultSelect={handleSearchResultSelectCallback}
+                              onToggleGroup={handleToggleGroupCallback}
                             />
                           </div>
                         ) : null}
@@ -1001,15 +1037,13 @@ function App() {
                               refreshIntervalMs={refreshIntervalMs}
                               refreshProfileLabel={selectedRefreshTuning.label}
                               refreshTuningIndex={refreshTuningIndex}
-                              onZoomIn={() => globeRef.current?.zoomIn()}
-                              onZoomOut={() => globeRef.current?.zoomOut()}
-                              onGoHome={() => globeRef.current?.goToInitialView()}
-                              onAlignAxis={() => globeRef.current?.alignToEarthAxis()}
-                              onToggleAutoRotate={() => setAutoRotate((prev) => !prev)}
-                              onToggleBackSideSatellites={() =>
-                                setShowBackSideSatellites((prev) => !prev)
-                              }
-                              onRefreshTuningIndexChange={setRefreshTuningIndex}
+                              onZoomIn={handleZoomIn}
+                              onZoomOut={handleZoomOut}
+                              onGoHome={handleGoHome}
+                              onAlignAxis={handleAlignAxis}
+                              onToggleAutoRotate={handleToggleAutoRotate}
+                              onToggleBackSideSatellites={handleToggleBackSideSatellites}
+                              onRefreshTuningIndexChange={handleRefreshTuningIndexChange}
                             />
                           </div>
                         ) : null}

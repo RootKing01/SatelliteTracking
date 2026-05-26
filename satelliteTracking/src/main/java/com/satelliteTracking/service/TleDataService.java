@@ -19,6 +19,7 @@ public class TleDataService {
 
     private final SpaceTrackService spaceTrackService;
     private final CelestrakService celestrakService;
+    private final SatelliteAuditFileService satelliteAuditFileService;
     private final SatelliteRepository satelliteRepository;
     private final OrbitalParametersRepository orbitalParametersRepository;
 
@@ -28,10 +29,12 @@ public class TleDataService {
     public TleDataService(
             SpaceTrackService spaceTrackService,
             CelestrakService celestrakService,
+            SatelliteAuditFileService satelliteAuditFileService,
             SatelliteRepository satelliteRepository,
             OrbitalParametersRepository orbitalParametersRepository) {
         this.spaceTrackService = spaceTrackService;
         this.celestrakService = celestrakService;
+        this.satelliteAuditFileService = satelliteAuditFileService;
         this.satelliteRepository = satelliteRepository;
         this.orbitalParametersRepository = orbitalParametersRepository;
     }
@@ -117,7 +120,7 @@ public class TleDataService {
     private boolean fetchFromSpaceTrack() {
         log.info("───────────────────────────────────────────────────────────");
         log.info("📡 Fetch DELTA da Space-Track (tutti i satelliti)");
-        log.info("   💡 Filtro su EPOCH via REST path per delta corretti");
+        log.info("   💡 Filtro su CREATION_DATE via REST path per delta corretti");
         log.info("───────────────────────────────────────────────────────────");
 
         try {
@@ -142,10 +145,10 @@ public class TleDataService {
                 return true; // Interrompi qui, non chiamare fallback due volte
             }
 
-            // ⚡ FIX: passa LocalDateTime, non String epoch
+            // ⚡ FIX: passa il timestamp diretto, non una stringa di query
             String tleData = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             log.debug("[DEBUG] Risposta grezza Space-Track: {}", tleData);
-                        if (tleData == null) {
+            if (tleData == null) {
                 log.warn("❌ Space-Track ha restituito null");
                 return false;
             }
@@ -315,6 +318,20 @@ int parseAndSaveJson(String jsonData, boolean leoOnly) {
                         sat = satelliteRepository.save(sat);
                         created++;
                         log.info("✨ Nuovo satellite creato: {} (NORAD {})", sat.getObjectName(), norad);
+                                    satelliteAuditFileService.appendNewSatellite(
+                                        "spacetrack",
+                                        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC),
+                                        String.format(
+                                            "norad=%s | objectName=%s | objectId=%s | satelliteType=%s | objectTypeRaw=%s | objectTypeInferred=%s | epoch=%s",
+                                            sat.getNoradCatId(),
+                                            sat.getObjectName(),
+                                            sat.getObjectId(),
+                                            sat.getSatelliteType(),
+                                            sat.getObjectTypeRaw(),
+                                            sat.getObjectTypeInferred(),
+                                            node.path("EPOCH").asText("")
+                                        )
+                                    );
                     } else {
                         sat = satOpt.get();
                     }

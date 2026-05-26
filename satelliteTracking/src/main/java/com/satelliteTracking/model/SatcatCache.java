@@ -18,7 +18,6 @@ public class SatcatCache {
     @Column(nullable = false, unique = true)
     private Long noradCatId;
 
-    @Lob
     @Column(columnDefinition = "text")
     private String jsonData;
 

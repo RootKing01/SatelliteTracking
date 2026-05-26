@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import '../../styles/panels/satellites-panel.css'
 
 type SatellitesPanelProps = {
@@ -17,7 +18,7 @@ type SatellitesPanelProps = {
   onRefreshTuningIndexChange: (value: number) => void
 }
 
-export function SatellitesPanel({
+function SatellitesPanelBase({
   autoRotate,
   showBackSideSatellites,
   hasLoadedOnce,
@@ -93,3 +94,5 @@ export function SatellitesPanel({
     </section>
   )
 }
+
+export const SatellitesPanel = memo(SatellitesPanelBase)
