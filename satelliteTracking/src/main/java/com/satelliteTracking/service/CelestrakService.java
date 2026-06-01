@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
 import java.util.List;
@@ -66,6 +67,11 @@ public class CelestrakService {
             log.info("🌍 INIZIO DOWNLOAD DA CELESTRAK");
             log.info("   Gruppi da scaricare: {}", SATELLITE_GROUPS.length);
             log.info("═══════════════════════════════════════════════════════════");
+                satelliteAuditFileService.appendFetchHeader(
+                    "celestrak",
+                    java.time.LocalDateTime.now(java.time.ZoneOffset.UTC),
+                    "download completo"
+                );
 
             int totalSatellites = 0;
             int totalGroups = 0;
@@ -75,27 +81,13 @@ public class CelestrakService {
                 totalGroups++;
                 log.info("📦 Gruppo {}/{}: '{}' - Avvio download...", 
                         totalGroups, SATELLITE_GROUPS.length, group);
-                
-                long startTime = System.currentTimeMillis();
 
-                List<CelestrakSatelliteDTO> satellites =
-                        webClient.get()
-                                .uri("/NORAD/elements/gp.php?GROUP=" + group + "&FORMAT=json")
-                                .retrieve()
-                                .bodyToFlux(CelestrakSatelliteDTO.class)
-                                .timeout(Duration.ofMinutes(3))
-                                .collectList()
-                                .block();
-
-                long duration = System.currentTimeMillis() - startTime;
+                List<CelestrakSatelliteDTO> satellites = downloadGroupWithRetry(group);
 
                 if (satellites == null || satellites.isEmpty()) {
-                    log.warn("⚠️  Gruppo '{}': Nessun satellite ricevuto (tempo: {}ms)", group, duration);
                     continue;
                 }
 
-                log.info("✅ Gruppo '{}': {} satelliti scaricati in {}ms", 
-                        group, satellites.size(), duration);
                 log.info("   Inizio salvataggio nel database...");
 
                 int savedInGroup = 0;
@@ -167,5 +159,52 @@ public class CelestrakService {
             isDownloading.set(false);
             log.debug("🔓 CelesTrak lock rilasciato");
         }
+    }
+
+    private List<CelestrakSatelliteDTO> downloadGroupWithRetry(String group) {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            long startTime = System.currentTimeMillis();
+            try {
+                List<CelestrakSatelliteDTO> satellites = webClient.get()
+                        .uri("/NORAD/elements/gp.php?GROUP=" + group + "&FORMAT=json")
+                        .retrieve()
+                        .bodyToFlux(CelestrakSatelliteDTO.class)
+                        .timeout(Duration.ofMinutes(3))
+                        .collectList()
+                        .block();
+
+                long duration = System.currentTimeMillis() - startTime;
+
+                if (satellites == null || satellites.isEmpty()) {
+                    log.warn("⚠️  Gruppo '{}': Nessun satellite ricevuto (tempo: {}ms)", group, duration);
+                    return null;
+                }
+
+                log.info("✅ Gruppo '{}': {} satelliti scaricati in {}ms", 
+                        group, satellites.size(), duration);
+                return satellites;
+            } catch (WebClientResponseException e) {
+                long duration = System.currentTimeMillis() - startTime;
+                if (e.getStatusCode().value() == 500 && attempt == 1) {
+                    log.warn("⚠️  Gruppo '{}': 500 da CelesTrak ({}ms), attendo 30s prima di riprovare", group, duration);
+                    try {
+                        Thread.sleep(30000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                    continue;
+                }
+
+                log.error("❌ Gruppo '{}': errore HTTP {} dopo {}ms", group, e.getStatusCode(), duration);
+                return null;
+            } catch (Exception e) {
+                long duration = System.currentTimeMillis() - startTime;
+                log.error("❌ Gruppo '{}': errore {} dopo {}ms", group, e.getClass().getSimpleName(), duration, e);
+                return null;
+            }
+        }
+
+        return null;
     }
 }

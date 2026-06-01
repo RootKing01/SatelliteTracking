@@ -17,7 +17,18 @@ export function buildEnabledGroupsFromPreset(
   }
 
   const navigationKeys = new Set<SatelliteGroupKey>(['gpsOps', 'galileo', 'glonassOps', 'beidou', 'sbas'])
-  const leoKeys = new Set<SatelliteGroupKey>(['starlink', 'oneweb', 'iridiumNext', 'planet', 'spire', 'cubesat', 'spaceMissions'])
+  const leoKeys = new Set<SatelliteGroupKey>([
+    'starlink',
+    'oneweb',
+    'iridiumNext',
+    'planet',
+    'spire',
+    'cubesat',
+    'spaceMissions',
+    'debris',
+    'payload',
+    'spaceRocket',
+  ])
 
   return Object.fromEntries(
     groups.map((group) => {

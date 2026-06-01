@@ -17,7 +17,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 @ConditionalOnProperty(value = "app.scheduler.enabled", havingValue = "true", matchIfMissing = true)
@@ -50,10 +52,53 @@ public class SatelliteScheduler {
      */
 
     /**
-     * 🔄 UPDATE TLE COMPLETO ogni 12 ore
+     * 🔄 Pipeline ordinata dei fetch
+     * Parte con il controllo LEO/full TLE, poi missioni spaziali e infine il pre-calcolo Telegram.
+     */
+    @Scheduled(fixedRate = 10800000, initialDelay = 600000)
+    public void runOrderedFetchPipeline() {
+        System.out.println("═══════════════════════════════════════════════════════════");
+        System.out.println("🔄 [Fetch Pipeline] Avvio sequenza ordinata...");
+        System.out.println("═══════════════════════════════════════════════════════════");
+
+        try {
+            OrbitalParameters lastUpdate = orbitalParametersRepository
+                .findTopBySatellite_NoradCatIdGreaterThanOrderByFetchedAtDesc(0L);
+
+            if (lastUpdate == null) {
+                System.out.println("✅ Database non inizializzato: eseguo full update");
+                updateSatellitesFull();
+            } else {
+                long hours = Duration.between(lastUpdate.getFetchedAt(), LocalDateTime.now()).toHours();
+
+                if (hours >= FULL_UPDATE_HOURS) {
+                    System.out.println("✅ Full update necessario (" + hours + "h dall'ultimo)");
+                    updateSatellitesFull();
+                } else {
+                    System.out.println("✅ Delta LEO necessario (" + hours + "h dall'ultimo full/update)");
+                    updateSatellitesLeoOnly();
+                }
+            }
+
+            syncSpaceMissions();
+
+            passService.clearPassesCache();
+            precomputeUpcomingPasses();
+
+            System.out.println("═══════════════════════════════════════════════════════════");
+            System.out.println("✅ [Fetch Pipeline] Sequenza completata");
+            System.out.println("═══════════════════════════════════════════════════════════");
+
+        } catch (Exception e) {
+            System.err.println("❌ [Fetch Pipeline] Errore: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 🔄 UPDATE TLE COMPLETO
      * Aggiorna tutti i satelliti (LEO + MEO + GEO + HEO)
      */
-    @Scheduled(fixedRate = 43200000, initialDelay = 60000) // 12 ore
     public void updateSatellitesFull() {
 
         System.out.println("═══════════════════════════════════════════════════════════");
@@ -92,9 +137,6 @@ public class SatelliteScheduler {
         try {
             tleDataService.updateTle();
 
-            passService.clearPassesCache();
-            precomputeUpcomingPasses();
-
             System.out.println("═══════════════════════════════════════════════════════════");
             System.out.println("✅ [Full Update] Aggiornamento completo terminato");
             System.out.println("═══════════════════════════════════════════════════════════");
@@ -106,13 +148,9 @@ public class SatelliteScheduler {
     }
 
     /**
-     * 🛰️ UPDATE TLE LEO ogni 3 ore
+     * 🛰️ UPDATE TLE LEO
      * Aggiorna solo i satelliti in orbita bassa (più soggetti a variazioni)
-     * 
-     * Schedulazione: ogni 3 ore (10800000 ms)
-     * Initial delay: 10 minuti per non sovrapporsi al full update iniziale
      */
-    @Scheduled(fixedRate = 10800000, initialDelay = 600000) // 3 ore, delay 10min
     public void updateSatellitesLeoOnly() {
 
         System.out.println("═══════════════════════════════════════════════════════════");
@@ -152,10 +190,6 @@ public class SatelliteScheduler {
         try {
             tleDataService.updateTleLeoOnly();
 
-            // Invalida solo la cache dei passaggi (i LEO cambiano rapidamente)
-            passService.clearPassesCache();
-            precomputeUpcomingPasses();
-
             System.out.println("═══════════════════════════════════════════════════════════");
             System.out.println("✅ [LEO Update] Aggiornamento LEO terminato");
             System.out.println("═══════════════════════════════════════════════════════════");
@@ -167,10 +201,8 @@ public class SatelliteScheduler {
     }
 
     /**
-     * 🚀 Sincronizzazione missioni spaziali ogni 3 ore
-     * Job separato dai TLE Space-Track così non altera il timing LEO.
+     * 🚀 Sincronizzazione missioni spaziali
      */
-    @Scheduled(fixedDelay = 3 * 60 * 60 * 1000, initialDelay = 600000)
     public void syncSpaceMissions() {
         System.out.println("═══════════════════════════════════════════════════════════");
         System.out.println("🚀 [Mission Sync] Verifica sincronizzazione missioni...");
@@ -199,9 +231,8 @@ public class SatelliteScheduler {
     }
 
     /**
-     * 🧠 Precalcolo passaggi ogni ora
+     * 🧠 Precalcolo passaggi
      */
-    @Scheduled(fixedRate = 3600000, initialDelay = 120000)
     public void precomputeUpcomingPasses() {
         System.out.println("🔄 [Pass Precalculator] Pre-calcolo passaggi...");
 
@@ -224,13 +255,14 @@ public class SatelliteScheduler {
     /**
      * 📢 Notifiche Telegram ogni ora
      */
-    @Scheduled(fixedRate = 3600000, initialDelay = 180000)
+    @Scheduled(fixedRate = 3600000, initialDelay = 900000)
     public void sendTelegramNotificationsForUpcomingPasses() {
 
         System.out.println("📢 [Telegram Scheduler] Scan passaggi...");
 
         try {
             List<TelegramSubscription> subs = telegramNotificationService.getAllSubscriptions();
+            Map<String, List<SatellitePassDTO>> passCacheByRequest = new HashMap<>();
 
             for (TelegramSubscription sub : subs) {
 
@@ -244,13 +276,21 @@ public class SatelliteScheduler {
                             sub.getLocationName()
                     );
 
-                    List<SatellitePassDTO> passes = passService.findVisibleUpcomingPasses(
+                        String requestKey = buildPassRequestKey(sub, location);
+                        List<SatellitePassDTO> passes = passCacheByRequest.get(requestKey);
+                        if (passes == null) {
+                        System.out.println("[Telegram Scan Cache] MISS key=" + requestKey + " -> compute");
+                        passes = passService.findVisibleUpcomingPasses(
                             3,
                             sub.getMinElevation(),
                             location,
                             sub.getObservingCondition(),
                             sub.getMaxMagnitude()
-                    );
+                        );
+                        passCacheByRequest.put(requestKey, passes);
+                    } else {
+                        System.out.println("[Telegram Scan Cache] HIT key=" + requestKey + " entries=" + passes.size());
+                        }
 
                     if (sub.getLastNotificationSent() != null) {
                         long minutes = Duration.between(sub.getLastNotificationSent(), LocalDateTime.now()).toMinutes();
@@ -280,5 +320,16 @@ public class SatelliteScheduler {
         } catch (Exception e) {
             System.err.println("❌ Telegram scheduler error: " + e.getMessage());
         }
+    }
+
+    private String buildPassRequestKey(TelegramSubscription sub, ObserverLocation location) {
+        return String.format("%.4f_%.4f_%.1f_%d_%.1f_%s_%.1f",
+                location.getLatitude(),
+                location.getLongitude(),
+                location.getAltitude(),
+                3,
+                sub.getMinElevation(),
+                sub.getObservingCondition().toLowerCase(),
+                sub.getMaxMagnitude());
     }
 }

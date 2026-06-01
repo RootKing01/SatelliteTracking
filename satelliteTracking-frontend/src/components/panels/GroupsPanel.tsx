@@ -63,7 +63,16 @@ function GroupsPanelBase({
 }: GroupsPanelProps) {
   return (
     <section className="collapsible side-drawer" aria-label="Gruppi satelliti">
-      <h3>Gruppi satelliti</h3>
+      <h3>
+        Gruppi satelliti
+        <button
+          className="group-help"
+          aria-label="Spiegazione gruppi"
+          title="I gruppi rappresentano collezioni di satelliti per categoria. 'Debris' = frammenti/debris in orbita; 'Payload' = carichi utili; 'Space Rocket' = razzi/etappe rimaste in orbita."
+        >
+          ?
+        </button>
+      </h3>
       <label className="select-all">
         <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
         <span>Seleziona tutti i gruppi</span>
@@ -111,7 +120,7 @@ function GroupsPanelBase({
           type="text"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
-          placeholder="Nome, NORAD o object id"
+          placeholder="Cerca per nome, NORAD o object id. Senza testo mostra 30 satelliti di esempio"
         />
 
         <div className="search-results-meta">{searchResultItems.length} risultati</div>

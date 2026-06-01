@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -55,13 +56,13 @@ public class SatcatService {
 
     public String getSatcatJson(Long norad) {
         if (spaceTrackService.isSatcatRateLimited()) {
-            log.warn("⏸️ SATCAT rate limited fino a {}: skip NORAD {}", spaceTrackService.getSatcatCooldownUntil(), norad);
+            log.warn("⏸️ SATCAT rate limited fino a hourly={} daily={}: skip NORAD {}", spaceTrackService.getSatcatCooldownUntil(), spaceTrackService.getSatcatDailyCooldownUntil(), norad);
             return null;
         }
 
         SatcatCache cached = cacheRepository.findByNoradCatId(norad).orElse(null);
         if (cached != null && cached.getFetchedAt() != null) {
-            if (Duration.between(cached.getFetchedAt(), LocalDateTime.now()).toHours() < 24) {
+            if (Duration.between(cached.getFetchedAt(), LocalDateTime.now(ZoneOffset.UTC)).toHours() < 24) {
                 log.debug("Satcat cache hit for {}", norad);
                 return cached.getJsonData();
             }
@@ -73,7 +74,7 @@ public class SatcatService {
             if (cached == null) cached = new SatcatCache();
             cached.setNoradCatId(norad);
             cached.setJsonData(json);
-            cached.setFetchedAt(LocalDateTime.now());
+            cached.setFetchedAt(LocalDateTime.now(ZoneOffset.UTC));
             cacheRepository.save(cached);
         }
         return json;
@@ -81,10 +82,10 @@ public class SatcatService {
 
     @Scheduled(cron = "0 10 18 * * *", zone = "UTC") // every day at 18:10 UTC
     public void dailyEnrichment() {
-        log.info("🔁 Avvio enrichment SATCAT giornaliero (scan batch = {}, noradsPerCall = {})", scanBatchSize, noradsPerCall);
+        log.info("🔁 Avvio enrichment SATCAT giornaliero (scan batch = {}, single Space-Track call, parsing offline)", scanBatchSize);
 
         if (spaceTrackService.isSatcatRateLimited()) {
-            log.warn("⏸️ Enrichment SATCAT rimandato: cooldown attivo fino a {}", spaceTrackService.getSatcatCooldownUntil());
+            log.warn("⏸️ Enrichment SATCAT rimandato: cooldown attivo fino a hourly={} daily={}", spaceTrackService.getSatcatCooldownUntil(), spaceTrackService.getSatcatDailyCooldownUntil());
             return;
         }
 
@@ -113,62 +114,45 @@ public class SatcatService {
         // Exclude those already in cache and fresh
         List<SatcatCache> cachedList = cacheRepository.findByNoradCatIdIn(distinctNorads);
         Set<Long> freshCached = cachedList.stream()
-                .filter(c -> c.getFetchedAt() != null && Duration.between(c.getFetchedAt(), LocalDateTime.now()).toHours() < 24)
+                .filter(c -> c.getFetchedAt() != null && Duration.between(c.getFetchedAt(), LocalDateTime.now(ZoneOffset.UTC)).toHours() < 24)
             .map(SatcatCache::getNoradCatId)
                 .collect(Collectors.toSet());
 
         List<Long> toFetchAll = distinctNorads.stream().filter(n -> !freshCached.contains(n)).collect(Collectors.toList());
 
-        int callsMade = 0;
         int skippedCached = distinctNorads.size() - toFetchAll.size();
 
         log.info("ℹ️ SATCAT enrichment: distinctNorads={}, toFetch={}, cachedSkip={}", distinctNorads.size(), toFetchAll.size(), skippedCached);
 
         if (!toFetchAll.isEmpty()) {
-            // Chunk the NORAD list into manageable call sizes (prefer minimal number of calls)
-            List<List<Long>> chunks = new ArrayList<>();
-            for (int i = 0; i < toFetchAll.size(); i += noradsPerCall) {
-                chunks.add(toFetchAll.subList(i, Math.min(i + noradsPerCall, toFetchAll.size())));
+            if (spaceTrackService.isSatcatRateLimited()) {
+                log.warn("⏸️ Interrompo enrichment: cooldown SATCAT attivo fino a hourly={} daily={}", spaceTrackService.getSatcatCooldownUntil(), spaceTrackService.getSatcatDailyCooldownUntil());
+                return;
             }
-
-            for (List<Long> chunk : chunks) {
-                if (spaceTrackService.isSatcatRateLimited()) {
-                    log.warn("⏸️ Interrompo enrichment: cooldown SATCAT attivo fino a {}", spaceTrackService.getSatcatCooldownUntil());
-                    return;
-                }
-                try {
-                    log.info("📥 Fetch grouped SATCAT for {} ids (sample={})", chunk.size(), chunk.get(0));
-                    String groupedJson = spaceTrackService.downloadSatcatByNoradIds(chunk);
-                    callsMade++;
-                    if (groupedJson != null && !groupedJson.isBlank()) {
-                        try {
-                            JsonNode root = objectMapper.readTree(groupedJson);
-                            if (root.isArray()) {
-                                for (JsonNode node : root) {
-                                    Long id = node.path("NORAD_CAT_ID").asLong(0);
-                                    if (id == 0) continue;
-                                    String jsonStr = objectMapper.writeValueAsString(node);
-                                    SatcatCache cache = cacheRepository.findByNoradCatId(id).orElseGet(SatcatCache::new);
-                                    cache.setNoradCatId(id);
-                                    cache.setJsonData(jsonStr);
-                                    cache.setFetchedAt(LocalDateTime.now());
-                                    cacheRepository.save(cache);
-                                }
+            try {
+                log.info("📥 Fetch grouped SATCAT for {} ids (sample={})", toFetchAll.size(), toFetchAll.get(0));
+                String groupedJson = spaceTrackService.downloadSatcatByNoradIds(toFetchAll);
+                if (groupedJson != null && !groupedJson.isBlank()) {
+                    try {
+                        JsonNode root = objectMapper.readTree(groupedJson);
+                        if (root.isArray()) {
+                            for (JsonNode node : root) {
+                                Long id = readOptionalLong(node, "NORAD_CAT_ID");
+                                if (id == null || id == 0) continue;
+                                String jsonStr = objectMapper.writeValueAsString(node);
+                                SatcatCache cache = cacheRepository.findByNoradCatId(id).orElseGet(SatcatCache::new);
+                                cache.setNoradCatId(id);
+                                cache.setJsonData(jsonStr);
+                                cache.setFetchedAt(LocalDateTime.now(ZoneOffset.UTC));
+                                cacheRepository.save(cache);
                             }
-                        } catch (Exception e) {
-                            log.warn("Errore parsing grouped satcat JSON: {}", e.getMessage());
                         }
+                    } catch (Exception e) {
+                        log.warn("Errore parsing grouped satcat JSON: {}", e.getMessage());
                     }
-                } catch (Exception e) {
-                    log.warn("Errore fetching grouped SATCAT: {}", e.getMessage());
                 }
-
-                try {
-                    Thread.sleep(pauseBetweenRequestsMs);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+            } catch (Exception e) {
+                log.warn("Errore fetching grouped SATCAT: {}", e.getMessage());
             }
         }
 
@@ -210,7 +194,28 @@ public class SatcatService {
             }
         }
 
-        log.info("🔁 Enrichment SATCAT completato: {} satelliti aggiornati (callsMade={}, skippedCached={})", updated, callsMade, skippedCached);
+        log.info("🔁 Enrichment SATCAT completato: {} satelliti aggiornati (singleCall={}, skippedCached={})", updated, !toFetchAll.isEmpty(), skippedCached);
+    }
+
+    private Long readOptionalLong(JsonNode node, String fieldName) {
+        JsonNode field = node.get(fieldName);
+        if (field == null || field.isNull()) {
+            return null;
+        }
+        if (field.isNumber()) {
+            return field.asLong();
+        }
+        if (field.isTextual()) {
+            String text = field.asText("").trim();
+            if (!text.isBlank()) {
+                try {
+                    return Long.parseLong(text);
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     private String inferFromLatestOrbitalParameters(Satellite satellite) {

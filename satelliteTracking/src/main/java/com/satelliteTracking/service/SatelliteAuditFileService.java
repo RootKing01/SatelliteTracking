@@ -24,6 +24,29 @@ public class SatelliteAuditFileService {
 
     public SatelliteAuditFileService(@Value("${satellite.audit.file-path:./satellite-new-satellites.txt}") String filePath) {
         this.auditFilePath = Path.of(filePath);
+        log.info("📝 Audit file satelliti nuovi: {}", auditFilePath.toAbsolutePath());
+    }
+
+    public synchronized void appendFetchHeader(String source, LocalDateTime timestampUtc, String label) {
+        LocalDateTime safeTimestamp = timestampUtc != null ? timestampUtc : LocalDateTime.now(ZoneOffset.UTC);
+        String entry = buildHeader(source, safeTimestamp, label);
+
+        try {
+            Path parent = auditFilePath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+
+            Files.writeString(
+                    auditFilePath,
+                    entry,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+        } catch (IOException e) {
+            log.warn("⚠️ Impossibile scrivere header audit file {}: {}", auditFilePath, e.getMessage());
+        }
     }
 
     public synchronized void appendNewSatellite(String source, LocalDateTime timestampUtc, String data) {
@@ -55,6 +78,20 @@ public class SatelliteAuditFileService {
                 .append(System.lineSeparator());
         sb.append(data == null ? "" : data.trim()).append(System.lineSeparator());
         sb.append("---").append(System.lineSeparator());
+        return sb.toString();
+    }
+
+    private String buildHeader(String source, LocalDateTime timestampUtc, String label) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("===============================================").append(System.lineSeparator());
+        sb.append("[FETCH]")
+                .append(" [source=").append(source == null ? "unknown" : source).append("]")
+                .append(" [timestamp=").append(timestampUtc.format(TS_FORMATTER)).append("Z]");
+        if (label != null && !label.isBlank()) {
+            sb.append(" [").append(label.trim()).append("]");
+        }
+        sb.append(System.lineSeparator());
+        sb.append("===============================================").append(System.lineSeparator());
         return sb.toString();
     }
 }

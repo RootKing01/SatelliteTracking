@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -107,7 +108,7 @@ public class JplHorizonsClient {
             position.put("objectName", mission.getDisplayName());
             position.put("objectId", mission.getHorizonsId());
             position.put("timestamp", System.currentTimeMillis());
-            position.put("timestamp_date", LocalDateTime.now().toString());
+            position.put("timestamp_date", LocalDateTime.now(ZoneOffset.UTC).toString());
 
             position.put("distance_km", sample.rangeKm);
             position.put("velocity_km_s", sample.speedKmS);

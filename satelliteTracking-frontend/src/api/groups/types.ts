@@ -1,27 +1,6 @@
 import type { SatellitePosition } from '../../types/satellite'
 
-export type SatelliteGroupKey =
-  | 'stations'
-  | 'starlink'
-  | 'oneweb'
-  | 'iridiumNext'
-  | 'spire'
-  | 'gpsOps'
-  | 'galileo'
-  | 'glonassOps'
-  | 'beidou'
-  | 'sbas'
-  | 'science'
-  | 'weather'
-  | 'planet'
-  | 'radar'
-  | 'geo'
-  | 'amateur'
-  | 'cubesat'
-  | 'education'
-  | 'engineering'
-  | 'military'
-  | 'spaceMissions'
+export type SatelliteGroupKey = string
 
 export interface SatelliteGroupSource {
   key: SatelliteGroupKey

@@ -32,6 +32,8 @@ export function buildSearchResultItems({
   searchScope,
   searchQuery,
 }: BuildSearchResultItemsParams) {
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+
   const groupsToSearch =
     searchScope === 'enabled'
       ? allGroups.filter((group) => enabledGroups[group.key])
@@ -79,7 +81,10 @@ export function buildSearchResultItems({
 
   const baseItems = Array.from(mergedByEntityId.values())
 
-  const normalizedQuery = searchQuery.trim().toLowerCase()
+  if (normalizedQuery.length < 2) {
+    return baseItems.sort((a, b) => a.satelliteName.localeCompare(b.satelliteName)).slice(0, 30)
+  }
+
   const filteredItems = normalizedQuery
     ? baseItems.filter((item) => {
         const searchableText = `${item.satelliteName} ${item.noradCatId} ${item.objectId}`

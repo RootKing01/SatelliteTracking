@@ -64,6 +64,7 @@
 .viewer-section {
   height: 100vh;
   position: relative;
+  background: #02050b;
 }
 
 .quick-zoom {
@@ -109,6 +110,14 @@
 .viewer {
   width: 100%;
   height: 100%;
+  background: #02050b;
+}
+
+.viewer .cesium-viewer,
+.viewer .cesium-viewer-cesiumWidget,
+.viewer .cesium-widget,
+.viewer canvas {
+  background: #02050b;
 }
 
 .panel-component {

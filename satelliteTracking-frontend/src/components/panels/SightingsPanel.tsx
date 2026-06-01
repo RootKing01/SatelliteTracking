@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { SatelliteSighting } from '../../api/sightingsClient'
 import '../../styles/panels/sightings-panel.css'
 
@@ -6,6 +7,7 @@ type SightingsPanelProps = {
   sightingsError: string
   sightingsLoading: boolean
   mySightings: SatelliteSighting[]
+  compactLandscapeViewport: boolean
   onFocusSightingSatellite: (satelliteId: number) => void
 }
 
@@ -14,8 +16,26 @@ export function SightingsPanel({
   sightingsError,
   sightingsLoading,
   mySightings,
+  compactLandscapeViewport,
   onFocusSightingSatellite,
 }: SightingsPanelProps) {
+  const autoFocusedSatelliteIdRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!compactLandscapeViewport || mySightings.length === 0) {
+      autoFocusedSatelliteIdRef.current = null
+      return
+    }
+
+    const firstSighting = mySightings[0]
+    if (!firstSighting || autoFocusedSatelliteIdRef.current === firstSighting.satelliteId) {
+      return
+    }
+
+    autoFocusedSatelliteIdRef.current = firstSighting.satelliteId
+    onFocusSightingSatellite(firstSighting.satelliteId)
+  }, [compactLandscapeViewport, mySightings, onFocusSightingSatellite])
+
   return (
     <section className="collapsible side-drawer" aria-label="Avvistamenti utente">
       <h3>Avvistamenti</h3>
@@ -31,8 +51,12 @@ export function SightingsPanel({
       ) : (
         <div className="sighting-list">
           {mySightings.map((item, index) => (
-            <details key={item.id} className="sighting-item" open={index === 0}>
-              <summary className="sighting-item-summary">
+            <details
+              key={item.id}
+              className={`sighting-item ${index === 0 ? 'sighting-item-primary' : ''} ${compactLandscapeViewport ? 'sighting-item-compact' : ''}`}
+              open={index === 0}
+            >
+              <summary className={`sighting-item-summary ${compactLandscapeViewport ? 'sighting-item-summary-compact' : ''}`}>
                 <strong>{item.satelliteName}</strong>
                 <small>{new Date(item.sightedAt).toLocaleString('it-IT')}</small>
                 <small className={item.valid ? 'sighting-valid' : 'sighting-invalid'}>
@@ -40,7 +64,7 @@ export function SightingsPanel({
                 </small>
               </summary>
 
-              <div className="sighting-item-body">
+              <div className={`sighting-item-body ${compactLandscapeViewport ? 'sighting-item-body-compact' : ''}`}>
                 <small>NORAD {item.noradCatId}</small>
                 <small>{item.observerLocationName}</small>
                 {item.estimatedMagnitude !== null ? (

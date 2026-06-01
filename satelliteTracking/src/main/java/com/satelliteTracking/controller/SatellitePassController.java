@@ -4,6 +4,7 @@ import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.service.PassTimeService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
 import org.slf4j.Logger;
@@ -30,6 +31,7 @@ public class SatellitePassController {
     private final SatelliteRepository satelliteRepository;
     private final SatellitePassService satellitePassService;
     private final TelegramNotificationService telegramNotificationService;
+    private final PassTimeService passTimeService;
     private final double defaultLatitude;
     private final double defaultLongitude;
     private final double defaultAltitude;
@@ -37,12 +39,14 @@ public class SatellitePassController {
     public SatellitePassController(SatelliteRepository satelliteRepository,
                                    SatellitePassService satellitePassService,
                                    TelegramNotificationService telegramNotificationService,
+                                   PassTimeService passTimeService,
                                    @Value("${satellite.default-location.latitude:41.01}") double defaultLatitude,
                                    @Value("${satellite.default-location.longitude:14.30}") double defaultLongitude,
                                    @Value("${satellite.default-location.altitude:30.0}") double defaultAltitude) {
         this.satelliteRepository = satelliteRepository;
         this.satellitePassService = satellitePassService;
         this.telegramNotificationService = telegramNotificationService;
+        this.passTimeService = passTimeService;
         this.defaultLatitude = defaultLatitude;
         this.defaultLongitude = defaultLongitude;
         this.defaultAltitude = defaultAltitude;
@@ -77,7 +81,6 @@ public class SatellitePassController {
         @RequestParam double lon,
         @RequestParam(defaultValue = "0") double alt,
         @RequestParam(defaultValue = "24") int hours) {
-
         ObserverLocation customLocation = new ObserverLocation(lat, lon, alt);
         return ResponseEntity.ok(satellitePassService.calculatePasses(id, hours, customLocation));
     }
@@ -185,7 +188,7 @@ public class SatellitePassController {
             );
 
             Map<String, Object> response = new LinkedHashMap<>();
-            response.put("timestamp", LocalDateTime.now().toString());
+            response.put("timestamp", passTimeService.nowUtcDateTime().toString());
             response.put("query", Map.of(
                 "hours", hours,
                 "observer", Map.of(
@@ -204,7 +207,7 @@ public class SatellitePassController {
                 Map.of(
                     "error", "Errore durante il calcolo dei passaggi",
                     "message", e.getMessage(),
-                    "timestamp", LocalDateTime.now().toString()
+                    "timestamp", passTimeService.nowUtcDateTime().toString()
                 )
             );
         }
@@ -217,7 +220,7 @@ public class SatellitePassController {
 
         try {
             List<TelegramSubscription> subscriptions = telegramNotificationService.getAllSubscriptions();
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = passTimeService.nowUtcDateTime();
             SatellitePassDTO firstPass = passes.get(0);
 
             for (TelegramSubscription sub : subscriptions) {
@@ -229,13 +232,7 @@ public class SatellitePassController {
                     .between(sub.getLastNotificationSent(), now);
 
                 if (minutesSinceLast >= 30) {
-                    telegramNotificationService.sendNotificationToUser(
-                        sub,
-                        firstPass.satelliteName(),
-                        firstPass.riseTime(),
-                        firstPass.maxElevation(),
-                        firstPass.estimatedMagnitude()
-                    );
+                    telegramNotificationService.sendNotificationToUser(sub, firstPass);
                 }
             }
         } catch (Exception e) {

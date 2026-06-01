@@ -37,6 +37,7 @@ services:
       - orekit-data
     volumes:
       - orekit-data-volume:/orekit-data:ro
+      - ./satellite-new-satellites.txt:/app/satellite-new-satellites.txt
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
@@ -50,7 +51,7 @@ services:
       APP_SECURITY_JWT_COOKIE_SAME_SITE: ${APP_SECURITY_JWT_COOKIE_SAME_SITE}
       APP_SECURITY_JWT_SECRET: ${APP_SECURITY_JWT_SECRET}
       APP_SECURITY_JWT_EXPIRATION_MS: ${APP_SECURITY_JWT_EXPIRATION_MS}
-    
+      SATELLITE_AUDIT_FILE_PATH: /app/satellite-new-satellites.txt
     deploy:
        resources:
         limits:

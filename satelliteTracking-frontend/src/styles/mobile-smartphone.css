@@ -75,6 +75,10 @@
     padding: 6px;
     background: rgba(10, 25, 47, 0.75);
     backdrop-filter: blur(12px);
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .sidebar-tabs {
@@ -121,6 +125,22 @@
     max-height: none;
     overflow: visible;
     padding: 8px;
+  }
+
+  /* Ensure sightings drawer is visible and scrollable on small portrait screens */
+  .sidebar-collapsible-panel.side-drawer {
+    z-index: 45;
+    background: rgba(4, 12, 24, 0.9);
+  }
+
+  .sidebar-collapsible-panel.side-drawer .sighting-list {
+    max-height: calc(100dvh - 160px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-collapsible-panel.side-drawer .sighting-item[open] {
+    overflow: visible;
   }
 
   .collapsible,
@@ -193,7 +213,6 @@
   .sighting-item small,
   .visibility-item small,
   .sync-status,
-  .refresh-slider-head,
   .visibility-note,
   .auth-info,
   .auth-error,
@@ -302,18 +321,20 @@
 
   /* HUD - Solo informazioni essenziali */
   .viewer-hud {
-    top: 70px;
-    right: 10px;
-    width: min(90vw, 360px);
+    top: auto;
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    left: 8px;
+    width: auto;
     gap: 8px;
-    max-height: calc(100vh - 180px);
+    max-height: 34vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 
   .hud-details {
-    max-height: none;
-    overflow: visible;
+    max-height: 34vh;
+    overflow: auto;
   }
 
   .details-card {
@@ -466,7 +487,6 @@
   .search-result-item,
   .group-name,
   .sync-status,
-  .refresh-slider-head,
   .visibility-item small,
   .sighting-item small,
   .auth-info,
@@ -532,10 +552,12 @@
   }
 
   .viewer-hud {
-    top: 65px;
-    right: 8px;
-    width: min(92vw, 340px);
-    max-height: calc(100vh - 160px);
+    top: auto;
+    right: 6px;
+    left: 6px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    width: auto;
+    max-height: 32vh;
   }
 
   .focus-toggle {
@@ -602,12 +624,11 @@
 /* LANDSCAPE MOBILE - Layout orizzontale ottimizzato */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .app-shell {
-    grid-template-columns: minmax(300px, 40vw) 1fr;
+    grid-template-columns: minmax(340px, 44vw) 1fr;
     grid-template-rows: 1fr;
     min-height: 100dvh;
   }
 
-  /* NASCONDI ANCORA PIÙ ELEMENTI IN LANDSCAPE */
   .group-meta,
   .sync-footer-card,
   .refresh-guard-note,
@@ -618,8 +639,6 @@
   .panel-section {
     height: 100dvh;
     max-height: 100dvh;
-    overflow-y: auto;
-    overflow-x: hidden;
     border-right: 1px solid rgba(216, 237, 255, 0.12);
     border-bottom: none;
     padding: 10px 8px;
@@ -633,7 +652,6 @@
   .search-input,
   .group-name,
   .sync-status,
-  .refresh-slider-head,
   .visibility-item small,
   .sighting-item small {
     font-size: 0.75rem;
@@ -641,28 +659,89 @@
 
   .sidebar-split {
     margin-top: 6px;
-    display: grid;
-    grid-template-columns: 42px 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
   }
 
+  .sidebar-buttons-shell,
+  .sidebar-buttons-shell.expanded {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    overflow: visible;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 0;
+    align-items: start;
+    padding: 0;
+    background: linear-gradient(180deg, rgba(10, 25, 47, 0.98), rgba(10, 25, 47, 0.92));
+    box-shadow: 0 8px 18px rgba(2, 7, 16, 0.26);
+  }
+
+  .sidebar-buttons-shell > .sidebar-tabs {
+    grid-column: 1;
+    align-self: start;
+  }
+
+  .sidebar-buttons-shell > .sidebar-collapsible-panel {
+    grid-column: 2;
+    min-width: 0;
+    position: static;
+    inset: auto;
+    width: auto;
+    margin-left: 0;
+    padding-left: 0;
+  }
+
   .sidebar-tabs {
+    width: 100%;
+    display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0;
   }
 
   .sidebar-tabs button {
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
-    min-height: 90px;
-    min-width: 42px;
-    padding: 8px 5px;
-    font-size: 0.7rem;
+    writing-mode: horizontal-tb;
+    transform: none;
+    min-height: 44px;
+    min-width: 0;
+    width: 100%;
+    padding: 6px 4px;
+    font-size: 0.62rem;
+    flex-direction: column;
+    gap: 2px;
+    white-space: normal;
   }
 
   .side-drawer {
-    max-height: calc(100dvh - 140px);
-    padding-right: 2px;
+    max-height: calc(100dvh - 88px);
+    padding-right: 0;
+    margin-top: 0;
+  }
+
+  .sidebar-collapsible-panel {
+    padding-top: 0;
+    padding-left: 0;
+  }
+
+  /* Landscape: make sure the side-drawer and sightings list are not clipped */
+  .sidebar-collapsible-panel.side-drawer {
+    z-index: 45;
+    background: rgba(4, 12, 24, 0.92);
+  }
+
+  .sidebar-collapsible-panel.side-drawer .sighting-list {
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-collapsible-panel.side-drawer .sighting-item[open] {
+    overflow: visible;
   }
 
   .toolbar,
@@ -712,18 +791,20 @@
   }
 
   .viewer-hud {
-    top: 55px;
-    right: 8px;
-    width: min(45vw, 300px);
+    top: auto;
+    left: 6px;
+    right: 6px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    width: auto;
     gap: 6px;
-    max-height: calc(100dvh - 140px);
+    max-height: 24vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 
   .hud-details {
-    max-height: none;
-    overflow: visible;
+    max-height: 24vh;
+    overflow: auto;
   }
 
   .focus-toggle {
@@ -741,14 +822,22 @@
   .sighting-item,
   .group-item,
   .search-result-item {
-    padding: 8px;
+    padding: 6px;
     border-radius: 8px;
+  }
+
+  .details-card h3 {
+    margin-bottom: 6px;
   }
 
   .details-head {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .details-head strong {
+    font-size: 0.92rem;
   }
 
   .details-head-actions {
@@ -758,15 +847,21 @@
     gap: 6px;
   }
 
+  .details-head button,
+  .sighting-actions button {
+    padding: 6px 8px;
+    font-size: 0.68rem;
+  }
+
   .details-grid {
     grid-template-columns: 1fr;
     gap: 4px;
-    font-size: 0.8rem;
+    font-size: 0.72rem;
   }
 
   .details-grid span:nth-child(odd) {
-    font-size: 0.7rem;
-    margin-top: 6px;
+    font-size: 0.62rem;
+    margin-top: 5px;
   }
 
   .search-results-list,
@@ -774,6 +869,69 @@
   .visibility-list,
   .sighting-list {
     max-height: 30vh;
+  }
+
+  .sighting-list {
+    max-height: 42vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sighting-item-primary {
+    border-color: rgba(108, 245, 255, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(108, 245, 255, 0.12),
+      0 0 18px rgba(108, 245, 255, 0.14);
+  }
+
+  .sighting-item-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    min-height: 58px;
+    padding: 8px 8px 10px;
+    text-align: left;
+  }
+
+  .sighting-item-compact .sighting-item-summary {
+    gap: 3px;
+    min-height: 60px;
+    padding: 8px 8px 10px;
+  }
+
+  .sighting-item-summary strong {
+    font-size: 0.88rem;
+    line-height: 1.1;
+    font-weight: 600;
+  }
+
+  .sighting-item-summary small {
+    font-size: 0.64rem;
+    line-height: 1.15;
+    text-align: left;
+  }
+
+  .sighting-item-body-compact {
+    gap: 2px;
+    padding: 0 8px 6px;
+  }
+
+  .sighting-item-body-compact small {
+    font-size: 0.64rem;
+    line-height: 1.14;
+  }
+
+  .sighting-item-body {
+    padding: 0 8px 7px;
+    gap: 3px;
+  }
+
+  .sighting-focus-button {
+    width: fit-content;
+    text-align: center;
+    font-size: 0.68rem;
+    padding: 4px 8px;
   }
 
   .visibility-overlay-card {

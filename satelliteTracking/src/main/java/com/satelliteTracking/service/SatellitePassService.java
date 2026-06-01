@@ -9,6 +9,7 @@ import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.OrbitalParametersRepository;
 import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.util.SatelliteTypeNormalizer;
 import com.satelliteTracking.util.OrbitalPropagationUtils;
 import org.hipparchus.util.FastMath;
 import org.orekit.bodies.CelestialBodyFactory;
@@ -596,7 +597,7 @@ public class SatellitePassService {
     public List<SatellitePositionDTO> getCurrentSatellitePositions(String satelliteType) {
         String normalizedType = satelliteType == null || satelliteType.isBlank()
             ? "all"
-            : satelliteType.trim().toLowerCase();
+            : SatelliteTypeNormalizer.canonicalizeType(satelliteType);
 
         // Se richieste le missioni spaziali, usa JPL Horizons
         if ("space-missions".equals(normalizedType)) {
@@ -618,8 +619,7 @@ public class SatellitePassService {
         List<SatellitePositionDTO> positions = latestParametersBySatelliteId.values().parallelStream()
             .filter(parameters -> parameters.getSatellite() != null)
             .filter(parameters -> normalizedType.equals("all") ||
-                (parameters.getSatellite().getEffectiveType() != null &&
-                    parameters.getSatellite().getEffectiveType().equalsIgnoreCase(normalizedType)))
+                normalizedType.equalsIgnoreCase(SatelliteTypeNormalizer.canonicalizeSatelliteType(parameters.getSatellite())))
             .map(parameters -> buildCurrentSatellitePosition(parameters.getSatellite(), parameters, currentDate))
             .flatMap(Optional::stream)
             .sorted(Comparator.comparing(SatellitePositionDTO::satelliteId))
@@ -875,8 +875,9 @@ public class SatellitePassService {
         if (passesCache.containsKey(cacheKey)) {
             CacheEntry entry = passesCache.get(cacheKey);
             if (!entry.isExpired(CACHE_TTL_MS)) {
+                        log.info("[Pass Cache] HIT key={} ageMs={} ttlMs={}", cacheKey, System.currentTimeMillis() - entry.timestamp, CACHE_TTL_MS);
                 if (entry.passes.isEmpty()) {
-                    log.debug("Cache hit: returning cached empty result");
+                            log.debug("[Pass Cache] returning cached empty result for key={}", cacheKey);
                     return Collections.emptyList();
                 }
 
@@ -889,13 +890,19 @@ public class SatellitePassService {
                 }
 
                 if (!filtered.isEmpty()) {
-                    log.debug("Cache hit: returning {} upcoming passes", filtered.size());
+                    log.info("[Pass Cache] returning {} upcoming passes for key={}", filtered.size(), cacheKey);
                     return filtered;
                 }
 
+                log.info("[Pass Cache] stale-after-filter key={} -> removing entry", cacheKey);
                 passesCache.remove(cacheKey);
             }
+            else {
+                log.info("[Pass Cache] EXPIRED key={} ageMs={} ttlMs={}", cacheKey, System.currentTimeMillis() - entry.timestamp, CACHE_TTL_MS);
+            }
         }
+
+        log.info("[Pass Cache] MISS key={} -> computing pass scan", cacheKey);
         
         List<SatellitePassDTO> allPasses = Collections.synchronizedList(new ArrayList<>());
         
@@ -969,6 +976,7 @@ public class SatellitePassService {
             
             // Salva in cache anche i risultati vuoti per evitare ricalcoli continui
             passesCache.put(cacheKey, new CacheEntry(new ArrayList<>(allPasses)));
+            log.info("[Pass Cache] STORE key={} entries={}", cacheKey, allPasses.size());
 
             log.info("Found {} passes after filters (minElevation={}, condition={}, maxMagnitude={}). Rejected: notVisible={}, elevation={}, condition={}, magnitude={}",
                 allPasses.size(), minElevation, observingCondition, maxMagnitude,
@@ -986,7 +994,7 @@ public class SatellitePassService {
      */
     public void clearPassesCache() {
         passesCache.clear();
-        log.info("Passes cache cleared");
+        log.info("[Pass Cache] cleared");
     }
 
     /**

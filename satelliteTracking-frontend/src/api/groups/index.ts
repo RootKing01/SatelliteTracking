@@ -19,6 +19,9 @@ import { starlinkGroup } from './starlink'
 import { stationsGroup } from './stations'
 import { spaceMissionsGroup } from './spaceMissions'
 import { weatherGroup } from './weather'
+import { debrisGroup } from './debris'
+import { payloadGroup } from './payload'
+import { spaceRocketGroup } from './spaceRocket'
 
 export const satelliteGroupSources = [
   stationsGroup,
@@ -42,4 +45,7 @@ export const satelliteGroupSources = [
   engineeringGroup,
   militaryGroup,
   spaceMissionsGroup,
+  debrisGroup,
+  payloadGroup,
+  spaceRocketGroup,
 ] as const

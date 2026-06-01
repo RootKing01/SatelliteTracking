@@ -5,6 +5,7 @@ import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.Satellite;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.service.PassTimeService;
 import com.satelliteTracking.service.SatellitePassService;
 import com.satelliteTracking.service.TelegramNotificationService;
 import org.junit.jupiter.api.Test;
@@ -30,11 +31,14 @@ class SatellitePassControllerTest {
     private final SatelliteRepository satelliteRepository = Mockito.mock(SatelliteRepository.class);
     private final SatellitePassService satellitePassService = Mockito.mock(SatellitePassService.class);
     private final TelegramNotificationService telegramNotificationService = Mockito.mock(TelegramNotificationService.class);
+    // FIX 1: aggiunto mock di PassTimeService richiesto dal costruttore
+    private final PassTimeService passTimeService = Mockito.mock(PassTimeService.class);
 
     private final SatellitePassController controller = new SatellitePassController(
         satelliteRepository,
         satellitePassService,
         telegramNotificationService,
+        passTimeService,   // FIX 1: aggiunto passTimeService
         41.01,
         14.30,
         30.0
@@ -111,6 +115,7 @@ class SatellitePassControllerTest {
 
     @Test
     void shouldReturnDetailedUpcomingPassesForValidRequest() {
+        when(passTimeService.nowUtcDateTime()).thenReturn(LocalDateTime.now());
         when(satellitePassService.findVisibleUpcomingPasses(
             anyInt(), anyDouble(), any(ObserverLocation.class), eq("any"), eq(6.0)
         )).thenReturn(List.of());
@@ -122,10 +127,12 @@ class SatellitePassControllerTest {
 
     @Test
     void shouldSendNotificationForUpcomingPasses() {
+        LocalDateTime riseTime = LocalDateTime.now().plusMinutes(10);
+
         SatellitePassDTO pass = new SatellitePassDTO(
             25544L,
             "ISS",
-            LocalDateTime.now().plusMinutes(10),
+            riseTime,
             LocalDateTime.now().plusMinutes(12),
             LocalDateTime.now().plusMinutes(15),
             60.0,
@@ -146,18 +153,17 @@ class SatellitePassControllerTest {
         sub.setLastNotificationSent(LocalDateTime.now().minusMinutes(40));
         sub.setLocationName("Test");
 
+        when(passTimeService.nowUtcDateTime()).thenReturn(LocalDateTime.now());
         when(satellitePassService.findVisibleUpcomingPasses(6, 30.0)).thenReturn(List.of(pass));
         when(telegramNotificationService.getAllSubscriptions()).thenReturn(Collections.singletonList(sub));
 
         ResponseEntity<List<SatellitePassDTO>> response = controller.getUpcomingPasses(6);
 
         assertEquals(200, response.getStatusCode().value());
+        // FIX 2: la firma attuale è (TelegramSubscription, SatellitePassDTO)
         Mockito.verify(telegramNotificationService).sendNotificationToUser(
             eq(sub),
-            eq("ISS"),
-            eq(pass.riseTime()),
-            eq(pass.maxElevation()),
-            eq(pass.estimatedMagnitude())
+            eq(pass)
         );
     }
 }

@@ -2,6 +2,7 @@ package com.satelliteTracking.service;
 
 import com.satelliteTracking.dto.SatellitePassDTO;
 import com.satelliteTracking.dto.TelegramUpdateDTO;
+import com.satelliteTracking.model.ObserverLocation;
 import com.satelliteTracking.model.TelegramSubscription;
 import com.satelliteTracking.repository.TelegramSubscriptionRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,7 +20,6 @@ import java.util.Optional;
 
 /**
  * Servizio per gestire le notifiche push via Telegram Bot
- * Invia messaggi diretti agli utenti su Telegram
  * Non richiede app custom - usa solo Telegram che l'utente ha già
  */
 @Service
@@ -36,15 +36,18 @@ public class TelegramNotificationService {
     private final TelegramSubscriptionRepository subscriptionRepository;
     private final RestTemplate restTemplate;
     private final GeocodingService geocodingService;
+    private final PassTimeService passTimeService;
     private final SatellitePassService satellitePassService;
     
     public TelegramNotificationService(TelegramSubscriptionRepository subscriptionRepository,
                                       RestTemplate restTemplate,
                                       GeocodingService geocodingService,
+                                      PassTimeService passTimeService,
                                       SatellitePassService satellitePassService) {
         this.subscriptionRepository = subscriptionRepository;
         this.restTemplate = restTemplate;
         this.geocodingService = geocodingService;
+        this.passTimeService = passTimeService;
         this.satellitePassService = satellitePassService;
     }
     
@@ -60,7 +63,7 @@ public class TelegramNotificationService {
         TelegramSubscription subscription;
         if (existing.isPresent()) {
             subscription = existing.get();
-            subscription.setUpdatedAt(LocalDateTime.now());
+            subscription.setUpdatedAt(passTimeService.nowUtcDateTime());
             subscription.setLatitude(latitude);
             subscription.setLongitude(longitude);
             subscription.setAltitude(altitude);
@@ -73,7 +76,7 @@ public class TelegramNotificationService {
         
         return subscriptionRepository.save(subscription);
     }
-    
+
     /**
      * Aggiorna le preferenze di notifica per un utente Telegram
      */
@@ -86,16 +89,13 @@ public class TelegramNotificationService {
             subscription.setObservingCondition(observingCondition);
             subscription.setMaxMagnitude(maxMagnitude);
             subscription.setMinElevation(minElevation);
-            subscription.setUpdatedAt(LocalDateTime.now());
+            subscription.setUpdatedAt(passTimeService.nowUtcDateTime());
             return subscriptionRepository.save(subscription);
         }
         
         return null;
     }
     
-    /**
-     * Invia notifica Telegram a un utente specifico
-     */
     /**
      * Invia notifica per un passaggio satellitare
      */
@@ -120,58 +120,6 @@ public class TelegramNotificationService {
         }
     }
     
-    public boolean sendNotificationToUser(TelegramSubscription subscription,
-                                         String satelliteName, LocalDateTime riseTime,
-                                         Double maxElevation, Double maxElevationAzimuth,
-                                         Double magnitude, String locationName) {
-        if (!subscription.getNotificationsEnabled() || telegramBotToken.isEmpty()) {
-            return false;
-        }
-        try {
-            // Costruisco un SatellitePassDTO minimale per compatibilità
-            SatellitePassDTO pass = new SatellitePassDTO(
-                null, // satelliteId
-                satelliteName,
-                riseTime,
-                null, // maxElevationTime
-                null, // setTime
-                maxElevation != null ? maxElevation : 0.0,
-                0.0, // riseAzimuth
-                maxElevationAzimuth != null ? maxElevationAzimuth : 0.0,
-                0.0, // setAzimuth
-                0.0, // maxDistance
-                true, // isVisible
-                true, // isSunlit
-                "-", // visibility
-                "-", // observingCondition
-                magnitude != null ? magnitude : 0.0,
-                0.0 // satelliteAltitudeKm
-            );
-            String message = buildNotificationMessage(pass, locationName);
-            boolean success = sendTelegramMessage(subscription.getChatId(), message);
-            if (success) {
-                subscription.setLastNotificationSent(LocalDateTime.now());
-                subscriptionRepository.save(subscription);
-                System.out.println("✅ Telegram notifica inviata a " + subscription.getUserIdentifier() +
-                                 " per " + satelliteName);
-            }
-            return success;
-        } catch (Exception e) {
-            System.err.println("❌ Errore invio notifica Telegram: " + e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * DEPRECATO - Usa sendNotificationToUser con maxElevationAzimuth
-     */
-    @Deprecated
-    public boolean sendNotificationToUser(TelegramSubscription subscription,
-                                         String satelliteName, LocalDateTime riseTime,
-                                         Double maxElevation, Double magnitude) {
-        return sendNotificationToUser(subscription, satelliteName, riseTime, maxElevation, 0.0, magnitude, subscription.getLocationName());
-    }
-    
     /**
      * Invia notifiche a più utenti
      */
@@ -180,10 +128,28 @@ public class TelegramNotificationService {
                                     String observingCondition, Double maxMagnitudeFilter) {
         List<TelegramSubscription> subscriptions = subscriptionRepository.findByNotificationsEnabledTrue();
         int sentCount = 0;
+        SatellitePassDTO pass = new SatellitePassDTO(
+            null,
+            satelliteName,
+            riseTime,
+            null,
+            null,
+            maxElevation != null ? maxElevation : 0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            true,
+            true,
+            "-",
+            observingCondition != null ? observingCondition : "-",
+            magnitude != null ? magnitude : 0.0,
+            0.0
+        );
         
         for (TelegramSubscription sub : subscriptions) {
             if (matchesUserPreferences(sub, observingCondition, maxMagnitudeFilter, magnitude)) {
-                if (sendNotificationToUser(sub, satelliteName, riseTime, maxElevation, magnitude)) {
+                if (sendNotificationToUser(sub, pass)) {
                     sentCount++;
                 }
             }
@@ -216,9 +182,9 @@ public class TelegramNotificationService {
     private String buildNotificationMessage(SatellitePassDTO pass, String locationName) {
         String safeSatelliteName = escapeTelegramMarkdown(pass.satelliteName());
         String safeLocationName = escapeTelegramMarkdown(locationName);
-        String riseTimeStr = pass.riseTime() != null ? String.format("%02d:%02d UTC", pass.riseTime().getHour(), pass.riseTime().getMinute()) : "-";
-        String setTimeStr = pass.setTime() != null ? String.format("%02d:%02d UTC", pass.setTime().getHour(), pass.setTime().getMinute()) : "-";
-        String maxTimeStr = pass.maxElevationTime() != null ? String.format("%02d:%02d UTC", pass.maxElevationTime().getHour(), pass.maxElevationTime().getMinute()) : "-";
+        String riseTimeStr = formatLocalPassTime(pass.riseTime());
+        String setTimeStr = formatLocalPassTime(pass.setTime());
+        String maxTimeStr = formatLocalPassTime(pass.maxElevationTime());
         String riseAzStr = String.format("%.0f° %s", pass.riseAzimuth(), pass.getRiseDirection());
         String maxAzStr = String.format("%.0f° %s", pass.maxElevationAzimuth(), pass.getMaxElevationDirection());
         String setAzStr = String.format("%.0f° %s", pass.setAzimuth(), pass.getSetDirection());
@@ -243,6 +209,13 @@ public class TelegramNotificationService {
         msg.append("*Visibilità:* ").append(visibilityStr).append("\n");
         msg.append("\n📱 [Open Web App](https://vincenzonoviello.ddns.net)");
         return msg.toString();
+    }
+
+    private String formatLocalPassTime(LocalDateTime localDateTime) {
+        if (localDateTime == null) {
+            return "-";
+        }
+        return String.format("%02d:%02d", localDateTime.getHour(), localDateTime.getMinute());
     }
     
     /**
@@ -329,7 +302,6 @@ public class TelegramNotificationService {
         if (text == null) {
             return "";
         }
-
         return text
             .replace("_", "\\_")
             .replace("*", "\\*")
@@ -430,7 +402,6 @@ public class TelegramNotificationService {
             
             System.out.println("📩 Messaggio ricevuto da " + username + " (chatId: " + chatId + "): " + text);
             
-            // Gestisci comandi
             if (text.startsWith("/start")) {
                 handleStartCommand(chatId, username);
             } else if (text.startsWith("/help")) {
@@ -442,7 +413,6 @@ public class TelegramNotificationService {
             } else if (text.startsWith("/allpasses")) {
                 handleAllPassesCommand(chatId);
             } else {
-                // Tratta come nome di città
                 handleCityInput(chatId, text);
             }
             
@@ -567,7 +537,7 @@ public class TelegramNotificationService {
         }
 
         TelegramSubscription sub = opt.get();
-        com.satelliteTracking.model.ObserverLocation location = new com.satelliteTracking.model.ObserverLocation(
+        ObserverLocation location = new ObserverLocation(
             sub.getLatitude(),
             sub.getLongitude(),
             sub.getAltitude(),
@@ -601,13 +571,12 @@ public class TelegramNotificationService {
             int fromIndex = page * pageSize;
             int toIndex = Math.min(fromIndex + pageSize, passes.size());
             List<SatellitePassDTO> chunk = passes.subList(fromIndex, toIndex);
-            sendTelegramMessage(chatId, formatSatellitePassesChunk(chunk, sub.getLocationName(), page + 1, totalPages, fromIndex));
+            sendTelegramMessage(chatId, formatSatellitePassesChunk(chunk, location, page + 1, totalPages, fromIndex));
         }
     }
     
     /**
      * Processa gli aggiornamenti in arrivo dal bot Telegram
-     * Gestisce comandi e messaggi
      */
     public void processUpdate(TelegramUpdateDTO update) {
         if (update == null || update.getMessage() == null || update.getMessage().getChat() == null) {
@@ -624,7 +593,6 @@ public class TelegramNotificationService {
         
         System.out.println("📨 Messaggio da chat " + chatId + ": " + text);
         
-        // Gestisci comandi
         String username = null;
         if (message.getFrom() != null) {
             username = message.getFrom().getUsername();
@@ -644,20 +612,16 @@ public class TelegramNotificationService {
         } else if (text.startsWith("/allpasses")) {
             handleAllPassesCommand(chatId);
         } else {
-            // Tratta il messaggio come nome di città
             handleCityInput(chatId, text);
         }
     }
 
     /**
      * Gestisce l'input del nome della città.
-     * Geolocalizza, registra/aggiorna la posizione dell'utente, abilita le notifiche
-     * e mostra i passaggi satellitari visibili nelle prossime 3 ore.
      */
     private void handleCityInput(Long chatId, String cityName) {
         sendTelegramMessage(chatId, "🌍 Ricerca della città: " + cityName + "...");
 
-        // Geocodifica la città
         Map<String, Object> geoResult = geocodingService.geocodeCity(cityName);
 
         if (geoResult.containsKey("error")) {
@@ -668,19 +632,14 @@ public class TelegramNotificationService {
             return;
         }
 
-        // Estrai coordinate
         double latitude = ((Number) geoResult.get("latitude")).doubleValue();
         double longitude = ((Number) geoResult.get("longitude")).doubleValue();
         double altitude = ((Number) geoResult.get("altitude")).doubleValue();
         String displayName = (String) geoResult.get("displayName");
 
         try {
-            com.satelliteTracking.model.ObserverLocation location =
-                new com.satelliteTracking.model.ObserverLocation(
-                    latitude, longitude, altitude, displayName
-                );
+            ObserverLocation location = new ObserverLocation(latitude, longitude, altitude, displayName);
 
-            // Registra/aggiorna l'utente con la nuova posizione e abilita le notifiche
             String userIdentifier = subscriptionRepository.findByChatId(chatId)
                 .map(TelegramSubscription::getUserIdentifier)
                 .orElse("user_" + chatId);
@@ -692,7 +651,6 @@ public class TelegramNotificationService {
                 subscriptionRepository.save(subscription);
             }
 
-            // Calcola i passaggi visibili usando i parametri della subscription
             List<SatellitePassDTO> visiblePasses = satellitePassService.findVisibleUpcomingPasses(
                 3,
                 subscription.getMinElevation(),
@@ -721,15 +679,14 @@ public class TelegramNotificationService {
                 }
             }
 
-            // Mostra i satelliti trovati
             sendTelegramMessage(chatId, formatSatellitePasses(
                 visiblePasses,
+                location,
                 displayName,
                 subscription.getMinElevation(),
                 subscription.getMaxMagnitude()
             ));
 
-            // Conferma posizione registrata e notifiche attive
             sendTelegramMessage(chatId,
                 "✅ *Posizione aggiornata!*\n\n" +
                 "📍 " + displayName + "\n" +
@@ -748,6 +705,7 @@ public class TelegramNotificationService {
      * Formatta i passaggi satellitari per il messaggio Telegram
      */
     private String formatSatellitePasses(List<SatellitePassDTO> passes,
+                                        ObserverLocation observerLocation,
                                         String cityName,
                                         Double minElevation,
                                         Double maxMagnitude) {
@@ -761,18 +719,18 @@ public class TelegramNotificationService {
         StringBuilder sb = new StringBuilder();
         sb.append("🌍 *").append(cityName).append("*\n");
         sb.append("📡 *").append(passes.size()).append(" satelliti visibili nelle prossime 3 ore*\n\n");
+
+        LocalDateTime now = passTimeService.nowForObserver(observerLocation);
         
         int count = 1;
         for (SatellitePassDTO pass : passes.stream().limit(10).toList()) {
             String direction = azimuthToDirection(pass.maxElevationAzimuth());
-            long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(
-                LocalDateTime.now(), pass.riseTime()
-            );
+            long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(now, pass.riseTime());
             
             sb.append(count).append(". *").append(pass.satelliteName()).append("*\n");
             sb.append("   ⏰ Tra ").append(minutesUntilRise).append(" min (")
-              .append(String.format("%02d:%02d", pass.riseTime().getHour(), pass.riseTime().getMinute()))
-              .append(" UTC)\n");
+                            .append(formatLocalPassTime(pass.riseTime()))
+                            .append(" local)\n");
             sb.append("   📈 Elev: ").append(String.format("%.0f°", pass.maxElevation()))
               .append(" | Dir: ").append(direction).append("\n");
             sb.append("   ⭐ Mag: ").append(String.format("%.1f", pass.estimatedMagnitude())).append("\n\n");
@@ -788,27 +746,29 @@ public class TelegramNotificationService {
         return sb.toString();
     }
 
-        private String formatSatellitePassesChunk(List<SatellitePassDTO> passes,
-                                                                                            String cityName,
-                                                                                            int currentPage,
-                                                                                            int totalPages,
-                                                                                            int startOffset) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("🌍 *").append(escapeTelegramMarkdown(cityName)).append("*\n");
-                sb.append("📄 Pagina ").append(currentPage).append("/").append(totalPages).append("\n\n");
+    private String formatSatellitePassesChunk(List<SatellitePassDTO> passes,
+                                              ObserverLocation observerLocation,
+                                              int currentPage,
+                                              int totalPages,
+                                              int startOffset) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("🌍 *").append(escapeTelegramMarkdown(observerLocation.getLocationName())).append("*\n");
+        sb.append("📄 Pagina ").append(currentPage).append("/").append(totalPages).append("\n\n");
 
-                int count = startOffset + 1;
-                for (SatellitePassDTO pass : passes) {
-                        long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(LocalDateTime.now(), pass.riseTime());
-                        sb.append(count).append(". *").append(escapeTelegramMarkdown(pass.satelliteName())).append("*\n");
-                        sb.append("   ⏰ Tra ").append(minutesUntilRise).append(" min (")
-                            .append(String.format("%02d:%02d", pass.riseTime().getHour(), pass.riseTime().getMinute()))
-                            .append(" UTC)\n");
-                        sb.append("   📈 Elev: ").append(String.format("%.0f°", pass.maxElevation()))
-                            .append(" | ⭐ Mag: ").append(String.format("%.1f", pass.estimatedMagnitude())).append("\n\n");
-                        count++;
-                }
+        LocalDateTime now = passTimeService.nowForObserver(observerLocation);
 
-                return sb.toString();
+        int count = startOffset + 1;
+        for (SatellitePassDTO pass : passes) {
+            long minutesUntilRise = java.time.temporal.ChronoUnit.MINUTES.between(now, pass.riseTime());
+            sb.append(count).append(". *").append(escapeTelegramMarkdown(pass.satelliteName())).append("*\n");
+            sb.append("   ⏰ Tra ").append(minutesUntilRise).append(" min (")
+                .append(formatLocalPassTime(pass.riseTime()))
+                .append(" local)\n");
+            sb.append("   📈 Elev: ").append(String.format("%.0f°", pass.maxElevation()))
+                .append(" | ⭐ Mag: ").append(String.format("%.1f", pass.estimatedMagnitude())).append("\n\n");
+            count++;
         }
+
+        return sb.toString();
+    }
 }

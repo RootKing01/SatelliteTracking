@@ -5,9 +5,12 @@ import com.satelliteTracking.model.Satellite;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
+import java.util.Set;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 @Repository
 public interface OrbitalParametersRepository extends JpaRepository<OrbitalParameters, Long> {
@@ -23,7 +26,12 @@ public interface OrbitalParametersRepository extends JpaRepository<OrbitalParame
     // ✅ FIX IMPORTANTE (CACHE PER NORAD ID)
     Optional<OrbitalParameters> findTopBySatellite_NoradCatIdOrderByFetchedAtDesc(Long noradCatId);
 
+    List<OrbitalParameters> findBySatellite_NoradCatIdIn(Collection<Long> noradCatIds);
+
     boolean existsBySatelliteAndEpoch(Satellite satellite, String epoch);
+
+    @Query("SELECT CONCAT(op.satellite.noradCatId, '|', op.epoch) FROM OrbitalParameters op WHERE op.satellite.noradCatId IN :noradIds")
+    Set<String> findEpochKeysByNoradCatIdIn(@Param("noradIds") Set<Long> noradIds);
 
     @Query("""
         select op

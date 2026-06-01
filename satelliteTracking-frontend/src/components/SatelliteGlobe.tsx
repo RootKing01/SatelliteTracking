@@ -17,6 +17,7 @@ import {
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, Viewer, type CesiumComponentRef } from 'resium'
+import Moon, { computeMoonPosition } from './Moon'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
 import type { SatellitePosition } from '../types/satellite'
 
@@ -43,6 +44,7 @@ export type SatelliteGlobeHandle = {
   zoomOut: () => void
   goToInitialView: () => void
   alignToEarthAxis: () => void
+  focusOnMoon: () => void
   focusOnSatellite: (
     longitudeDeg: number,
     latitudeDeg: number,
@@ -54,6 +56,8 @@ export type SatelliteGlobeHandle = {
 type SatelliteGlobeProps = {
   autoRotate: boolean
   showBackSideSatellites: boolean
+  showMoon?: boolean
+  performanceMode?: boolean
   groupColorMap: Record<SatelliteGroupKey, Color>
   selectedEntityId: string | null
   starlinkSatellites: SatellitePosition[]
@@ -66,6 +70,8 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     {
       autoRotate,
       showBackSideSatellites,
+      showMoon = true,
+      performanceMode = false,
       groupColorMap,
       selectedEntityId,
       starlinkSatellites,
@@ -81,6 +87,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     const groupPointsRef = useRef<PointPrimitiveCollection | null>(null)
     const groupPrimitiveByEntityIdRef = useRef<Map<string, PointPrimitive>>(new Map())
     const groupNextEntityIdsRef = useRef<Set<string>>(new Set())
+    const lastTrackedEntityIdRef = useRef<string | null>(null)
     const autoRotateRef = useRef(autoRotate)
     const pauseAutoRotateUntilRef = useRef(0)
     const lastAutoRotateTickRef = useRef(0)
@@ -162,7 +169,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       }
 
       return null
-    }, [selectedStarlinkSatellite, selectedVisibleSatellite])
+    }, [selectedEntityId, selectedStarlinkSatellite, selectedVisibleSatellite])
     useEffect(() => {
       if (viewerReadyTick > 0) {
         return
@@ -239,6 +246,31 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           duration: 0.9,
         })
       },
+      focusOnMoon: () => {
+        const viewer = viewerRef.current?.cesiumElement
+        if (!viewer) {
+          return
+        }
+
+        const { lon, lat, altMeters } = computeMoonPosition()
+        const moonPosition = Cartesian3.fromDegrees(lon, lat, altMeters)
+
+        viewer.camera.cancelFlight()
+        pauseAutoRotateUntilRef.current = Date.now() + 1800
+
+        const moonSphere = new BoundingSphere(moonPosition, 900000)
+        viewer.camera.flyToBoundingSphere(moonSphere, {
+          offset: new HeadingPitchRange(viewer.camera.heading, CesiumMath.toRadians(-22), 2600000),
+          duration: 1.35,
+        })
+
+        const entity = viewer.entities.getById('moon-entity')
+        if (entity) {
+          viewer.selectedEntity = entity
+          viewer.trackedEntity = entity
+          lastTrackedEntityIdRef.current = 'moon-entity'
+        }
+      },
       focusOnSatellite: (
         longitudeDeg: number,
         latitudeDeg: number,
@@ -269,6 +301,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           if (entity) {
             viewer.selectedEntity = entity
             viewer.trackedEntity = entity
+            lastTrackedEntityIdRef.current = entityId
           }
         }
 
@@ -296,6 +329,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
 
       if (!selectedEntityId) {
         viewer.trackedEntity = undefined
+        lastTrackedEntityIdRef.current = null
       }
     }, [selectedEntityId, viewerReadyTick])
 
@@ -305,10 +339,15 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         return
       }
 
+      if (lastTrackedEntityIdRef.current === selectedEntityId) {
+        return
+      }
+
       const entity = viewer.entities.getById(selectedEntityId)
       if (entity) {
         viewer.selectedEntity = entity
         viewer.trackedEntity = entity
+        lastTrackedEntityIdRef.current = selectedEntityId
       }
     }, [selectedEntityId, selectedStarlinkSatellite, viewerReadyTick])
 
@@ -319,10 +358,15 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       }
 
       const entityId = `${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}`
+      if (lastTrackedEntityIdRef.current === entityId) {
+        return
+      }
+
       const entity = viewer.entities.getById(entityId)
       if (entity) {
         viewer.selectedEntity = entity
         viewer.trackedEntity = entity
+        lastTrackedEntityIdRef.current = entityId
       }
     }, [selectedVisibleSatellite, viewerReadyTick])
 
@@ -332,13 +376,13 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         return
       }
 
-      viewer.resolutionScale = 1
+      viewer.resolutionScale = performanceMode ? 0.75 : 1
       viewer.scene.highDynamicRange = false
       viewer.scene.requestRenderMode = true
       viewer.scene.maximumRenderTimeChange = Infinity
       viewer.scene.postProcessStages.fxaa.enabled = false
-      viewer.scene.globe.maximumScreenSpaceError = 4
-      viewer.scene.globe.tileCacheSize = 160
+      viewer.scene.globe.maximumScreenSpaceError = performanceMode ? 8 : 4
+      viewer.scene.globe.tileCacheSize = performanceMode ? 80 : 160
       viewer.scene.globe.baseColor = Color.fromCssColorString('#0b1d33')
       viewer.scene.globe.depthTestAgainstTerrain = true
       viewer.scene.globe.translucency.enabled = false
@@ -384,8 +428,14 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         window.clearInterval(autoRotateIntervalRef.current)
       }
 
+      const autoRotateTickMs = performanceMode ? 200 : 100
+
       autoRotateIntervalRef.current = window.setInterval(() => {
         if (!viewerRef.current?.cesiumElement) {
+          return
+        }
+
+        if (selectedEntityId) {
           return
         }
 
@@ -399,7 +449,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           viewer.scene.camera.rotateRight(earthRotationSpeed)
           viewer.scene.requestRender()
         }
-      }, 100)
+      }, autoRotateTickMs)
 
       return () => {
         if (autoRotateIntervalRef.current !== null) {
@@ -407,7 +457,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           autoRotateIntervalRef.current = null
         }
       }
-    }, [viewerReadyTick])
+    }, [performanceMode, selectedEntityId, viewerReadyTick])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement
@@ -773,6 +823,9 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             />
           </>
         ) : null}
+
+        {/* Moon component handles its own visuals and glow */}
+        <Moon show={!!showMoon} />
 
         {selectedVisibleSatellite ? (
           <Entity

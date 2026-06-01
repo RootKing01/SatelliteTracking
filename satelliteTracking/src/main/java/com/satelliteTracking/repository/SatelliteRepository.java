@@ -7,12 +7,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface SatelliteRepository extends JpaRepository<Satellite, Long> {
     // Trova un satellite per NORAD Catalog ID
     Optional<Satellite> findByNoradCatId(Long noradCatId);
+
+    List<Satellite> findByNoradCatIdIn(Collection<Long> noradCatIds);
 
     // Trova il primo satellite che contiene il nome richiesto (case-insensitive)
     Optional<Satellite> findFirstByObjectNameContainingIgnoreCaseOrderByIdAsc(String objectName);

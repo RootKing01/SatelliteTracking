@@ -37,6 +37,9 @@ public class PassTimeService {
         }
     }
 
+    public LocalDateTime nowUtcDateTime() {
+        return LocalDateTime.ofInstant(nowUtc().toDate(TimeScalesFactory.getUTC()).toInstant(), ZoneId.of("UTC"));
+    }
     public LocalDateTime nowForObserver(ObserverLocation observerLocation) {
         return LocalDateTime.now(resolveOutputZone(observerLocation));
     }

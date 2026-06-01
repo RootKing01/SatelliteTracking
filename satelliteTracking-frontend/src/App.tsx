@@ -11,7 +11,8 @@ import { getCurrentUser, type AuthUser } from './api/authClient'
 import { type OrekitStatusResponse } from './api/orekitStatusClient'
 import { type SystemHealthResponse } from './api/systemHealthClient'
 import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
-import { fetchAllSatellitePositions, fetchSatellitePositionById } from './api/satellitePositionsClient'
+import { fetchSatellitePositionById } from './api/satellitePositionsClient'
+import { fetchSatelliteGroupsStats } from './api/groups/groupsStatsClient'
 import { fetchMySightings, type SatelliteSighting } from './api/sightingsClient'
 import { type UpcomingPass } from './api/satelliteVisibilityClient'
 import { satelliteGroupSources } from './api/groups'
@@ -24,6 +25,7 @@ import {
   executeRegisterFlow,
 } from './helpers/authFlowHelpers'
 import { buildEnabledGroupsFromPreset, createDefaultEnabledGroups, type GroupPreset } from './helpers/groupHelpers'
+import { buildRuntimeSatelliteGroupSources } from './helpers/groupDiscoveryHelpers'
 import { buildGroupRows } from './helpers/groupViewHelpers'
 import {
   buildLiveEntityIdBySatelliteId,
@@ -43,11 +45,13 @@ import {
   downloadVisibilityResultsCsv,
   filterVisibilityResults,
 } from './helpers/visibilityHelpers'
+import clearAuthFields from './helpers/authHelpers'
 // visibility helpers moved to interactionHandlers where needed
 import { AuthPanel } from './components/auth/AuthPanel'
 import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
 import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SatelliteGlobe, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
+import { computeMoonPosition } from './components/Moon'
 import { CommunityPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
@@ -68,21 +72,34 @@ type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 
 const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
 
-const defaultRefreshIntervalSec = 0.8
-const mediumRefreshIntervalSec = 1.4
-const heavyRefreshIntervalSec = 2.1
-const veryHeavyRefreshIntervalSec = 3
-const refreshTuningProfiles = [
-  { label: 'Aggressivo', multiplier: 0.72 },
-  { label: 'Bilanciato', multiplier: 1 },
-  { label: 'Stabile', multiplier: 1.28 },
-] as const
+function computeRefreshIntervalMs(totalVisibleCount: number) {
+  if (totalVisibleCount <= 50) {
+    return 1400
+  }
+  if (totalVisibleCount <= 250) {
+    return 2000
+  }
+  if (totalVisibleCount <= 1000) {
+    return 3000
+  }
+  if (totalVisibleCount <= 3000) {
+    return 3500
+  }
+  if (totalVisibleCount <= 8000) {
+    return 4000
+  }
+  if (totalVisibleCount <= 12000) {
+    return 4500
+  }
+  return 5000
+}
 
 type AuthMode = 'login' | 'register'
 
 function App() {
-  const allGroups = satelliteGroupSources as readonly SatelliteGroupSource[]
   const globeRef = useRef<SatelliteGlobeHandle>(null)
+
+  const [discoveredCanonicalGroupKeys, setDiscoveredCanonicalGroupKeys] = useState<string[]>([])
 
   const [groupPositions, setGroupPositions] = useState<GroupPositionsState>({})
   const [groupLoading, setGroupLoading] = useState<GroupLoadingState>({})
@@ -102,7 +119,10 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [showBackSideSatellites, setShowBackSideSatellites] = useState(false)
-  const [refreshTuningIndex, setRefreshTuningIndex] = useState(1)
+  const [showMoon, setShowMoon] = useState(true)
+  const [moonDetailsOpen, setMoonDetailsOpen] = useState(false)
+  const [compactMobileViewport, setCompactMobileViewport] = useState(false)
+  const [landscapeMobileViewport, setLandscapeMobileViewport] = useState(false)
   const latestRequestIdRef = useRef(0)
   const inFlightRequestRef = useRef(false)
   const latestGroupPositionsRef = useRef<GroupPositionsState>({})
@@ -148,8 +168,20 @@ function App() {
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
+  const allGroups = useMemo(
+    () =>
+      buildRuntimeSatelliteGroupSources(
+        satelliteGroupSources as readonly SatelliteGroupSource[],
+        discoveredCanonicalGroupKeys,
+      ),
+    [discoveredCanonicalGroupKeys],
+  )
+
   // Measured height of the floating music widget so floating controls can follow it
   const musicWidgetHeight = useMusicWidgetHeight()
+  const desktopMusicTop = 8
+  const desktopFocusTop = musicWidgetHeight > 0 ? Math.max(58, musicWidgetHeight + 16) : 58
+  const desktopZoomTop = musicWidgetHeight > 0 ? Math.max(108, musicWidgetHeight + 86) : 108
 
   const groupColorMap = useMemo(
     () =>
@@ -158,6 +190,40 @@ function App() {
       ) as Record<SatelliteGroupKey, Color>,
     [allGroups],
   )
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    void fetchSatelliteGroupsStats(controller.signal)
+      .then(({ stats }) => {
+        setDiscoveredCanonicalGroupKeys(Object.keys(stats))
+      })
+      .catch(() => {
+        setDiscoveredCanonicalGroupKeys([])
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    const presetEnabled = buildEnabledGroupsFromPreset(allGroups, selectedPreset)
+    if (presetEnabled) {
+      setEnabledGroups(presetEnabled)
+      return
+    }
+
+    setEnabledGroups((prev) => {
+      const next = { ...prev }
+      for (const group of allGroups) {
+        if (next[group.key] === undefined) {
+          next[group.key] = false
+        }
+      }
+      return next
+    })
+  }, [allGroups, selectedPreset])
 
   const activeGroups = useMemo(
     () => allGroups.filter((group) => enabledGroups[group.key]),
@@ -178,28 +244,30 @@ function App() {
     [activeGroups, groupPositions],
   )
 
-  const selectedRefreshTuning =
-    refreshTuningProfiles[refreshTuningIndex] ?? refreshTuningProfiles[1]
+  const refreshIntervalMs = useMemo(
+    () => computeRefreshIntervalMs(totalVisibleCount),
+    [totalVisibleCount],
+  )
 
-  const refreshIntervalMs = useMemo(() => {
-    let baseIntervalSec = defaultRefreshIntervalSec
-
-    if (totalVisibleCount >= 2500) {
-      baseIntervalSec = veryHeavyRefreshIntervalSec
-    } else if (totalVisibleCount >= 1200) {
-      baseIntervalSec = heavyRefreshIntervalSec
-    } else if (totalVisibleCount >= 500) {
-      baseIntervalSec = mediumRefreshIntervalSec
-    } else if (activeGroups.length >= 8) {
-      baseIntervalSec = heavyRefreshIntervalSec
-    } else if (activeGroups.length >= 4) {
-      baseIntervalSec = mediumRefreshIntervalSec
+  useEffect(() => {
+    const updateViewportFlags = () => {
+      const isPointerCoarse = window.matchMedia('(pointer: coarse)').matches
+      const compact = window.innerWidth <= 760 || (window.innerWidth <= 900 && isPointerCoarse)
+      setCompactMobileViewport(compact)
+      setLandscapeMobileViewport(compact && window.matchMedia('(orientation: landscape)').matches)
     }
 
-    const tunedIntervalSec = baseIntervalSec * selectedRefreshTuning.multiplier
-    const clampedIntervalSec = Math.max(0.55, Math.min(4.2, tunedIntervalSec))
-    return Math.round(clampedIntervalSec * 1000)
-  }, [activeGroups.length, selectedRefreshTuning.multiplier, totalVisibleCount])
+    updateViewportFlags()
+
+    const resizeHandler = () => updateViewportFlags()
+    window.addEventListener('resize', resizeHandler, { passive: true })
+    window.addEventListener('orientationchange', resizeHandler, { passive: true })
+
+    return () => {
+      window.removeEventListener('resize', resizeHandler)
+      window.removeEventListener('orientationchange', resizeHandler)
+    }
+  }, [])
 
   const visibleEntitySatellites = useMemo<VisibleSatelliteItem[]>(
     () =>
@@ -268,13 +336,21 @@ function App() {
     (entityId: string | null) => {
       setSelectedEntityId(entityId)
 
+      if (entityId === 'moon-entity') {
+        setMoonDetailsOpen(true)
+      }
+
       if (!entityId) {
         setSelectedSatellite(null)
+        setMoonDetailsOpen(false)
         return
       }
 
       const selected = satelliteLookupByEntityId.get(entityId)
       setSelectedSatellite(selected ?? null)
+      if (entityId !== 'moon-entity') {
+        setMoonDetailsOpen(false)
+      }
     },
     [satelliteLookupByEntityId],
   )
@@ -352,10 +428,9 @@ function App() {
   const handleToggleBackSideSatellites = useCallback(() => {
     setShowBackSideSatellites((prev) => !prev)
   }, [])
-  const handleRefreshTuningIndexChange = useCallback((value: number) => {
-    setRefreshTuningIndex(value)
+  const handleToggleShowMoon = useCallback(() => {
+    setShowMoon((prev) => !prev)
   }, [])
-
   const handlePingSystemHealth = useCallback(() => {
     setSystemHealthLoading(true)
     setSystemHealthError('')
@@ -390,6 +465,14 @@ function App() {
   }, [satelliteLookupByEntityId, selectedEntityId, selectedSatellite])
 
   useEffect(() => {
+    if (openPane !== 'groups') {
+      return
+    }
+
+    if (searchQuery.trim().length < 2) {
+      return
+    }
+
     if (searchScope === 'enabled') {
       return
     }
@@ -428,11 +511,10 @@ function App() {
     return () => {
       controller.abort()
     }
-  }, [allGroups, catalogByGroup, searchScope])
+  }, [allGroups, catalogByGroup, openPane, searchQuery, searchScope])
 
   const resetAuthFields = () => {
     // delegate to helper to keep App small
-    const { default: clearAuthFields } = require('./helpers/authHelpers') as typeof import('./helpers/authHelpers')
     clearAuthFields(setAuthUsernameOrEmail, setAuthUsername, setAuthEmail, setAuthPassword)
     setAuthPasswordConfirm('')
   }
@@ -743,130 +825,107 @@ function App() {
     let isMounted = true
     let refreshController: AbortController | null = null
 
-    const loadGroups = async (requestId: number, signal?: AbortSignal) => {
+    const pauseBetweenBatches = () =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0)
+      })
+
+    const loadGroups = async (_requestId: number, signal?: AbortSignal) => {
       setIsRefreshing(true)
 
-      for (const group of activeGroups) {
-        if (!isMounted) {
-          if (latestRequestIdRef.current === requestId) {
-            setIsRefreshing(false)
-          }
+      setGroupLoading((prev) => {
+        const next = { ...prev }
+        for (const group of activeGroups) {
+          next[group.key] = true
+        }
+        return next
+      })
+
+      const batchSize = compactMobileViewport ? 1 : activeGroups.length >= 8 ? 2 : 3
+      const nextPositions: GroupPositionsState = { ...latestGroupPositionsRef.current }
+      const nextErrors: GroupErrorState = {}
+      const nextLoading: GroupLoadingState = {}
+
+      for (let index = 0; index < activeGroups.length; index += batchSize) {
+        if (!isMounted || signal?.aborted) {
           return
         }
-        setGroupLoading((prev) => ({ ...prev, [group.key]: true }))
-      }
 
-      let results: PromiseSettledResult<{
-        key: SatelliteGroupKey
-        positions: SatellitePosition[]
-      }>[]
-
-      if (activeGroups.length > 1) {
-        try {
-          const allPositions = await fetchAllSatellitePositions(signal)
-          const positionsByType = new Map<string, SatellitePosition[]>()
-
-          for (const position of allPositions) {
-            const typeKey = (position.satelliteType ?? '').toLowerCase()
-            if (!typeKey) {
-              continue
-            }
-
-            const bucket = positionsByType.get(typeKey)
-            if (bucket) {
-              bucket.push(position)
-            } else {
-              positionsByType.set(typeKey, [position])
-            }
-          }
-
-          results = activeGroups.map((group) => ({
-            status: 'fulfilled',
-            value: {
-              key: group.key,
-              positions: positionsByType.get(group.type.toLowerCase()) ?? [],
-            },
-          }))
-        } catch (error) {
-          results = activeGroups.map(() => ({
-            status: 'rejected',
-            reason: error,
-          }))
-        }
-      } else {
-        results = await Promise.allSettled(
-          activeGroups.map(async (group) => {
+        const batch = activeGroups.slice(index, index + batchSize)
+        const results = await Promise.allSettled(
+          batch.map(async (group) => {
             const positions = await group.loadPositions(signal)
             return { key: group.key, positions }
           }),
         )
-      }
 
-      if (!isMounted || signal?.aborted) {
-        return
-      }
-
-      const nextPositions: GroupPositionsState = {}
-      const nextErrors: GroupErrorState = {}
-      const nextLoading: GroupLoadingState = {}
-      let unauthorizedDetected = false
-
-      activeGroups.forEach((group, index) => {
-        const result = results[index]
-        nextLoading[group.key] = false
-
-        if (result.status === 'fulfilled') {
-          nextPositions[group.key] = result.value.positions
-          nextErrors[group.key] = ''
+        if (!isMounted || signal?.aborted) {
           return
         }
 
-        nextPositions[group.key] = latestGroupPositionsRef.current[group.key] ?? []
-        const reason = result.reason
-        if (isAxiosError(reason) && reason.response?.status === 401) {
-          unauthorizedDetected = true
-          nextErrors[group.key] = 'Sessione scaduta'
-          return
-        }
+        let unauthorizedDetected = false
 
-        if (isAxiosError(reason)) {
-          const hasPreviousData = (latestGroupPositionsRef.current[group.key]?.length ?? 0) > 0
-          const isCanceled = reason.code === 'ERR_CANCELED'
-          const isTimeout = reason.code === 'ECONNABORTED'
-          const status = reason.response?.status
-          const isTransientUpstream = status === 429 || status === 502 || status === 503 || status === 504
-          const isNetworkError = !reason.response
+        batch.forEach((group, batchIndex) => {
+          const result = results[batchIndex]
+          nextLoading[group.key] = false
 
-          // Con molti gruppi attivi, timeout/cancel/rete possono capitare: evitiamo falsi allarmi
-          // se abbiamo gia dati precedenti da mostrare.
-          if (isCanceled || ((isTimeout || isTransientUpstream || isNetworkError) && hasPreviousData)) {
+          if (result.status === 'fulfilled') {
+            nextPositions[group.key] = result.value.positions
             nextErrors[group.key] = ''
             return
           }
+
+          nextPositions[group.key] = latestGroupPositionsRef.current[group.key] ?? []
+          const reason = result.reason
+          if (isAxiosError(reason) && reason.response?.status === 401) {
+            unauthorizedDetected = true
+            nextErrors[group.key] = 'Sessione scaduta'
+            return
+          }
+
+          if (isAxiosError(reason)) {
+            const hasPreviousData = (latestGroupPositionsRef.current[group.key]?.length ?? 0) > 0
+            const isCanceled = reason.code === 'ERR_CANCELED'
+            const isTimeout = reason.code === 'ECONNABORTED'
+            const status = reason.response?.status
+            const isTransientUpstream = status === 429 || status === 502 || status === 503 || status === 504
+            const isNetworkError = !reason.response
+
+            // Con molti gruppi attivi, timeout/cancel/rete possono capitare: evitiamo falsi allarmi
+            // se abbiamo gia dati precedenti da mostrare.
+            if (isCanceled || ((isTimeout || isTransientUpstream || isNetworkError) && hasPreviousData)) {
+              nextErrors[group.key] = ''
+              return
+            }
+          }
+
+          nextErrors[group.key] = `Errore caricamento ${group.label}`
+        })
+
+        if (unauthorizedDetected) {
+          startTransition(() => {
+            setAuthUser(null)
+            setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+            setAuthInfo('Sessione non valida per le API live.')
+            setGroupPositions({})
+            setGroupErrors({})
+            setGroupLoading({})
+            setHasLoadedOnce(false)
+          })
+          return
         }
 
-        nextErrors[group.key] = `Errore caricamento ${group.label}`
-      })
-
-      if (unauthorizedDetected) {
         startTransition(() => {
-          setAuthUser(null)
-          setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-          setAuthInfo('Sessione non valida per le API live.')
-          setGroupPositions({})
-          setGroupErrors({})
-          setGroupLoading({})
-          setHasLoadedOnce(false)
+          setGroupPositions({ ...nextPositions })
+          setGroupErrors({ ...nextErrors })
+          setGroupLoading({ ...nextLoading })
+          setHasLoadedOnce(true)
         })
-        return
-      }
 
-      startTransition(() => {
-        setGroupPositions(nextPositions)
-        setGroupErrors(nextErrors)
-        setGroupLoading(nextLoading)
-        setHasLoadedOnce(true)
-      })
+        if (index + batchSize < activeGroups.length) {
+          await pauseBetweenBatches()
+        }
+      }
     }
 
     const finalizeLoadRequest = (requestId: number) => {
@@ -911,7 +970,7 @@ function App() {
       inFlightRequestRef.current = false
       setIsRefreshing(false)
     }
-  }, [activeGroups, authUser, refreshIntervalMs])
+  }, [activeGroups, authUser, compactMobileViewport, refreshIntervalMs])
 
   const panelWidth = 470
 
@@ -1032,18 +1091,17 @@ function App() {
                             <SatellitesPanel
                               autoRotate={autoRotate}
                               showBackSideSatellites={showBackSideSatellites}
+                              showMoon={showMoon}
+                              onToggleShowMoon={handleToggleShowMoon}
                               hasLoadedOnce={hasLoadedOnce}
                               isRefreshing={isRefreshing}
                               refreshIntervalMs={refreshIntervalMs}
-                              refreshProfileLabel={selectedRefreshTuning.label}
-                              refreshTuningIndex={refreshTuningIndex}
                               onZoomIn={handleZoomIn}
                               onZoomOut={handleZoomOut}
                               onGoHome={handleGoHome}
                               onAlignAxis={handleAlignAxis}
                               onToggleAutoRotate={handleToggleAutoRotate}
                               onToggleBackSideSatellites={handleToggleBackSideSatellites}
-                              onRefreshTuningIndexChange={handleRefreshTuningIndexChange}
                             />
                           </div>
                         ) : null}
@@ -1082,6 +1140,7 @@ function App() {
                               sightingsError={sightingsError}
                               sightingsLoading={sightingsLoading}
                               mySightings={mySightings}
+                              compactLandscapeViewport={landscapeMobileViewport}
                               onFocusSightingSatellite={handleFocusBySatelliteId}
                             />
                           </div>
@@ -1114,12 +1173,22 @@ function App() {
         ) : null}
 
         <section className="viewer-section">
-          <MusicFloatingPlayer floatingStyle={{ left: focusGlobeMode ? 10 : panelWidth + 20, top: 58 }} />
+          <MusicFloatingPlayer
+            floatingStyle={
+              landscapeMobileViewport
+                ? { right: 8, left: 'auto', top: 8 }
+                : { left: focusGlobeMode ? 10 : panelWidth + 20, top: desktopMusicTop }
+            }
+          />
 
           <button
             type="button"
             className="focus-toggle"
-            style={{ left: focusGlobeMode ? 10 : panelWidth + 20, right: 'auto' }}
+            style={
+              landscapeMobileViewport
+                ? { right: 8, left: 'auto', top: 58 }
+                : { left: focusGlobeMode ? 10 : panelWidth + 20, right: 'auto', top: desktopFocusTop }
+            }
             onClick={() => setFocusGlobeMode((prev) => !prev)}
           >
             {focusGlobeMode ? 'Mostra pannello dati' : 'Focus Globe'}
@@ -1128,8 +1197,9 @@ function App() {
           <div
             className="quick-zoom quick-zoom-left"
             style={{
-              left: focusGlobeMode ? 10 : panelWidth + 20,
-              top: computeQuickZoomTop(musicWidgetHeight),
+              ...(landscapeMobileViewport
+                ? { right: 8, left: 'auto', top: 108 }
+                : { left: focusGlobeMode ? 10 : panelWidth + 20, top: computeQuickZoomTop(musicWidgetHeight, desktopZoomTop - musicWidgetHeight) ?? desktopZoomTop }),
             }}
           >
             <button type="button" onClick={() => globeRef.current?.zoomIn()} aria-label="Zoom rapido in">
@@ -1237,10 +1307,38 @@ function App() {
           </aside>
           ) : null}
 
+          {selectedEntityId === 'moon-entity' && moonDetailsOpen ? (
+            <aside className="viewer-hud">
+              <section className="details-card hud-details">
+                <h3>Dettagli Luna</h3>
+                <div className="details-head">
+                  <strong>Moon</strong>
+                  <div className="details-head-actions">
+                    <button type="button" onClick={() => {
+                      setMoonDetailsOpen(false)
+                    }}>Chiudi</button>
+                  </div>
+                </div>
+                <div className="details-grid">
+                  <span>Nome</span>
+                  <span>Moon</span>
+                  <span>Fase</span>
+                  <span>{(computeMoonPosition().phase * 100).toFixed(1)}%</span>
+                  <span>Lat/Lon</span>
+                  <span>{computeMoonPosition().lat.toFixed(2)} / {computeMoonPosition().lon.toFixed(2)}</span>
+                  <span>Distanza</span>
+                  <span>{(computeMoonPosition().altMeters / 1000).toFixed(0)} km</span>
+                </div>
+              </section>
+            </aside>
+          ) : null}
+
           <SatelliteGlobe
             ref={globeRef}
             autoRotate={autoRotate}
-            showBackSideSatellites={showBackSideSatellites}
+            showBackSideSatellites={compactMobileViewport ? false : showBackSideSatellites}
+            showMoon={showMoon}
+            performanceMode={compactMobileViewport}
             groupColorMap={groupColorMap}
             selectedEntityId={selectedEntityId}
             starlinkSatellites={starlinkSatellites}

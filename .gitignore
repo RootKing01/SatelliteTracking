@@ -51,3 +51,7 @@ logs/
 /docs/
 TELEGRAM_NOTIFICATIONS.md
 FIREBASE_FCM_SETUP.md
+
+# logs file (repo root)
+/full_logs.txt
+/satellite-new-satellites.txt
