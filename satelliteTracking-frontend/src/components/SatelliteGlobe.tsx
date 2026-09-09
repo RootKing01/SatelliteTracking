@@ -25,6 +25,76 @@ const earthRotationSpeed = 0.00015
 const initialCameraDestination = Cartesian3.fromDegrees(-20, -6, 24000000)
 const initialCameraOrientation = new HeadingPitchRoll(0, -1.5, 0)
 
+type IdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+  cancelIdleCallback?: (id: number) => void
+}
+
+function scheduleChunkedUpdate(
+  itemCount: number,
+  processChunk: (start: number, end: number) => void,
+  onComplete: () => void,
+  chunkSize = 100,
+) {
+  const idleWindow = window as IdleWindow
+  const pendingTimeouts: number[] = []
+  const pendingIdleIds: number[] = []
+  let index = 0
+
+  const scheduleNext = (callback: () => void) => {
+    if (idleWindow.requestIdleCallback) {
+      pendingIdleIds.push(idleWindow.requestIdleCallback(callback, { timeout: 50 }))
+    } else {
+      pendingTimeouts.push(window.setTimeout(callback, 0))
+    }
+  }
+
+  const processNextChunk = () => {
+    const end = Math.min(index + chunkSize, itemCount)
+    processChunk(index, end)
+    index = end
+
+    if (index < itemCount) {
+      scheduleNext(processNextChunk)
+    } else {
+      onComplete()
+    }
+  }
+
+  processNextChunk()
+
+  return () => {
+    for (const timeoutId of pendingTimeouts) {
+      window.clearTimeout(timeoutId)
+    }
+    if (idleWindow.cancelIdleCallback) {
+      for (const idleId of pendingIdleIds) {
+        idleWindow.cancelIdleCallback(idleId)
+      }
+    }
+  }
+}
+
+function updateSatellitePointPrimitive(
+  primitive: PointPrimitive,
+  satellite: SatellitePosition,
+  color: Color,
+  pixelSize: number,
+  outlineWidth: number,
+  showBackSideSatellites: boolean,
+) {
+  primitive.position = Cartesian3.fromDegrees(
+    satellite.longitudeDeg,
+    satellite.latitudeDeg,
+    Math.max(0, satellite.altitudeKm * 1000),
+  )
+  primitive.color = color
+  primitive.pixelSize = pixelSize
+  primitive.outlineColor = Color.WHITE
+  primitive.outlineWidth = outlineWidth
+  primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
+}
+
 export type VisibleSatelliteItem = {
   group: SatelliteGroupSource
   satellite: SatellitePosition
@@ -477,24 +547,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       const starlinkColor = groupColorMap.starlink
       const nextIds = starlinkNextIdsRef.current
       nextIds.clear()
-      // Process updates in chunks to avoid blocking the scheduler/message loop
-      const CHUNK = 100
-      let idx = 0
-      const pendingTimeouts: number[] = []
-      const pendingIdleIds: number[] = []
-
-      const scheduleNext = (fn: () => void) => {
-        if ((window as any).requestIdleCallback) {
-          const id = (window as any).requestIdleCallback(fn, { timeout: 50 }) as number
-          pendingIdleIds.push(id)
-        } else {
-          pendingTimeouts.push(window.setTimeout(fn, 0))
-        }
-      }
-
-      const processChunk = () => {
-        const end = Math.min(idx + CHUNK, starlinkSatellites.length)
-        for (; idx < end; idx++) {
+      const cleanupChunkedUpdate = scheduleChunkedUpdate(
+        starlinkSatellites.length,
+        (start, end) => {
+        for (let idx = start; idx < end; idx += 1) {
           const satellite = starlinkSatellites[idx]
           const satelliteId = satellite.satelliteId
           nextIds.add(satelliteId)
@@ -524,21 +580,17 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             continue
           }
 
-          primitive.position = Cartesian3.fromDegrees(
-            satellite.longitudeDeg,
-            satellite.latitudeDeg,
-            altitudeMeters,
+          updateSatellitePointPrimitive(
+            primitive,
+            satellite,
+            starlinkColor,
+            isSelected ? 6 : 4,
+            isSelected ? 3 : 0,
+            showBackSideSatellites,
           )
-          primitive.color = starlinkColor
-          primitive.pixelSize = isSelected ? 6 : 4
-          primitive.outlineColor = Color.WHITE
-          primitive.outlineWidth = isSelected ? 3 : 0
-          primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
         }
-
-        if (idx < starlinkSatellites.length) {
-          scheduleNext(processChunk)
-        } else {
+        },
+        () => {
           // cleanup removed primitives after finishing updates
           for (const [satelliteId, primitive] of starlinkPrimitiveByIdRef.current) {
             if (!nextIds.has(satelliteId)) {
@@ -546,21 +598,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
               starlinkPrimitiveByIdRef.current.delete(satelliteId)
             }
           }
-        }
-      }
+        },
+      )
 
-      processChunk()
-
-      return () => {
-        for (const t of pendingTimeouts) {
-          window.clearTimeout(t)
-        }
-        for (const id of pendingIdleIds) {
-          if ((window as any).cancelIdleCallback) {
-            (window as any).cancelIdleCallback(id)
-          }
-        }
-      }
+      return cleanupChunkedUpdate
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, starlinkSatellites])
 
     useEffect(() => {
@@ -580,25 +621,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
 
       const nextEntityIds = groupNextEntityIdsRef.current
       nextEntityIds.clear()
-
-      // Chunk updates to avoid blocking the main thread when many entities are present
-      const CHUNK = 100
-      let idx = 0
-      const pendingTimeouts: number[] = []
-      const pendingIdleIds: number[] = []
-
-      const scheduleNext = (fn: () => void) => {
-        if ((window as any).requestIdleCallback) {
-          const id = (window as any).requestIdleCallback(fn, { timeout: 50 }) as number
-          pendingIdleIds.push(id)
-        } else {
-          pendingTimeouts.push(window.setTimeout(fn, 0))
-        }
-      }
-
-      const processChunk = () => {
-        const end = Math.min(idx + CHUNK, visibleEntitySatellites.length)
-        for (; idx < end; idx++) {
+      const cleanupChunkedUpdate = scheduleChunkedUpdate(
+        visibleEntitySatellites.length,
+        (start, end) => {
+        for (let idx = start; idx < end; idx += 1) {
           const { group, satellite } = visibleEntitySatellites[idx]
           const entityId = `${group.key}-${satellite.satelliteId}`
           nextEntityIds.add(entityId)
@@ -628,42 +654,27 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             continue
           }
 
-          primitive.position = Cartesian3.fromDegrees(
-            satellite.longitudeDeg,
-            satellite.latitudeDeg,
-            altitudeMeters,
+          updateSatellitePointPrimitive(
+            primitive,
+            satellite,
+            groupColor,
+            isSelected ? 13 : 7,
+            isSelected ? 3 : 1,
+            showBackSideSatellites,
           )
-          primitive.color = groupColor
-          primitive.pixelSize = isSelected ? 13 : 7
-          primitive.outlineColor = Color.WHITE
-          primitive.outlineWidth = isSelected ? 3 : 1
-          primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
         }
-
-        if (idx < visibleEntitySatellites.length) {
-          scheduleNext(processChunk)
-        } else {
+        },
+        () => {
           for (const [entityId, primitive] of groupPrimitiveByEntityIdRef.current) {
             if (!nextEntityIds.has(entityId)) {
               collection.remove(primitive)
               groupPrimitiveByEntityIdRef.current.delete(entityId)
             }
           }
-        }
-      }
+        },
+      )
 
-      processChunk()
-
-      return () => {
-        for (const t of pendingTimeouts) {
-          window.clearTimeout(t)
-        }
-        for (const id of pendingIdleIds) {
-          if ((window as any).cancelIdleCallback) {
-            (window as any).cancelIdleCallback(id)
-          }
-        }
-      }
+      return cleanupChunkedUpdate
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, visibleEntitySatellites])
 
     useEffect(() => {

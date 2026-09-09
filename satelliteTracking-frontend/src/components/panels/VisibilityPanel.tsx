@@ -1,4 +1,4 @@
-import type { UpcomingPass } from '../../api/satelliteVisibilityClient'
+import type { UpcomingPass } from '../../api/satelliteClient'
 import '../../styles/panels/visibility-panel.css'
 
 type VisibilityPanelProps = {

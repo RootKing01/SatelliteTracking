@@ -4,56 +4,50 @@ import {
   useCalculateVisibility,
   useFocusBySatelliteId,
 } from './hooks/useInteractionHandlers'
+import { useLiveSatelliteGroups } from './hooks/useLiveSatelliteGroups'
+import { useAuthFlow } from './hooks/useAuthFlow'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { Color, Ion } from 'cesium'
-import { getCurrentUser, type AuthUser } from './api/authClient'
-import { type OrekitStatusResponse } from './api/orekitStatusClient'
-import { type SystemHealthResponse } from './api/systemHealthClient'
-import { fetchSatelliteCatalogByType, type SatelliteCatalogItem } from './api/satelliteCatalogClient'
-import { fetchSatellitePositionById } from './api/satellitePositionsClient'
-import { fetchSatelliteGroupsStats } from './api/groups/groupsStatsClient'
-import { fetchMySightings, type SatelliteSighting } from './api/sightingsClient'
-import { type UpcomingPass } from './api/satelliteVisibilityClient'
+import {
+  loadOrekitStatus,
+  loadSystemHealth,
+  type OrekitStatusResponse,
+  type SystemHealthResponse,
+} from './api/systemStatusClient'
+import {
+  fetchMySightings,
+  fetchSatelliteCatalogByType,
+  fetchSatelliteGroupsStats,
+  fetchSatellitePositionById,
+  type SatelliteCatalogItem,
+  type SatelliteSighting,
+  type UpcomingPass,
+} from './api/satelliteClient'
 import { satelliteGroupSources } from './api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
 import { extractAuthErrorMessage } from './helpers/appErrorHelpers'
 import { handleUseBrowserLocationImpl, handleUseBrowserLocationForVisibilityImpl } from './helpers/locationHelpers'
-import {
-  executeLoginFlow,
-  executeLogoutFlow,
-  executeRegisterFlow,
-} from './helpers/authFlowHelpers'
-import { buildEnabledGroupsFromPreset, createDefaultEnabledGroups, type GroupPreset } from './helpers/groupHelpers'
-import { buildRuntimeSatelliteGroupSources } from './helpers/groupDiscoveryHelpers'
-import { buildGroupRows } from './helpers/groupViewHelpers'
+import { buildEnabledGroupsFromPreset, buildGroupRows, buildRuntimeSatelliteGroupSources, createDefaultEnabledGroups, type GroupPreset } from './helpers/groupHelpers'
 import {
   buildLiveEntityIdBySatelliteId,
   buildSatelliteLookupByEntityId,
-  type SelectedSatelliteState,
-} from './helpers/satelliteSelectionHelpers'
-import {
   buildSearchResultItems,
   type SatelliteSearchScope,
+  type SelectedSatelliteState,
 } from './helpers/searchHelpers'
-import {
-  loadOrekitStatus,
-  loadSystemHealth,
-} from './helpers/systemStatusHelpers'
 import {
   buildVisibilityQueryLocationLabel,
   downloadVisibilityResultsCsv,
   filterVisibilityResults,
 } from './helpers/visibilityHelpers'
-import clearAuthFields from './helpers/authHelpers'
-// visibility helpers moved to interactionHandlers where needed
 import { AuthPanel } from './components/auth/AuthPanel'
 import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
 import { PanelTopSection } from './components/layout/PanelTopSection'
+import { SidebarPaneContent } from './components/layout/SidebarPaneContent'
+import { MoonDetailsHud, SatelliteDetailsHud } from './components/layout/ViewerHud'
 import { SatelliteGlobe, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
-import { computeMoonPosition } from './components/Moon'
 import { CommunityPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
-import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
@@ -65,46 +59,14 @@ if (ionToken && !import.meta.env.DEV) {
   Ion.defaultAccessToken = ionToken
 }
 
-type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]>>
-type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
-type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
-
 const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
-
-function computeRefreshIntervalMs(totalVisibleCount: number) {
-  if (totalVisibleCount <= 50) {
-    return 1400
-  }
-  if (totalVisibleCount <= 250) {
-    return 2000
-  }
-  if (totalVisibleCount <= 1000) {
-    return 3000
-  }
-  if (totalVisibleCount <= 3000) {
-    return 3500
-  }
-  if (totalVisibleCount <= 8000) {
-    return 4000
-  }
-  if (totalVisibleCount <= 12000) {
-    return 4500
-  }
-  return 5000
-}
-
-type AuthMode = 'login' | 'register'
 
 function App() {
   const globeRef = useRef<SatelliteGlobeHandle>(null)
 
   const [discoveredCanonicalGroupKeys, setDiscoveredCanonicalGroupKeys] = useState<string[]>([])
+  const [groupDiscoveryReady, setGroupDiscoveryReady] = useState(false)
 
-  const [groupPositions, setGroupPositions] = useState<GroupPositionsState>({})
-  const [groupLoading, setGroupLoading] = useState<GroupLoadingState>({})
-  const [groupErrors, setGroupErrors] = useState<GroupErrorState>({})
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [enabledGroups, setEnabledGroups] =
     useState<Record<SatelliteGroupKey, boolean>>(defaultEnabledGroups)
   const [selectedPreset, setSelectedPreset] = useState<GroupPreset>('stations')
@@ -122,20 +84,6 @@ function App() {
   const [moonDetailsOpen, setMoonDetailsOpen] = useState(false)
   const [compactMobileViewport, setCompactMobileViewport] = useState(false)
   const [landscapeMobileViewport, setLandscapeMobileViewport] = useState(false)
-  const latestRequestIdRef = useRef(0)
-  const inFlightRequestRef = useRef(false)
-  const latestGroupPositionsRef = useRef<GroupPositionsState>({})
-  const [authChecking, setAuthChecking] = useState(true)
-  const [authSubmitting, setAuthSubmitting] = useState(false)
-  const [authMode, setAuthMode] = useState<AuthMode>('login')
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
-  const [authUsernameOrEmail, setAuthUsernameOrEmail] = useState('')
-  const [authUsername, setAuthUsername] = useState('')
-  const [authEmail, setAuthEmail] = useState('')
-  const [authPassword, setAuthPassword] = useState('')
-  const [authPasswordConfirm, setAuthPasswordConfirm] = useState('')
-  const [authError, setAuthError] = useState('')
-  const [authInfo, setAuthInfo] = useState('Accedi con il profilo base oppure registrane uno nuovo.')
   const [orekitStatus, setOrekitStatus] = useState<OrekitStatusResponse | null>(null)
   const [orekitStatusLoading, setOrekitStatusLoading] = useState(false)
   const [orekitStatusError, setOrekitStatusError] = useState('')
@@ -167,6 +115,36 @@ function App() {
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
+  const clearSightingsOnLogout = useCallback(() => {
+    setMySightings([])
+  }, [])
+
+  const {
+    authChecking,
+    authSubmitting,
+    authMode,
+    authUser,
+    authUsernameOrEmail,
+    authUsername,
+    authEmail,
+    authPassword,
+    authPasswordConfirm,
+    authError,
+    authInfo,
+    setAuthUser,
+    setAuthMode,
+    setAuthUsernameOrEmail,
+    setAuthUsername,
+    setAuthEmail,
+    setAuthPassword,
+    setAuthPasswordConfirm,
+    setAuthError,
+    setAuthInfo,
+    submitLogin,
+    submitRegister,
+    handleLogout,
+  } = useAuthFlow({ onLogoutSuccess: clearSightingsOnLogout })
+
   const allGroups = useMemo(
     () =>
       buildRuntimeSatelliteGroupSources(
@@ -194,38 +172,48 @@ function App() {
       .catch(() => {
         setDiscoveredCanonicalGroupKeys([])
       })
+      .finally(() => {
+        setGroupDiscoveryReady(true)
+      })
 
     return () => {
       controller.abort()
     }
   }, [])
 
-  useEffect(() => {
-    const presetEnabled = buildEnabledGroupsFromPreset(allGroups, selectedPreset)
-    if (presetEnabled) {
-      setEnabledGroups(presetEnabled)
-      return
-    }
-
-    setEnabledGroups((prev) => {
-      const next = { ...prev }
-      for (const group of allGroups) {
-        if (next[group.key] === undefined) {
-          next[group.key] = false
-        }
-      }
-      return next
-    })
-  }, [allGroups, selectedPreset])
-
-  const activeGroups = useMemo(
-    () => allGroups.filter((group) => enabledGroups[group.key]),
-    [allGroups, enabledGroups],
+  const effectiveEnabledGroups = useMemo(
+    () => buildEnabledGroupsFromPreset(allGroups, selectedPreset) ?? enabledGroups,
+    [allGroups, enabledGroups, selectedPreset],
   )
 
+  const activeGroups = useMemo(() => {
+    return allGroups.filter((group) => effectiveEnabledGroups[group.key])
+  }, [allGroups, effectiveEnabledGroups])
+
+  const handleLiveSessionExpired = useCallback(() => {
+    setAuthUser(null)
+    setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+    setAuthInfo('Sessione non valida per le API live.')
+  }, [setAuthError, setAuthInfo, setAuthUser])
+
+  const {
+    groupPositions,
+    groupLoading,
+    groupErrors,
+    isRefreshing,
+    hasLoadedOnce,
+    refreshIntervalMs,
+  } = useLiveSatelliteGroups({
+    activeGroups,
+    authenticated: Boolean(authUser),
+    enabled: groupDiscoveryReady,
+    compactMobileViewport,
+    onSessionExpired: handleLiveSessionExpired,
+  })
+
   const allSelected = useMemo(
-    () => allGroups.every((group) => enabledGroups[group.key]),
-    [allGroups, enabledGroups],
+    () => allGroups.every((group) => effectiveEnabledGroups[group.key]),
+    [allGroups, effectiveEnabledGroups],
   )
 
   const totalVisibleCount = useMemo(
@@ -235,11 +223,6 @@ function App() {
         0,
       ),
     [activeGroups, groupPositions],
-  )
-
-  const refreshIntervalMs = useMemo(
-    () => computeRefreshIntervalMs(totalVisibleCount),
-    [totalVisibleCount],
   )
 
   useEffect(() => {
@@ -305,10 +288,6 @@ function App() {
         : [],
     [allGroups, enabledGroups, groupErrors, groupLoading, groupPositions, openPane],
   )
-
-  useEffect(() => {
-    latestGroupPositionsRef.current = groupPositions
-  }, [groupPositions])
 
   const searchResultItems = useMemo(
     () =>
@@ -439,25 +418,6 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!selectedEntityId || selectedSatellite) {
-      return
-    }
-
-    const liveSelected = satelliteLookupByEntityId.get(selectedEntityId)
-    if (!liveSelected) {
-      return
-    }
-
-    setSelectedSatellite(liveSelected)
-    globeRef.current?.focusOnSatellite(
-      liveSelected.satellite.longitudeDeg,
-      liveSelected.satellite.latitudeDeg,
-      liveSelected.satellite.altitudeKm,
-      selectedEntityId,
-    )
-  }, [satelliteLookupByEntityId, selectedEntityId, selectedSatellite])
-
-  useEffect(() => {
     if (openPane !== 'groups') {
       return
     }
@@ -506,203 +466,93 @@ function App() {
     }
   }, [allGroups, catalogByGroup, openPane, searchQuery, searchScope])
 
-  const resetAuthFields = () => {
-    // delegate to helper to keep App small
-    clearAuthFields(setAuthUsernameOrEmail, setAuthUsername, setAuthEmail, setAuthPassword)
-    setAuthPasswordConfirm('')
-  }
+  const loadAuthenticatedSystemStatus = useCallback(
+    (orekitSignal: AbortSignal, healthSignal: AbortSignal) => {
+      setOrekitStatusLoading(true)
+      setSystemHealthLoading(true)
 
-  useEffect(() => {
-    const controller = new AbortController()
+      void loadOrekitStatus(orekitSignal)
+        .then(({ status, error }) => {
+          setOrekitStatus(status)
+          setOrekitStatusError(error)
+        })
+        .finally(() => {
+          setOrekitStatusLoading(false)
+        })
 
-    void getCurrentUser(controller.signal)
-      .then((response) => {
-        if (response.authenticated && response.user) {
-          setAuthUser(response.user)
-          setAuthInfo(`Sessione attiva: ${response.user.username}`)
-          return
-        }
+      void loadSystemHealth(healthSignal)
+        .then(({ status, error }) => {
+          setSystemHealth(status)
+          setSystemHealthError(error)
+        })
+        .finally(() => {
+          setSystemHealthLoading(false)
+        })
+    },
+    [],
+  )
 
-        setAuthUser(null)
-      })
-      .catch(() => {
-        setAuthUser(null)
-      })
-      .finally(() => {
-        setAuthChecking(false)
-      })
+  const loadAuthenticatedSightings = useCallback(
+    (signal: AbortSignal) => {
+      setSightingsLoading(true)
+      setSightingsError('')
 
-    return () => {
-      controller.abort()
-    }
-  }, [])
+      void fetchMySightings(signal)
+        .then((items) => {
+          setMySightings(items)
+        })
+        .catch((error) => {
+          if (isAxiosError(error) && error.response?.status === 401) {
+            setAuthUser(null)
+            setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
+            setAuthError('Sessione non valida per caricare gli avvistamenti.')
+            return
+          }
+
+          setSightingsError(extractAuthErrorMessage(error, 'Errore nel caricamento avvistamenti'))
+        })
+        .finally(() => {
+          setSightingsLoading(false)
+        })
+    },
+    [setAuthError, setAuthInfo, setAuthUser],
+  )
 
   useEffect(() => {
     if (!authUser) {
-      setOrekitStatus(null)
-      setOrekitStatusError('')
-      setOrekitStatusLoading(false)
-      setSystemHealth(null)
-      setSystemHealthError('')
-      setSystemHealthLoading(false)
       return
     }
 
     const orekitController = new AbortController()
     const healthController = new AbortController()
-    setOrekitStatusLoading(true)
-    setSystemHealthLoading(true)
-
-    void loadOrekitStatus(orekitController.signal)
-      .then(({ status, error }) => {
-        setOrekitStatus(status)
-        setOrekitStatusError(error)
-      })
-      .finally(() => {
-        setOrekitStatusLoading(false)
-      })
-
-    void loadSystemHealth(healthController.signal)
-      .then(({ status, error }) => {
-        setSystemHealth(status)
-        setSystemHealthError(error)
-      })
-      .finally(() => {
-        setSystemHealthLoading(false)
-      })
+    queueMicrotask(() => {
+      if (!orekitController.signal.aborted && !healthController.signal.aborted) {
+        loadAuthenticatedSystemStatus(orekitController.signal, healthController.signal)
+      }
+    })
 
     return () => {
       orekitController.abort()
       healthController.abort()
     }
-  }, [authUser])
-
-  const submitLogin = async () => {
-    if (authSubmitting) {
-      return
-    }
-
-    setAuthSubmitting(true)
-    setAuthError('')
-
-    try {
-      const result = await executeLoginFlow({
-        usernameOrEmail: authUsernameOrEmail,
-        password: authPassword,
-      })
-
-      if (!result.user) {
-        setAuthUser(null)
-        setAuthError(result.error)
-        return
-      }
-
-      setAuthUser(result.user)
-      setAuthInfo(result.info)
-      resetAuthFields()
-    } finally {
-      setAuthSubmitting(false)
-    }
-  }
-
-  const submitRegister = async () => {
-    if (authSubmitting) {
-      return
-    }
-
-    if (authPassword !== authPasswordConfirm) {
-      setAuthError('Le password non coincidono.')
-      return
-    }
-
-    setAuthSubmitting(true)
-    setAuthError('')
-
-    try {
-      const result = await executeRegisterFlow({
-        username: authUsername,
-        email: authEmail,
-        password: authPassword,
-        passwordConfirm: authPasswordConfirm,
-      })
-
-      if (!result.user) {
-        setAuthUser(null)
-        setAuthError(result.error)
-        return
-      }
-
-      setAuthUser(result.user)
-      setAuthInfo(result.info)
-      resetAuthFields()
-      setAuthPasswordConfirm('')
-    } finally {
-      setAuthSubmitting(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    if (authSubmitting) {
-      return
-    }
-
-    setAuthSubmitting(true)
-    setAuthError('')
-
-    try {
-      const result = await executeLogoutFlow()
-      if (result.error) {
-        setAuthError(result.error)
-        return
-      }
-
-      setAuthUser(null)
-      setMySightings([])
-      resetAuthFields()
-      setAuthInfo('Sessione chiusa, esegui un nuovo accesso.')
-    } finally {
-      setAuthSubmitting(false)
-    }
-  }
+  }, [authUser, loadAuthenticatedSystemStatus])
 
   useEffect(() => {
-    if (!authUser) {
-      setMySightings([])
-      setSightingsError('')
-      setSightingsLoading(false)
-      return
-    }
-
-    if (openPane !== 'sightings') {
+    if (!authUser || openPane !== 'sightings') {
       return
     }
 
     const controller = new AbortController()
-    setSightingsLoading(true)
-    setSightingsError('')
-
-    void fetchMySightings(controller.signal)
-      .then((items) => {
-        setMySightings(items)
-      })
-      .catch((error) => {
-        if (isAxiosError(error) && error.response?.status === 401) {
-          setAuthUser(null)
-          setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-          setAuthError('Sessione non valida per caricare gli avvistamenti.')
-          return
-        }
-
-        setSightingsError(extractAuthErrorMessage(error, 'Errore nel caricamento avvistamenti'))
-      })
-      .finally(() => {
-        setSightingsLoading(false)
-      })
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        loadAuthenticatedSightings(controller.signal)
+      }
+    })
 
     return () => {
       controller.abort()
     }
-  }, [authUser, openPane])
+  }, [authUser, loadAuthenticatedSightings, openPane])
 
   const handleReportSighting = useReportSighting({
     getSelectedSatellite: () => selectedSatellite,
@@ -714,11 +564,11 @@ function App() {
     setSightingsError: (s: string) => setSightingsError(s),
     setReportingSighting: (b: boolean) => setReportingSighting(b),
     setSightingInfo: (s: string) => setSightingInfo(s),
-    setMySightings: (updater: any) => setMySightings(updater),
-    setOpenPane: (p: string) => setOpenPane(p as any),
-    setAuthUser: (u: any) => setAuthUser(u),
-    setAuthInfo: (s: string) => setAuthInfo(s),
-    setAuthError: (s: string) => setAuthError(s),
+    setMySightings,
+    setOpenPane,
+    setAuthUser,
+    setAuthInfo,
+    setAuthError,
   })
 
   const handleUseBrowserLocation = () => {
@@ -756,12 +606,12 @@ function App() {
     getVisibilityLatitude: () => visibilityLatitude,
     getVisibilityLongitude: () => visibilityLongitude,
     getVisibilityAltitude: () => visibilityAltitude,
-    setVisibilityAllResults: (r: any[]) => setVisibilityAllResults(r),
-    setVisibilityResults: (r: any[]) => setVisibilityResults(r),
-    setVisibilityOverlayOpen: (b: boolean) => setVisibilityOverlayOpen(b),
-    setAuthUser: (u: any) => setAuthUser(u),
-    setAuthInfo: (s: string) => setAuthInfo(s),
-    setAuthError: (s: string) => setAuthError(s),
+    setVisibilityAllResults,
+    setVisibilityResults,
+    setVisibilityOverlayOpen,
+    setAuthUser,
+    setAuthInfo,
+    setAuthError,
   })
 
   const openVisibilityFullResultsOverlay = useCallback(() => {
@@ -798,172 +648,6 @@ function App() {
   const handleFocusBySatelliteId = useCallback((satelliteId: number) => {
     focusBySatelliteHandler(satelliteId)
   }, [focusBySatelliteHandler])
-
-  useEffect(() => {
-    if (!authUser) {
-      setGroupPositions({})
-      setGroupErrors({})
-      setGroupLoading({})
-      setIsRefreshing(false)
-      return
-    }
-
-    if (activeGroups.length === 0) {
-      setGroupPositions({})
-      setGroupErrors({})
-      setGroupLoading({})
-      return
-    }
-
-    let isMounted = true
-    let refreshController: AbortController | null = null
-
-    const pauseBetweenBatches = () =>
-      new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0)
-      })
-
-    const loadGroups = async (_requestId: number, signal?: AbortSignal) => {
-      setIsRefreshing(true)
-
-      setGroupLoading((prev) => {
-        const next = { ...prev }
-        for (const group of activeGroups) {
-          next[group.key] = true
-        }
-        return next
-      })
-
-      const batchSize = compactMobileViewport ? 1 : activeGroups.length >= 8 ? 2 : 3
-      const nextPositions: GroupPositionsState = { ...latestGroupPositionsRef.current }
-      const nextErrors: GroupErrorState = {}
-      const nextLoading: GroupLoadingState = {}
-
-      for (let index = 0; index < activeGroups.length; index += batchSize) {
-        if (!isMounted || signal?.aborted) {
-          return
-        }
-
-        const batch = activeGroups.slice(index, index + batchSize)
-        const results = await Promise.allSettled(
-          batch.map(async (group) => {
-            const positions = await group.loadPositions(signal)
-            return { key: group.key, positions }
-          }),
-        )
-
-        if (!isMounted || signal?.aborted) {
-          return
-        }
-
-        let unauthorizedDetected = false
-
-        batch.forEach((group, batchIndex) => {
-          const result = results[batchIndex]
-          nextLoading[group.key] = false
-
-          if (result.status === 'fulfilled') {
-            nextPositions[group.key] = result.value.positions
-            nextErrors[group.key] = ''
-            return
-          }
-
-          nextPositions[group.key] = latestGroupPositionsRef.current[group.key] ?? []
-          const reason = result.reason
-          if (isAxiosError(reason) && reason.response?.status === 401) {
-            unauthorizedDetected = true
-            nextErrors[group.key] = 'Sessione scaduta'
-            return
-          }
-
-          if (isAxiosError(reason)) {
-            const hasPreviousData = (latestGroupPositionsRef.current[group.key]?.length ?? 0) > 0
-            const isCanceled = reason.code === 'ERR_CANCELED'
-            const isTimeout = reason.code === 'ECONNABORTED'
-            const status = reason.response?.status
-            const isTransientUpstream = status === 429 || status === 502 || status === 503 || status === 504
-            const isNetworkError = !reason.response
-
-            // Con molti gruppi attivi, timeout/cancel/rete possono capitare: evitiamo falsi allarmi
-            // se abbiamo gia dati precedenti da mostrare.
-            if (isCanceled || ((isTimeout || isTransientUpstream || isNetworkError) && hasPreviousData)) {
-              nextErrors[group.key] = ''
-              return
-            }
-          }
-
-          nextErrors[group.key] = `Errore caricamento ${group.label}`
-        })
-
-        if (unauthorizedDetected) {
-          startTransition(() => {
-            setAuthUser(null)
-            setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-            setAuthInfo('Sessione non valida per le API live.')
-            setGroupPositions({})
-            setGroupErrors({})
-            setGroupLoading({})
-            setHasLoadedOnce(false)
-          })
-          return
-        }
-
-        startTransition(() => {
-          setGroupPositions({ ...nextPositions })
-          setGroupErrors({ ...nextErrors })
-          setGroupLoading({ ...nextLoading })
-          setHasLoadedOnce(true)
-        })
-
-        if (index + batchSize < activeGroups.length) {
-          await pauseBetweenBatches()
-        }
-      }
-    }
-
-    const finalizeLoadRequest = (requestId: number) => {
-      if (latestRequestIdRef.current === requestId) {
-        setIsRefreshing(false)
-      }
-      if (latestRequestIdRef.current <= requestId) {
-        inFlightRequestRef.current = false
-      }
-    }
-
-    const startLoad = () => {
-      if (inFlightRequestRef.current) {
-        return
-      }
-
-      const requestId = latestRequestIdRef.current + 1
-      latestRequestIdRef.current = requestId
-
-      refreshController = new AbortController()
-      inFlightRequestRef.current = true
-
-      void loadGroups(requestId, refreshController.signal)
-        .catch(() => {
-          // Errore gestito dai singoli gruppi con Promise.allSettled.
-        })
-        .finally(() => {
-          finalizeLoadRequest(requestId)
-        })
-    }
-
-    startLoad()
-
-    const refreshId = window.setInterval(() => {
-      startLoad()
-    }, refreshIntervalMs)
-
-    return () => {
-      isMounted = false
-      refreshController?.abort()
-      window.clearInterval(refreshId)
-      inFlightRequestRef.current = false
-      setIsRefreshing(false)
-    }
-  }, [activeGroups, authUser, compactMobileViewport, refreshIntervalMs])
 
   const panelWidth = 470
 
@@ -1057,7 +741,7 @@ function App() {
                       {openPane ? (
                         <section className="sidebar-collapsible-panel side-drawer">
                         {openPane === 'groups' ? (
-                          <div id="panel-groups">
+                          <SidebarPaneContent pane="groups">
                             <GroupsPanel
                               allSelected={allSelected}
                               selectedPreset={selectedPreset}
@@ -1073,11 +757,11 @@ function App() {
                               onSearchResultSelect={handleSearchResultSelectCallback}
                               onToggleGroup={handleToggleGroupCallback}
                             />
-                          </div>
+                          </SidebarPaneContent>
                         ) : null}
 
                         {openPane === 'satellites' ? (
-                          <div id="panel-satellites">
+                          <SidebarPaneContent pane="satellites">
                             <SatellitesPanel
                               autoRotate={autoRotate}
                               showBackSideSatellites={showBackSideSatellites}
@@ -1093,11 +777,11 @@ function App() {
                               onToggleAutoRotate={handleToggleAutoRotate}
                               onToggleBackSideSatellites={handleToggleBackSideSatellites}
                             />
-                          </div>
+                          </SidebarPaneContent>
                         ) : null}
 
                         {openPane === 'visibility' ? (
-                          <div id="panel-visibility">
+                          <SidebarPaneContent pane="visibility">
                             <VisibilityPanel
                               visibilityHours={visibilityHours}
                               visibilityMinElevation={visibilityMinElevation}
@@ -1120,11 +804,11 @@ function App() {
                               onOpenFullResults={openVisibilityFullResultsOverlay}
                               onFocusFromVisibility={handleFocusFromVisibility}
                             />
-                          </div>
+                          </SidebarPaneContent>
                         ) : null}
 
                         {openPane === 'sightings' ? (
-                          <div id="panel-sightings">
+                          <SidebarPaneContent pane="sightings">
                             <SightingsPanel
                               sightingInfo={sightingInfo}
                               sightingsError={sightingsError}
@@ -1133,18 +817,18 @@ function App() {
                               compactLandscapeViewport={landscapeMobileViewport}
                               onFocusSightingSatellite={handleFocusBySatelliteId}
                             />
-                          </div>
+                          </SidebarPaneContent>
                         ) : null}
 
                         {openPane === 'community' ? (
-                          <div id="panel-community">
+                          <SidebarPaneContent pane="community">
                             <CommunityPanel
                               authUser={authUser}
                               selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
                               selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
                               onFocusSatellite={handleFocusBySatelliteId}
                             />
-                          </div>
+                          </SidebarPaneContent>
                         ) : null}
 
                         </section>
@@ -1187,127 +871,26 @@ function App() {
             </button>
           </div>
           {selectedSatellite ? (
-            <aside className="viewer-hud">
-            <section className="details-card hud-details">
-              <h3>Dettagli satellite</h3>
-              <div className="details-head">
-                <strong>{selectedSatellite.satellite.satelliteName}</strong>
-                <div className="details-head-actions">
-                  <button
-                    type="button"
-                    className="primary-sighting-button"
-                    onClick={() => {
-                      void handleReportSighting()
-                    }}
-                    disabled={reportingSighting}
-                  >
-                    {reportingSighting ? 'Invio...' : 'Invia avvistamento'}
-                  </button>
-                  <button type="button" onClick={closeSelectedSatellite}>Chiudi</button>
-                </div>
-              </div>
-              <div className="details-grid">
-                <span>Gruppo</span>
-                <span>{selectedSatellite.groupLabel}</span>
-                <span>NORAD</span>
-                <span>{selectedSatellite.satellite.noradCatId}</span>
-                <span>Lat/Lon</span>
-                <span>
-                  {selectedSatellite.satellite.latitudeDeg.toFixed(2)} /{' '}
-                  {selectedSatellite.satellite.longitudeDeg.toFixed(2)}
-                </span>
-                <span>Altitudine</span>
-                <span>{selectedSatellite.satellite.altitudeKm.toFixed(2)} km</span>
-                <span>Periodo orbitale</span>
-                <span>{selectedSatellite.satellite.orbitalPeriodMinutes.toFixed(2)} min</span>
-                <span>Mean motion</span>
-                <span>{selectedSatellite.satellite.meanMotion.toFixed(4)}</span>
-                {typeof selectedSatellite.satellite.velocityKmh === 'number' ? (
-                  <>
-                    <span>Velocita</span>
-                    <span>{selectedSatellite.satellite.velocityKmh.toFixed(1)} km/h</span>
-                  </>
-                ) : null}
-                {typeof selectedSatellite.satellite.directionDeg === 'number' ? (
-                  <>
-                    <span>Direzione</span>
-                    <span>{selectedSatellite.satellite.directionDeg.toFixed(1)}deg</span>
-                  </>
-                ) : null}
-                <span>Aggiornato</span>
-                <span>{selectedSatellite.satellite.calculatedAtUtc}</span>
-              </div>
-              <div className="sighting-actions">
-                <div className="sighting-location-row">
-                  <input
-                    type="text"
-                    className="sighting-city-input"
-                    value={sightingCity}
-                    onChange={(event) => setSightingCity(event.target.value)}
-                    placeholder="Inserisci citta (alternativa al browser)"
-                  />
-                  <button
-                    type="button"
-                    className="sighting-pin-button"
-                    onClick={handleUseBrowserLocation}
-                    disabled={locatingBrowser}
-                    title="Usa posizione browser"
-                    aria-label="Usa posizione browser"
-                  >
-                    {locatingBrowser ? (
-                      '...'
-                    ) : (
-                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path d="M12 2C8.14 2 5 5.14 5 9c0 5.08 6.13 12.31 6.39 12.62a.8.8 0 0 0 1.22 0C12.87 21.31 19 14.08 19 9c0-3.86-3.14-7-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                {sightingLatitude !== null && sightingLongitude !== null ? (
-                  <small className="sighting-coords">
-                    Posizione browser: {sightingLatitude.toFixed(4)}, {sightingLongitude.toFixed(4)}
-                  </small>
-                ) : null}
-                {sightingInfo ? <small className="sighting-coords">{sightingInfo}</small> : null}
-                {sightingsError ? <small className="sighting-error-inline">{sightingsError}</small> : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleReportSighting()
-                  }}
-                  disabled={reportingSighting}
-                >
-                  {reportingSighting ? 'Invio avvistamento...' : 'Conferma avvistamento'}
-                </button>
-              </div>
-            </section>
-          </aside>
+            <SatelliteDetailsHud
+              selectedSatellite={selectedSatellite}
+              reportingSighting={reportingSighting}
+              sightingCity={sightingCity}
+              locatingBrowser={locatingBrowser}
+              sightingLatitude={sightingLatitude}
+              sightingLongitude={sightingLongitude}
+              sightingInfo={sightingInfo}
+              sightingsError={sightingsError}
+              onReportSighting={() => {
+                void handleReportSighting()
+              }}
+              onClose={closeSelectedSatellite}
+              onSightingCityChange={setSightingCity}
+              onUseBrowserLocation={handleUseBrowserLocation}
+            />
           ) : null}
 
           {selectedEntityId === 'moon-entity' && moonDetailsOpen ? (
-            <aside className="viewer-hud">
-              <section className="details-card hud-details">
-                <h3>Dettagli Luna</h3>
-                <div className="details-head">
-                  <strong>Moon</strong>
-                  <div className="details-head-actions">
-                    <button type="button" onClick={() => {
-                      setMoonDetailsOpen(false)
-                    }}>Chiudi</button>
-                  </div>
-                </div>
-                <div className="details-grid">
-                  <span>Nome</span>
-                  <span>Moon</span>
-                  <span>Fase</span>
-                  <span>{(computeMoonPosition().phase * 100).toFixed(1)}%</span>
-                  <span>Lat/Lon</span>
-                  <span>{computeMoonPosition().lat.toFixed(2)} / {computeMoonPosition().lon.toFixed(2)}</span>
-                  <span>Distanza</span>
-                  <span>{(computeMoonPosition().altMeters / 1000).toFixed(0)} km</span>
-                </div>
-              </section>
-            </aside>
+            <MoonDetailsHud onClose={() => setMoonDetailsOpen(false)} />
           ) : null}
 
           <SatelliteGlobe

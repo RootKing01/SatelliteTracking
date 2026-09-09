@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { SatelliteSighting } from '../../api/sightingsClient'
+import type { SatelliteSighting } from '../../api/satelliteClient'
 import '../../styles/panels/sightings-panel.css'
 
 type SightingsPanelProps = {

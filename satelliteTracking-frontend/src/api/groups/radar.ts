@@ -1,4 +1,4 @@
-import { fetchSatellitePositionsByType } from '../satellitePositionsClient'
+import { fetchSatellitePositionsByType } from '../satelliteClient'
 import type { SatelliteGroupSource } from './types'
 
 export const radarGroup: SatelliteGroupSource = {

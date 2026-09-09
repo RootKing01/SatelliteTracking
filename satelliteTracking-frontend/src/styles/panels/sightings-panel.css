@@ -65,15 +65,6 @@
   cursor: pointer;
 }
 
-.sighting-item strong {
-  color: #d9f4ff;
-}
-
-.sighting-item small {
-  color: #8fc4e8;
-  font-size: 0.74rem;
-}
-
 .sighting-valid {
   color: #8bf5b8 !important;
 }

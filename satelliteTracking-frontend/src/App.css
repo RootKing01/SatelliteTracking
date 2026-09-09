@@ -527,6 +527,17 @@
   text-shadow: 0 0 8px rgba(89, 240, 255, 0.5);
 }
 
+.visibility-item strong,
+.sighting-item strong {
+  color: #d9f4ff;
+}
+
+.visibility-item small,
+.sighting-item small {
+  color: #8fc4e8;
+  font-size: 0.74rem;
+}
+
 .collapsible summary::-webkit-details-marker,
 .details-card summary::-webkit-details-marker {
   display: none;

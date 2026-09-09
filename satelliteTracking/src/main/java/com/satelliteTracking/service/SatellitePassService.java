@@ -85,6 +85,7 @@ public class SatellitePassService {
     private final Map<String, CacheEntry> passesCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 1800000; // 30 minuti
     private static final long POSITIONS_CACHE_TTL_MS = 5000; // 5 secondi
+    private static final long LATEST_PARAMETERS_CACHE_TTL_MS = 5000; // condivisa tra richieste simultanee
     private static final double EVENT_MAX_CHECK_SECONDS = 60.0;
     private static final double EVENT_THRESHOLD_SECONDS = 0.001;
 
@@ -103,6 +104,8 @@ public class SatellitePassService {
     }
 
     private final Map<String, PositionCacheEntry> positionsCache = new ConcurrentHashMap<>();
+    private volatile Map<Long, OrbitalParameters> latestParametersCache;
+    private volatile long latestParametersCacheTimestamp;
 
     public SatellitePassService(SatelliteRepository satelliteRepository,
                                 OrbitalParametersRepository orbitalParametersRepository,
@@ -1040,8 +1043,13 @@ public class SatellitePassService {
         return status;
     }
 
-    private Map<Long, OrbitalParameters> loadLatestOrbitalParameters() {
-        return orbitalParametersRepository.findLatestForAllSatellites().stream()
+    private synchronized Map<Long, OrbitalParameters> loadLatestOrbitalParameters() {
+        long now = System.currentTimeMillis();
+        if (latestParametersCache != null && now - latestParametersCacheTimestamp <= LATEST_PARAMETERS_CACHE_TTL_MS) {
+            return latestParametersCache;
+        }
+
+        Map<Long, OrbitalParameters> loaded = orbitalParametersRepository.findLatestForAllSatellites().stream()
             .filter(parameters -> parameters.getSatellite() != null && parameters.getSatellite().getId() != null)
             .collect(Collectors.toMap(
                 parameters -> parameters.getSatellite().getId(),
@@ -1049,6 +1057,10 @@ public class SatellitePassService {
                 (left, right) -> left,
                 HashMap::new
             ));
+
+        latestParametersCache = loaded;
+        latestParametersCacheTimestamp = now;
+        return loaded;
     }
 
 }

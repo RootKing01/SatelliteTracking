@@ -1,23 +1,45 @@
-import { useCallback } from 'react'
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import { isAxiosError } from 'axios'
-import { reportSighting } from '../api/sightingsClient'
-import { fetchSatellitePositionById } from '../api/satellitePositionsClient'
-import { fetchVisibilityPasses } from '../helpers/visibilityFlowHelpers'
-import { createVisibilityErrorResetState, buildVisibilitySummaryInfo } from '../helpers/visibilityFlowHelpers'
+import { reportSighting, type SatelliteSighting } from '../api/satelliteClient'
+import { fetchSatellitePositionById, type UpcomingPass } from '../api/satelliteClient'
+import type { SatelliteGlobeHandle } from '../components/SatelliteGlobe'
+import type { SidebarPane } from '../components/layout/PanelSidebarButtons'
+import {
+  buildVisibilitySummaryInfo,
+  createVisibilityErrorResetState,
+  fetchVisibilityPasses,
+} from '../helpers/visibilityHelpers'
 import { extractAuthErrorMessage } from '../helpers/appErrorHelpers'
+import type { GroupPreset } from '../helpers/groupHelpers'
+import type { SearchResultItem } from '../helpers/searchHelpers'
+import type { SelectedSatelliteState } from '../helpers/searchHelpers'
+import type { SatelliteGroupKey } from '../api/groups/types'
+import type { SatellitePosition } from '../types/satellite'
+
+type AuthSessionSetters = {
+  setAuthUser: Dispatch<SetStateAction<import('../api/authClient').AuthUser | null>>
+  setAuthInfo: Dispatch<SetStateAction<string>>
+  setAuthError: Dispatch<SetStateAction<string>>
+}
+
+function handleUnauthorizedInteraction(options: AuthSessionSetters & { message: string }) {
+  options.setAuthUser(null)
+  options.setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
+  options.setAuthError(options.message)
+}
 
 export function useSearchResultSelect(options: {
-  setSelectedPreset: (v: any) => void
-  setEnabledGroups: (updater: any) => void
+  setSelectedPreset: Dispatch<SetStateAction<GroupPreset>>
+  setEnabledGroups: Dispatch<SetStateAction<Record<SatelliteGroupKey, boolean>>>
   handlePickEntityId: (id: string | null) => void
-  satelliteLookupByEntityId: Map<string, any>
-  globeRef: React.MutableRefObject<any>
+  satelliteLookupByEntityId: Map<string, SelectedSatelliteState>
+  globeRef: MutableRefObject<SatelliteGlobeHandle | null>
 }) {
   const { setSelectedPreset, setEnabledGroups, handlePickEntityId, satelliteLookupByEntityId, globeRef } = options
 
-  return useCallback(async (item: any) => {
+  return useCallback(async (item: SearchResultItem) => {
     setSelectedPreset('custom')
-    setEnabledGroups((prev: any) => (prev[item.groupKey] ? prev : { ...prev, [item.groupKey]: true }))
+    setEnabledGroups((prev) => (prev[item.groupKey] ? prev : { ...prev, [item.groupKey]: true }))
 
     handlePickEntityId(item.entityId)
 
@@ -47,7 +69,7 @@ export function useSearchResultSelect(options: {
 }
 
 export function useReportSighting(options: {
-  getSelectedSatellite: () => any
+  getSelectedSatellite: () => SelectedSatelliteState | null
   getReportingSighting: () => boolean
   getSightingLatitude: () => number | null
   getSightingLongitude: () => number | null
@@ -56,12 +78,9 @@ export function useReportSighting(options: {
   setSightingsError: (s: string) => void
   setReportingSighting: (b: boolean) => void
   setSightingInfo: (s: string) => void
-  setMySightings: (updater: (prev: any[]) => any[]) => void
-  setOpenPane: (p: string) => void
-  setAuthUser: (u: any) => void
-  setAuthInfo: (s: string) => void
-  setAuthError: (s: string) => void
-}) {
+  setMySightings: Dispatch<SetStateAction<SatelliteSighting[]>>
+  setOpenPane: Dispatch<SetStateAction<SidebarPane | null>>
+} & AuthSessionSetters) {
   const {
     getSelectedSatellite,
     getReportingSighting,
@@ -104,15 +123,18 @@ export function useReportSighting(options: {
         latitude: hasBrowserCoords ? getSightingLatitude() ?? undefined : undefined,
         longitude: hasBrowserCoords ? getSightingLongitude() ?? undefined : undefined,
         altitudeMeters: hasBrowserCoords ? (getSightingAltitude() ?? undefined) : undefined,
-      } as any)
+      })
       setMySightings((prev) => [created, ...prev])
       setSightingInfo(created.validationMessage)
       setOpenPane('sightings')
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 401) {
-        setAuthUser(null)
-        setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        setAuthError('Sessione non valida per registrare l\'avvistamento.')
+        handleUnauthorizedInteraction({
+          setAuthUser,
+          setAuthInfo,
+          setAuthError,
+          message: 'Sessione non valida per registrare l\'avvistamento.',
+        })
         return
       }
       setSightingsError(extractAuthErrorMessage(error, 'Errore durante la registrazione avvistamento'))
@@ -148,13 +170,10 @@ export function useCalculateVisibility(options: {
   getVisibilityLatitude: () => number | null
   getVisibilityLongitude: () => number | null
   getVisibilityAltitude: () => number | null
-  setVisibilityAllResults: (r: any[]) => void
-  setVisibilityResults: (r: any[]) => void
+  setVisibilityAllResults: Dispatch<SetStateAction<UpcomingPass[]>>
+  setVisibilityResults: Dispatch<SetStateAction<UpcomingPass[]>>
   setVisibilityOverlayOpen: (b: boolean) => void
-  setAuthUser: (u: any) => void
-  setAuthInfo: (s: string) => void
-  setAuthError: (s: string) => void
-}) {
+} & AuthSessionSetters) {
   const {
     getVisibilityLoading,
     setVisibilityLoading,
@@ -191,7 +210,7 @@ export function useCalculateVisibility(options: {
         latitude: getVisibilityLatitude(),
         longitude: getVisibilityLongitude(),
         altitude: getVisibilityAltitude(),
-      } as any)
+      })
 
       setVisibilityAllResults(results)
       setVisibilityResults(results.slice(0, 30))
@@ -201,9 +220,12 @@ export function useCalculateVisibility(options: {
       setVisibilityInfo(buildVisibilitySummaryInfo(results.length))
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 401) {
-        setAuthUser(null)
-        setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-        setAuthError('Sessione non valida per il calcolo visibilita.')
+        handleUnauthorizedInteraction({
+          setAuthUser,
+          setAuthInfo,
+          setAuthError,
+          message: 'Sessione non valida per il calcolo visibilita.',
+        })
         return
       }
 
@@ -237,15 +259,15 @@ export function useCalculateVisibility(options: {
 
 export function useFocusBySatelliteId(options: {
   liveEntityIdBySatelliteId: Map<number, string>
-  satelliteLookupByEntityId: Map<string, any>
+  satelliteLookupByEntityId: Map<string, SelectedSatelliteState>
   handlePickEntityId: (id: string | null) => void
-  globeRef: React.MutableRefObject<any>
-  fetchSatellitePositionById: (id: number) => Promise<any>
-  setVisibilityError: (s: string) => void
+  globeRef: MutableRefObject<SatelliteGlobeHandle | null>
+  fetchSatellitePositionById: (id: number) => Promise<SatellitePosition>
+  setVisibilityError: Dispatch<SetStateAction<string>>
 }) {
   const { liveEntityIdBySatelliteId, satelliteLookupByEntityId, handlePickEntityId, globeRef, fetchSatellitePositionById, setVisibilityError } = options
 
-  return useCallback((passOrId: any) => {
+  return useCallback((passOrId: number | UpcomingPass) => {
     const satelliteId = typeof passOrId === 'number' ? passOrId : passOrId.satelliteId
     const entityId = liveEntityIdBySatelliteId.get(satelliteId)
     const selected = entityId ? satelliteLookupByEntityId.get(entityId) : undefined

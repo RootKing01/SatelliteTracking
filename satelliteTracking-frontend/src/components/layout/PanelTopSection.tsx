@@ -1,6 +1,5 @@
 import { memo, useEffect, useState } from 'react'
-import type { OrekitStatusResponse } from '../../api/orekitStatusClient'
-import type { SystemHealthResponse } from '../../api/systemHealthClient'
+import type { OrekitStatusResponse, SystemHealthResponse } from '../../api/systemStatusClient'
 
 type PanelTopSectionProps = {
   username: string
@@ -28,8 +27,7 @@ function PanelTopSectionBase({
 
   useEffect(() => {
     const handler = (ev: Event) => {
-      // @ts-ignore event detail
-      const detail = (ev as CustomEvent).detail
+      const detail = (ev as CustomEvent<number>).detail
       setNotifCount(typeof detail === 'number' ? detail : 0)
     }
     window.addEventListener('communityNotificationsCount', handler as EventListener)

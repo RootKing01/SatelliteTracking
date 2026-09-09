@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { updateMissingSatelliteNames, fetchAndMapSatelliteNames } from '../../helpers/satelliteNameHelper'
+import { fetchAndMapSatelliteNames } from '../../helpers/satelliteNameHelper'
+import { useCommunityData } from '../../helpers/useCommunityData'
 import { CommunityThreadCard } from '../community/CommunityThreadCard'
 import { CommunityCompose } from '../community/CommunityCompose'
 import { CommunityFeedCard } from '../community/CommunityFeedCard'
@@ -11,11 +12,7 @@ import {
   createCommunityThread,
   createCommunityComment,
   deleteCommunityComment,
-  fetchCommunityNotifications,
-  fetchFeaturedCommunityThreads,
-  fetchCommunityFeed,
   fetchCommunityThread,
-  fetchUnreadCommunityNotificationCount,
   markCommunityNotificationAsRead,
   reportCommunityComment,
   updateCommunityThreadReadState,
@@ -25,6 +22,7 @@ import {
   type CommunityFeedItem,
   type CommunityNotification,
   type CommunityThread,
+  type CommunityThreadWithComments,
   type CommunityThreadReadState,
 } from '../../api/communityClient'
 import '../../styles/panels/community-panel.css'
@@ -43,43 +41,7 @@ export function CommunityPanel({
   selectedSatelliteName,
   onFocusSatellite,
 }: CommunityPanelProps) {
-  const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
-  const [featuredThreads, setFeaturedThreads] = useState<CommunityFeedItem[]>([])
-  const [allThreads, setAllThreads] = useState<CommunityFeedItem[]>([])
-  const [notifications, setNotifications] = useState<CommunityNotification[]>([])
-  const [notificationCount, setNotificationCount] = useState(0)
-
-  // Carica tutti i nomi dei satelliti una volta sola all'avvio
-  useEffect(() => {
-    let cancelled = false
-    fetchAndMapSatelliteNames('ALL')
-      .then(({ map }) => {
-        if (!cancelled) {
-          setSatelliteNames(map)
-        }
-      })
-      .catch(err => {
-        console.error('Errore fetchAndMapSatelliteNames', err)
-      })
-    return () => { cancelled = true }
-  }, [])
-
-  // Aggiorna la mappa solo se arriva un nuovo thread satellite non presente
-  useEffect(() => {
-    const allTargetIds = [
-      ...featuredThreads,
-      ...allThreads,
-    ]
-      .filter(t => t.targetType === 'SATELLITE')
-      .map(t => String(t.targetId))
-
-    const missingIds = allTargetIds.filter(id => !(id in satelliteNames))
-    if (missingIds.length === 0) return
-
-    updateMissingSatelliteNames(missingIds, setSatelliteNames)
-  }, [featuredThreads, allThreads, satelliteNames])
-
-  const [threadsError, setThreadsError] = useState('')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [activeThread, setActiveThread] = useState<CommunityThread | null>(null)
   const [comments, setComments] = useState<CommunityComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -91,17 +53,37 @@ export function CommunityPanel({
   const [postingThread, setPostingThread] = useState(false)
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [editingBody, setEditingBody] = useState('')
-  const [sessionVerified, setSessionVerified] = useState(false)
-  const [, setCommunitySessionValid] = useState(false)
   const [replyToComment, setReplyToComment] = useState<CommunityComment | null>(null)
   const [activeThreadReadState, setActiveThreadReadState] = useState<CommunityThreadReadState | null>(null)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [pendingFocusCommentId, setPendingFocusCommentId] = useState<number | null>(null)
   const [activeThreadOpen, setActiveThreadOpen] = useState(true)
   const [featuredOpen, setFeaturedOpen] = useState(false)
   const [allOpen, setAllOpen] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const activeThreadRef = useRef<HTMLDivElement | null>(null)
+
+  const handleUnauthorizedSession = useCallback(() => {
+    setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
+  }, [])
+
+  const {
+    satelliteNames,
+    setSatelliteNames,
+    featuredThreads,
+    setFeaturedThreads,
+    allThreads,
+    setAllThreads,
+    threadsError,
+    setThreadsError,
+    notifications,
+    setNotifications,
+    setNotificationCount,
+  } = useCommunityData({
+    authUser,
+    sessionVerified: Boolean(authUser),
+    notificationsOpen,
+    onUnauthorized: handleUnauthorizedSession,
+  })
 
   // Listen for global toggle events dispatched by top bar
   useEffect(() => {
@@ -125,12 +107,6 @@ export function CommunityPanel({
   const isUnauthorizedError = (error: unknown) =>
     isAxiosError(error) && error.response?.status === 401
 
-  const handleUnauthorizedSession = useCallback(() => {
-    setCommunitySessionValid(false)
-    setThreadsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-    setCommentsError('Sessione scaduta. Esegui di nuovo l\'accesso.')
-  }, [])
-
   const handleThreadAuthFailure = useCallback(
     async (fallbackMessage: string) => {
       try {
@@ -149,122 +125,27 @@ export function CommunityPanel({
   )
 
   useEffect(() => {
-    if (!authUser) {
-      setSessionVerified(true)
-      setCommunitySessionValid(false)
-      setThreadsError('')
+    queueMicrotask(() => {
+      setActiveThread(null)
+      setComments([])
       setCommentsError('')
-      return
-    }
-
-    setSessionVerified(true)
-    setCommunitySessionValid(true)
-    setThreadsError('')
-    setCommentsError('')
-  }, [authUser])
-
-  useEffect(() => {
-    setActiveThread(null)
-    setComments([])
-    setCommentsError('')
-    setReplyToComment(null)
-    setActiveThreadReadState(null)
-    setPendingFocusCommentId(null)
-    setActiveThreadOpen(false)
-    setCommentsLoading(false)
+      setReplyToComment(null)
+      setActiveThreadReadState(null)
+      setPendingFocusCommentId(null)
+      setActiveThreadOpen(false)
+      setCommentsLoading(false)
+    })
   }, [activeTarget?.targetId, activeTarget?.targetType])
 
-  // Polling ottimizzato: aggiorna solo se cambia
-  useEffect(() => {
+  const loadThreadData = async (
+    request: () => Promise<CommunityThreadWithComments>,
+    targetType: string,
+    focusCommentId: number | null | undefined,
+    unauthorizedMessage: string,
+    notFoundIsEmpty: boolean,
+  ) => {
     if (!authUser) {
-      setFeaturedThreads([])
-      setAllThreads([])
-      setActiveThread(null)
-      setThreadsError('')
-      setCommentsError('')
-      return
-    }
-
-    if (!sessionVerified) {
-      return
-    }
-
-    let cancelled = false
-    const controller = new AbortController()
-
-    const refreshUnreadCount = () => {
-      fetchUnreadCommunityNotificationCount(controller.signal)
-        .then((unreadCount) => {
-          if (!cancelled) {
-            setNotificationCount(unreadCount)
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setNotificationCount(0)
-          }
-        })
-    }
-
-    const fetchThreads = () => {
-      Promise.all([
-        fetchFeaturedCommunityThreads(8, controller.signal),
-        fetchCommunityFeed(40, controller.signal),
-      ])
-        .then(([featured, all]) => {
-          if (!cancelled) {
-            setFeaturedThreads(prev => JSON.stringify(prev) !== JSON.stringify(featured) ? featured : prev)
-            setAllThreads(prev => JSON.stringify(prev) !== JSON.stringify(all) ? all : prev)
-          }
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted) {
-            if (isUnauthorizedError(error)) {
-              handleUnauthorizedSession()
-              return
-            }
-            setThreadsError('Impossibile caricare i thread community.')
-          }
-        })
-        .finally(() => {
-          refreshUnreadCount()
-        })
-    }
-
-    fetchThreads()
-    refreshUnreadCount()
-    const interval = setInterval(fetchThreads, 5000)
-
-    return () => {
-      cancelled = true
-      controller.abort()
-      clearInterval(interval)
-    }
-  }, [authUser, sessionVerified, handleUnauthorizedSession])
-
-  // Broadcast unread count so top bar can show badge
-  useEffect(() => {
-    try {
-      window.dispatchEvent(new CustomEvent('communityNotificationsCount', { detail: notificationCount }))
-    } catch {
-      // ignore
-    }
-  }, [notificationCount])
-
-  // Fetch notifications inline when tray opens
-  useEffect(() => {
-    if (!notificationsOpen || !authUser) {
-      return
-    }
-
-    fetchCommunityNotifications(12)
-      .then(setNotifications)
-      .catch(() => setNotifications([]))
-  }, [authUser, notificationsOpen])
-
-  const loadThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
-    if (!authUser) {
-      return
+      return false
     }
 
     setCommentsLoading(true)
@@ -274,71 +155,67 @@ export function CommunityPanel({
         const { map } = await fetchAndMapSatelliteNames('ALL')
         setSatelliteNames(map)
       }
-      const payload = await fetchCommunityThread(targetType, targetId)
+      const payload = await request()
       setActiveThread(payload.thread)
       setComments(payload.comments)
       setActiveThreadReadState(payload.readState)
       setPendingFocusCommentId(focusCommentId ?? payload.readState?.lastReadCommentId ?? payload.comments.at(-1)?.id ?? null)
+      return true
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        void handleThreadAuthFailure('Impossibile caricare i commenti del thread selezionato.')
-        return
+        void handleThreadAuthFailure(unauthorizedMessage)
+        return false
       }
-      if (isAxiosError(error) && error.response?.status === 404) {
+      if (notFoundIsEmpty && isAxiosError(error) && error.response?.status === 404) {
         setActiveThread(null)
         setComments([])
       } else {
         setActiveThread(null)
         setComments([])
-        setCommentsError('Impossibile caricare i commenti del thread selezionato.')
+        setCommentsError(unauthorizedMessage)
       }
+      return false
     } finally {
       setCommentsLoading(false)
     }
+  }
+
+  const loadThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
+    await loadThreadData(
+      () => fetchCommunityThread(targetType, targetId),
+      targetType,
+      focusCommentId,
+      'Impossibile caricare i commenti del thread selezionato.',
+      true,
+    )
   }
 
   const ensureThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
-    if (!authUser) {
-      return
-    }
-
-    setCommentsLoading(true)
-    setCommentsError('')
-    try {
-      if (targetType === 'SATELLITE') {
-        const { map } = await fetchAndMapSatelliteNames('ALL')
-        setSatelliteNames(map)
-      }
-      const payload = await ensureCommunityThread(targetType, targetId)
-      setActiveThread(payload.thread)
-      setComments(payload.comments)
-      setActiveThreadReadState(payload.readState)
-      setPendingFocusCommentId(focusCommentId ?? payload.readState?.lastReadCommentId ?? payload.comments.at(-1)?.id ?? null)
+    const loaded = await loadThreadData(
+      () => ensureCommunityThread(targetType, targetId),
+      targetType,
+      focusCommentId,
+      'Impossibile aprire o creare il thread del satellite selezionato.',
+      false,
+    )
+    if (loaded) {
       setActiveThreadOpen(true)
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        void handleThreadAuthFailure('Impossibile aprire o creare il thread del satellite selezionato.')
-        return
-      }
-      setActiveThread(null)
-      setComments([])
-      setCommentsError('Impossibile aprire o creare il thread del satellite selezionato.')
-    } finally {
-      setCommentsLoading(false)
     }
   }
 
+  const activeThreadId = activeThread?.id
+
   useEffect(() => {
-    if (!activeThread || pendingFocusCommentId == null) {
+    if (activeThreadId == null || pendingFocusCommentId == null) {
       return
     }
 
     const commentElement = document.getElementById(`community-comment-${pendingFocusCommentId}`)
     if (commentElement) {
       commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setPendingFocusCommentId(null)
+      queueMicrotask(() => setPendingFocusCommentId(null))
     }
-  }, [activeThread?.id, comments, pendingFocusCommentId])
+  }, [activeThreadId, comments, pendingFocusCommentId])
 
   const scrollToComment = useCallback((commentId: number | null) => {
     if (commentId == null) {
@@ -595,7 +472,7 @@ export function CommunityPanel({
     )
   }
 
-  if (!sessionVerified) {
+  if (!authUser) {
     return (
       <section className="collapsible side-drawer community-panel" aria-label="Community">
         <h3>Community</h3>
