@@ -1,8 +1,9 @@
-import type { CommunityThread, CommunityComment } from '../../api/communityClient'
+import type { CommunityThread, CommunityComment, CommunityThreadReadState } from '../../api/communityClient'
 import type { AuthUser } from '../../api/authClient'
 
 interface CommunityThreadCardProps {
   activeThread: CommunityThread | null
+  readState: CommunityThreadReadState | null
   activeTarget: { targetType: string; targetId: string; label: string } | null
   selectedSatelliteName: string | null
   comments: CommunityComment[]
@@ -23,12 +24,15 @@ interface CommunityThreadCardProps {
   handleSaveEdit: (commentId: number) => void
   handleDeleteComment: (commentId: number) => void
   handleReportComment: (commentId: number) => void
+  handleResumeReading: () => void
+  handleGoToLatest: () => void
   ensureThread: (targetType: string, targetId: string) => void
   onFocusSatellite: (satelliteId: number) => void
 }
 
 export function CommunityThreadCard({
   activeThread,
+  readState,
   activeTarget,
   selectedSatelliteName,
   comments,
@@ -49,6 +53,8 @@ export function CommunityThreadCard({
   handleSaveEdit,
   handleDeleteComment,
   handleReportComment,
+  handleResumeReading,
+  handleGoToLatest,
   ensureThread,
   onFocusSatellite,
 }: CommunityThreadCardProps) {
@@ -91,6 +97,22 @@ export function CommunityThreadCard({
               Focus satellite
             </button>
           ) : null}
+          <button
+            type="button"
+            className="community-read-button"
+            onClick={handleResumeReading}
+            disabled={!readState?.lastReadCommentId}
+          >
+            Riprendi lettura
+          </button>
+          <button
+            type="button"
+            className="community-read-button"
+            onClick={handleGoToLatest}
+            disabled={comments.length === 0}
+          >
+            Vai all'ultimo messaggio
+          </button>
         </div>
       ) : null}
 
@@ -152,7 +174,11 @@ export function CommunityThreadCard({
                 }
 
                 return (
-                  <article key={comment.id} className={`community-comment-item ${comment.deleted ? 'is-deleted' : ''}`}>
+                  <article
+                    key={comment.id}
+                    id={`community-comment-${comment.id}`}
+                    className={`community-comment-item ${comment.deleted ? 'is-deleted' : ''}`}
+                  >
                     <div className="community-comment-head">
                       <strong>{comment.authorUsername}</strong>
                       <small>{new Date(comment.createdAt).toLocaleString('it-IT')}</small>

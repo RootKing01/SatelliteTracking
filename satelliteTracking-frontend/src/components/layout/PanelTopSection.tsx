@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { OrekitStatusResponse } from '../../api/orekitStatusClient'
 import type { SystemHealthResponse } from '../../api/systemHealthClient'
 
@@ -24,17 +24,43 @@ function PanelTopSectionBase({
   onLogout,
   onPingSystemHealth,
 }: PanelTopSectionProps & { onPingSystemHealth?: () => void }) {
+  const [notifCount, setNotifCount] = useState<number>(0)
+
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      // @ts-ignore event detail
+      const detail = (ev as CustomEvent).detail
+      setNotifCount(typeof detail === 'number' ? detail : 0)
+    }
+    window.addEventListener('communityNotificationsCount', handler as EventListener)
+    return () => window.removeEventListener('communityNotificationsCount', handler as EventListener)
+  }, [])
+
+  const toggleNotifications = () => {
+    window.dispatchEvent(new CustomEvent('toggleCommunityNotifications'))
+  }
   return (
     <section className="panel-top-shell">
       <div className="panel-header">
         <h1>Satellite Tracker</h1>
-        <button
-          type="button"
-          className="panel-logout"
-          onClick={onLogout}
-        >
-          Logout ({username})
-        </button>
+        <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+          <button
+            type="button"
+            className="panel-notifications"
+            onClick={toggleNotifications}
+            aria-label={`Notifiche community, ${notifCount} non lette`}
+          >
+            Notifiche{notifCount > 0 ? <span style={{marginLeft:8}} className="panel-badge">{notifCount}</span> : null}
+          </button>
+
+          <button
+            type="button"
+            className="panel-logout"
+            onClick={onLogout}
+          >
+            Logout ({username})
+          </button>
+        </div>
       </div>
 
       <div className="panel-status-row">

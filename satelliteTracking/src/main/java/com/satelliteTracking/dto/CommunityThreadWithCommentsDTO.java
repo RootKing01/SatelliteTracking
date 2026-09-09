@@ -4,6 +4,7 @@ import java.util.List;
 
 public record CommunityThreadWithCommentsDTO(
     CommunityThreadDTO thread,
-    List<CommunityCommentDTO> comments
+    List<CommunityCommentDTO> comments,
+    CommunityThreadReadStateDTO readState
 ) {
 }

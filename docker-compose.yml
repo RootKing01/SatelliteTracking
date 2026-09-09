@@ -32,6 +32,8 @@ services:
       context: satelliteTracking
       dockerfile: Dockerfile
     container_name: ${APP_CONTAINER_NAME}
+    ports:
+      - "${APP_PORT}:8080"
     depends_on:
       - db
       - orekit-data

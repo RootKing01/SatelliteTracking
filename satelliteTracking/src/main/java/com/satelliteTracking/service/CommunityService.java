@@ -4,21 +4,28 @@ import com.satelliteTracking.dto.CommunityCommentCreateRequestDTO;
 import com.satelliteTracking.dto.CommunityCommentDTO;
 import com.satelliteTracking.dto.CommunityCommentReportRequestDTO;
 import com.satelliteTracking.dto.CommunityCommentUpdateRequestDTO;
+import com.satelliteTracking.dto.CommunityNotificationDTO;
 import com.satelliteTracking.dto.CommunityFeedItemDTO;
 import com.satelliteTracking.dto.CommunityThreadCreateRequestDTO;
 import com.satelliteTracking.dto.CommunityThreadLikeDTO;
 import com.satelliteTracking.dto.CommunityThreadDTO;
+import com.satelliteTracking.dto.CommunityThreadReadStateDTO;
+import com.satelliteTracking.dto.CommunityThreadReadStateUpdateRequestDTO;
 import com.satelliteTracking.dto.CommunityThreadWithCommentsDTO;
 import com.satelliteTracking.model.AppUser;
 import com.satelliteTracking.model.CommunityComment;
 import com.satelliteTracking.model.CommunityCommentReport;
+import com.satelliteTracking.model.CommunityNotification;
 import com.satelliteTracking.model.CommunityTargetType;
 import com.satelliteTracking.model.CommunityThread;
 import com.satelliteTracking.model.CommunityThreadLike;
+import com.satelliteTracking.model.CommunityThreadReadState;
 import com.satelliteTracking.repository.CommunityCommentReportRepository;
 import com.satelliteTracking.repository.CommunityCommentRepository;
+import com.satelliteTracking.repository.CommunityNotificationRepository;
 import com.satelliteTracking.repository.CommunityThreadLikeRepository;
 import com.satelliteTracking.repository.CommunityThreadRepository;
+import com.satelliteTracking.repository.CommunityThreadReadStateRepository;
 import org.springframework.data.domain.PageRequest;
 import com.satelliteTracking.repository.SatelliteRepository;
 import com.satelliteTracking.model.Satellite;
@@ -42,20 +49,26 @@ public class CommunityService {
     private final CommunityThreadRepository communityThreadRepository;
     private final CommunityCommentRepository communityCommentRepository;
     private final CommunityCommentReportRepository communityCommentReportRepository;
+    private final CommunityNotificationRepository communityNotificationRepository;
     private final CommunityThreadLikeRepository communityThreadLikeRepository;
+    private final CommunityThreadReadStateRepository communityThreadReadStateRepository;
     private final AuthService authService;
     private final SatelliteRepository satelliteRepository;
 
     public CommunityService(CommunityThreadRepository communityThreadRepository,
                             CommunityCommentRepository communityCommentRepository,
                             CommunityCommentReportRepository communityCommentReportRepository,
+                            CommunityNotificationRepository communityNotificationRepository,
                             CommunityThreadLikeRepository communityThreadLikeRepository,
+                            CommunityThreadReadStateRepository communityThreadReadStateRepository,
                             AuthService authService,
                             SatelliteRepository satelliteRepository) {
         this.communityThreadRepository = communityThreadRepository;
         this.communityCommentRepository = communityCommentRepository;
         this.communityCommentReportRepository = communityCommentReportRepository;
+        this.communityNotificationRepository = communityNotificationRepository;
         this.communityThreadLikeRepository = communityThreadLikeRepository;
+        this.communityThreadReadStateRepository = communityThreadReadStateRepository;
         this.authService = authService;
         this.satelliteRepository = satelliteRepository;
     }
@@ -75,7 +88,7 @@ public class CommunityService {
             .map(this::toCommentDTO)
             .toList();
 
-        return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments);
+        return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments, toReadStateDTO(thread, user));
     }
 
     @Transactional
@@ -95,7 +108,7 @@ public class CommunityService {
             .map(this::toCommentDTO)
             .toList();
 
-        return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments);
+        return new CommunityThreadWithCommentsDTO(toThreadDTO(thread, user), comments, toReadStateDTO(thread, user));
     }
 
     @Transactional
@@ -127,7 +140,8 @@ public class CommunityService {
 
         return new CommunityThreadWithCommentsDTO(
             toThreadDTO(savedThread, user),
-            List.of(toCommentDTO(savedComment))
+            List.of(toCommentDTO(savedComment)),
+            toReadStateDTO(savedThread, user)
         );
     }
 
@@ -162,6 +176,15 @@ public class CommunityService {
         comment.setBody(body);
 
         CommunityComment saved = communityCommentRepository.save(comment);
+
+        if (parentComment != null && !parentComment.getAuthor().getId().equals(user.getId())) {
+            CommunityNotification notification = new CommunityNotification();
+            notification.setRecipient(parentComment.getAuthor());
+            notification.setThread(thread);
+            notification.setSourceComment(saved);
+            notification.setNotificationType("THREAD_REPLY");
+            communityNotificationRepository.save(notification);
+        }
 
         thread.setCommentCount(thread.getCommentCount() + 1);
         thread.setLastCommentAt(saved.getCreatedAt());
@@ -326,6 +349,122 @@ public class CommunityService {
         return new CommunityThreadLikeDTO(threadId, likesCount, likedByMe);
     }
 
+    @Transactional(readOnly = true)
+    public List<CommunityNotificationDTO> getNotifications(int limit) {
+        AppUser user = authService.requireAuthenticatedUser();
+        int normalizedLimit = Math.max(1, Math.min(limit, 50));
+
+        return communityNotificationRepository
+            .findByRecipientIdOrderByCreatedAtDesc(user.getId(), PageRequest.of(0, normalizedLimit))
+            .stream()
+            .map(this::toNotificationDTO)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long getUnreadNotificationCount() {
+        AppUser user = authService.requireAuthenticatedUser();
+        return communityNotificationRepository.countByRecipientIdAndReadAtIsNull(user.getId());
+    }
+
+    @Transactional
+    public CommunityNotificationDTO markNotificationAsRead(Long notificationId) {
+        if (notificationId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Id notifica non valido");
+        }
+
+        AppUser user = authService.requireAuthenticatedUser();
+        CommunityNotification notification = communityNotificationRepository
+            .findByIdAndRecipientId(notificationId, user.getId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notifica non trovata"));
+
+        if (notification.getReadAt() == null) {
+            notification.setReadAt(LocalDateTime.now());
+            communityNotificationRepository.save(notification);
+        }
+
+        return toNotificationDTO(notification);
+    }
+
+    @Transactional(readOnly = true)
+    public CommunityThreadReadStateDTO getThreadReadState(Long threadId) {
+        if (threadId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Id thread non valido");
+        }
+
+        AppUser user = authService.requireAuthenticatedUser();
+        CommunityThread thread = communityThreadRepository.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread non trovato"));
+
+        CommunityThreadReadState readState = communityThreadReadStateRepository
+            .findByUserIdAndThreadId(user.getId(), thread.getId())
+            .orElse(null);
+
+        long unreadReplyCount = communityNotificationRepository
+            .findByRecipientIdAndThreadIdAndReadAtIsNullOrderByCreatedAtAsc(user.getId(), thread.getId())
+            .size();
+
+        return new CommunityThreadReadStateDTO(
+            thread.getId(),
+            readState != null ? readState.getLastReadCommentId() : null,
+            readState != null ? readState.getLastReadAt() : null,
+            unreadReplyCount
+        );
+    }
+
+    @Transactional
+    public CommunityThreadReadStateDTO updateThreadReadState(Long threadId, CommunityThreadReadStateUpdateRequestDTO request) {
+        if (threadId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Id thread non valido");
+        }
+
+        AppUser user = authService.requireAuthenticatedUser();
+        CommunityThread thread = communityThreadRepository.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread non trovato"));
+
+        Long lastReadCommentId = request != null ? request.lastReadCommentId() : null;
+        if (lastReadCommentId != null) {
+            CommunityComment lastReadComment = communityCommentRepository.findByIdAndDeletedAtIsNull(lastReadCommentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Commento di lettura non trovato"));
+            if (!lastReadComment.getThread().getId().equals(thread.getId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Commento di lettura non coerente con il thread");
+            }
+        }
+
+        CommunityThreadReadState readState = communityThreadReadStateRepository
+            .findByUserIdAndThreadId(user.getId(), thread.getId())
+            .orElseGet(() -> {
+                CommunityThreadReadState state = new CommunityThreadReadState();
+                state.setUser(user);
+                state.setThread(thread);
+                return state;
+            });
+
+        if (lastReadCommentId != null) {
+            readState.setLastReadCommentId(lastReadCommentId);
+        }
+        readState.setLastReadAt(LocalDateTime.now());
+        communityThreadReadStateRepository.save(readState);
+
+        if (lastReadCommentId != null) {
+            List<CommunityNotification> unreadNotifications = communityNotificationRepository
+                .findByRecipientIdAndThreadIdAndReadAtIsNullOrderByCreatedAtAsc(user.getId(), thread.getId());
+            for (CommunityNotification notification : unreadNotifications) {
+                Long sourceCommentId = notification.getSourceComment() != null ? notification.getSourceComment().getId() : null;
+                if (sourceCommentId != null && sourceCommentId <= lastReadCommentId) {
+                    notification.setReadAt(LocalDateTime.now());
+                }
+            }
+            communityNotificationRepository.saveAll(unreadNotifications);
+        }
+
+        long unreadReplyCount = communityNotificationRepository
+            .findByRecipientIdAndThreadIdAndReadAtIsNullOrderByCreatedAtAsc(user.getId(), thread.getId())
+            .size();
+
+        return new CommunityThreadReadStateDTO(thread.getId(), readState.getLastReadCommentId(), readState.getLastReadAt(), unreadReplyCount);
+    }
+
     private CommunityThread getOrCreateThread(CommunityTargetType targetType,
                                               String targetId,
                                               AppUser user,
@@ -372,6 +511,46 @@ public class CommunityService {
             comment.getCreatedAt(),
             comment.getUpdatedAt(),
             comment.getDeletedAt() != null
+        );
+    }
+
+    private CommunityNotificationDTO toNotificationDTO(CommunityNotification notification) {
+        CommunityComment sourceComment = notification.getSourceComment();
+        CommunityThread thread = notification.getThread();
+
+        return new CommunityNotificationDTO(
+            notification.getId(),
+            notification.getNotificationType(),
+            thread.getId(),
+            thread.getTitle(),
+            thread.getTargetType().name(),
+            thread.getTargetId(),
+            sourceComment != null ? sourceComment.getId() : null,
+            sourceComment != null ? sourceComment.getAuthor().getUsername() : null,
+            sourceComment != null ? buildPreview(sourceComment.getBody()) : "",
+            notification.getCreatedAt(),
+            notification.getReadAt()
+        );
+    }
+
+    private CommunityThreadReadStateDTO toReadStateDTO(CommunityThread thread, AppUser currentUser) {
+        if (currentUser == null) {
+            return null;
+        }
+
+        CommunityThreadReadState readState = communityThreadReadStateRepository
+            .findByUserIdAndThreadId(currentUser.getId(), thread.getId())
+            .orElse(null);
+
+        long unreadReplyCount = communityNotificationRepository
+            .findByRecipientIdAndThreadIdAndReadAtIsNullOrderByCreatedAtAsc(currentUser.getId(), thread.getId())
+            .size();
+
+        return new CommunityThreadReadStateDTO(
+            thread.getId(),
+            readState != null ? readState.getLastReadCommentId() : null,
+            readState != null ? readState.getLastReadAt() : null,
+            unreadReplyCount
         );
     }
 

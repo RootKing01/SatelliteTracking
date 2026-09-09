@@ -11,18 +11,24 @@ import {
   createCommunityThread,
   createCommunityComment,
   deleteCommunityComment,
+  fetchCommunityNotifications,
   fetchFeaturedCommunityThreads,
   fetchCommunityFeed,
   fetchCommunityThread,
+  fetchUnreadCommunityNotificationCount,
+  markCommunityNotificationAsRead,
   reportCommunityComment,
+  updateCommunityThreadReadState,
   toggleCommunityThreadLike,
   updateCommunityComment,
   type CommunityComment,
   type CommunityFeedItem,
+  type CommunityNotification,
   type CommunityThread,
+  type CommunityThreadReadState,
 } from '../../api/communityClient'
 import '../../styles/panels/community-panel.css'
- 
+
 
 type CommunityPanelProps = {
   authUser: AuthUser | null
@@ -38,9 +44,11 @@ export function CommunityPanel({
   onFocusSatellite,
 }: CommunityPanelProps) {
   const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
-  // satelliteCatalog non più usato
   const [featuredThreads, setFeaturedThreads] = useState<CommunityFeedItem[]>([])
   const [allThreads, setAllThreads] = useState<CommunityFeedItem[]>([])
+  const [notifications, setNotifications] = useState<CommunityNotification[]>([])
+  const [notificationCount, setNotificationCount] = useState(0)
+
   // Carica tutti i nomi dei satelliti una volta sola all'avvio
   useEffect(() => {
     let cancelled = false
@@ -58,7 +66,6 @@ export function CommunityPanel({
 
   // Aggiorna la mappa solo se arriva un nuovo thread satellite non presente
   useEffect(() => {
-    // Prendi tutti i targetId dei thread satellite
     const allTargetIds = [
       ...featuredThreads,
       ...allThreads,
@@ -66,14 +73,12 @@ export function CommunityPanel({
       .filter(t => t.targetType === 'SATELLITE')
       .map(t => String(t.targetId))
 
-    // Trova i targetId non presenti nella mappa
     const missingIds = allTargetIds.filter(id => !(id in satelliteNames))
     if (missingIds.length === 0) return
 
-    // Usa helper per aggiornare solo i satelliti mancanti
     updateMissingSatelliteNames(missingIds, setSatelliteNames)
   }, [featuredThreads, allThreads, satelliteNames])
-  // ...existing code...
+
   const [threadsError, setThreadsError] = useState('')
   const [activeThread, setActiveThread] = useState<CommunityThread | null>(null)
   const [comments, setComments] = useState<CommunityComment[]>([])
@@ -89,11 +94,21 @@ export function CommunityPanel({
   const [sessionVerified, setSessionVerified] = useState(false)
   const [, setCommunitySessionValid] = useState(false)
   const [replyToComment, setReplyToComment] = useState<CommunityComment | null>(null)
+  const [activeThreadReadState, setActiveThreadReadState] = useState<CommunityThreadReadState | null>(null)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [pendingFocusCommentId, setPendingFocusCommentId] = useState<number | null>(null)
   const [activeThreadOpen, setActiveThreadOpen] = useState(true)
   const [featuredOpen, setFeaturedOpen] = useState(false)
   const [allOpen, setAllOpen] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const activeThreadRef = useRef<HTMLDivElement | null>(null)
+
+  // Listen for global toggle events dispatched by top bar
+  useEffect(() => {
+    const handler = () => setNotificationsOpen((prev) => !prev)
+    window.addEventListener('toggleCommunityNotifications', handler)
+    return () => window.removeEventListener('toggleCommunityNotifications', handler)
+  }, [])
 
   const activeTarget = useMemo(() => {
     if (!selectedSatelliteId) {
@@ -153,12 +168,11 @@ export function CommunityPanel({
     setComments([])
     setCommentsError('')
     setReplyToComment(null)
+    setActiveThreadReadState(null)
+    setPendingFocusCommentId(null)
     setActiveThreadOpen(false)
     setCommentsLoading(false)
   }, [activeTarget?.targetId, activeTarget?.targetType])
-
-
-  // Polling per aggiornare la lista thread ogni 5 secondi
 
   // Polling ottimizzato: aggiorna solo se cambia
   useEffect(() => {
@@ -177,6 +191,21 @@ export function CommunityPanel({
 
     let cancelled = false
     const controller = new AbortController()
+
+    const refreshUnreadCount = () => {
+      fetchUnreadCommunityNotificationCount(controller.signal)
+        .then((unreadCount) => {
+          if (!cancelled) {
+            setNotificationCount(unreadCount)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setNotificationCount(0)
+          }
+        })
+    }
+
     const fetchThreads = () => {
       Promise.all([
         fetchFeaturedCommunityThreads(8, controller.signal),
@@ -184,7 +213,6 @@ export function CommunityPanel({
       ])
         .then(([featured, all]) => {
           if (!cancelled) {
-            // Aggiorna solo se cambia il contenuto
             setFeaturedThreads(prev => JSON.stringify(prev) !== JSON.stringify(featured) ? featured : prev)
             setAllThreads(prev => JSON.stringify(prev) !== JSON.stringify(all) ? all : prev)
           }
@@ -198,9 +226,13 @@ export function CommunityPanel({
             setThreadsError('Impossibile caricare i thread community.')
           }
         })
+        .finally(() => {
+          refreshUnreadCount()
+        })
     }
 
     fetchThreads()
+    refreshUnreadCount()
     const interval = setInterval(fetchThreads, 5000)
 
     return () => {
@@ -208,9 +240,29 @@ export function CommunityPanel({
       controller.abort()
       clearInterval(interval)
     }
-  }, [authUser, sessionVerified])
+  }, [authUser, sessionVerified, handleUnauthorizedSession])
 
-  const loadThread = async (targetType: string, targetId: string) => {
+  // Broadcast unread count so top bar can show badge
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('communityNotificationsCount', { detail: notificationCount }))
+    } catch {
+      // ignore
+    }
+  }, [notificationCount])
+
+  // Fetch notifications inline when tray opens
+  useEffect(() => {
+    if (!notificationsOpen || !authUser) {
+      return
+    }
+
+    fetchCommunityNotifications(12)
+      .then(setNotifications)
+      .catch(() => setNotifications([]))
+  }, [authUser, notificationsOpen])
+
+  const loadThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
     if (!authUser) {
       return
     }
@@ -218,7 +270,6 @@ export function CommunityPanel({
     setCommentsLoading(true)
     setCommentsError('')
     try {
-      // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
       if (targetType === 'SATELLITE') {
         const { map } = await fetchAndMapSatelliteNames('ALL')
         setSatelliteNames(map)
@@ -226,12 +277,13 @@ export function CommunityPanel({
       const payload = await fetchCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
+      setActiveThreadReadState(payload.readState)
+      setPendingFocusCommentId(focusCommentId ?? payload.readState?.lastReadCommentId ?? payload.comments.at(-1)?.id ?? null)
     } catch (error) {
       if (isUnauthorizedError(error)) {
         void handleThreadAuthFailure('Impossibile caricare i commenti del thread selezionato.')
         return
       }
-      // 404 means no thread exists yet for this target: treat silently
       if (isAxiosError(error) && error.response?.status === 404) {
         setActiveThread(null)
         setComments([])
@@ -245,7 +297,7 @@ export function CommunityPanel({
     }
   }
 
-  const ensureThread = async (targetType: string, targetId: string) => {
+  const ensureThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
     if (!authUser) {
       return
     }
@@ -253,7 +305,6 @@ export function CommunityPanel({
     setCommentsLoading(true)
     setCommentsError('')
     try {
-      // Se il thread è di tipo SATELLITE, aggiorna la mappa dei nomi
       if (targetType === 'SATELLITE') {
         const { map } = await fetchAndMapSatelliteNames('ALL')
         setSatelliteNames(map)
@@ -261,6 +312,8 @@ export function CommunityPanel({
       const payload = await ensureCommunityThread(targetType, targetId)
       setActiveThread(payload.thread)
       setComments(payload.comments)
+      setActiveThreadReadState(payload.readState)
+      setPendingFocusCommentId(focusCommentId ?? payload.readState?.lastReadCommentId ?? payload.comments.at(-1)?.id ?? null)
       setActiveThreadOpen(true)
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -276,20 +329,80 @@ export function CommunityPanel({
   }
 
   useEffect(() => {
-    if (!activeThread) {
+    if (!activeThread || pendingFocusCommentId == null) {
       return
     }
 
-    setActiveThreadOpen(true)
-    setTimeout(() => {
-      activeThreadRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 0)
-  }, [activeThread?.id])
+    const commentElement = document.getElementById(`community-comment-${pendingFocusCommentId}`)
+    if (commentElement) {
+      commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setPendingFocusCommentId(null)
+    }
+  }, [activeThread?.id, comments, pendingFocusCommentId])
 
-  const handleOpenThread = async (targetType: string, targetId: string) => {
-    await loadThread(targetType, targetId)
+  const scrollToComment = useCallback((commentId: number | null) => {
+    if (commentId == null) {
+      return
+    }
+
+    const element = document.getElementById(`community-comment-${commentId}`)
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [])
+
+  const handleOpenThread = async (targetType: string, targetId: string, focusCommentId?: number | null) => {
+    await loadThread(targetType, targetId, focusCommentId)
     setActiveThreadOpen(true)
   }
+
+  const handleResumeReading = useCallback(() => {
+    scrollToComment(activeThreadReadState?.lastReadCommentId ?? null)
+  }, [activeThreadReadState?.lastReadCommentId, scrollToComment])
+
+  const handleGoToLatest = useCallback(async () => {
+    if (!activeThread || comments.length === 0) {
+      return
+    }
+
+    const latestComment = comments[comments.length - 1]
+    try {
+      const updated = await updateCommunityThreadReadState(activeThread.id, latestComment.id)
+      setActiveThreadReadState(updated)
+      scrollToComment(latestComment.id)
+      setPendingFocusCommentId(null)
+    } catch {
+      setCommentsError('Impossibile aggiornare lo stato di lettura.')
+    }
+  }, [activeThread, comments, scrollToComment])
+
+  const handleOpenNotification = async (notification: CommunityNotification) => {
+    try {
+      if (notification.readAt == null) {
+        const updated = await markCommunityNotificationAsRead(notification.id)
+        setNotifications((prev) => prev.map((item) => item.id === updated.id ? updated : item))
+        setNotificationCount((prev) => Math.max(0, prev - 1))
+      }
+      await handleOpenThread(notification.targetType, notification.targetId, notification.sourceCommentId ?? null)
+      setNotificationsOpen(false)
+    } catch {
+      setCommentsError('Impossibile aprire la notifica selezionata.')
+    }
+  }
+
+  useEffect(() => {
+    if (!activeThread?.id || !activeThreadReadState) {
+      return
+    }
+
+    if (pendingFocusCommentId != null) {
+      return
+    }
+
+    if (activeThreadReadState.lastReadCommentId != null) {
+      scrollToComment(activeThreadReadState.lastReadCommentId)
+    } else if (comments.length > 0) {
+      scrollToComment(comments[comments.length - 1].id)
+    }
+  }, [activeThread?.id, activeThreadReadState, comments, pendingFocusCommentId, scrollToComment])
 
   const applyLikeUpdateToCollections = (threadId: number, likesCount: number, likedByMe: boolean) => {
     const updater = (items: CommunityFeedItem[]) =>
@@ -352,6 +465,8 @@ export function CommunityPanel({
       setAllThreads((prev) => [{ ...newItem }, ...prev])
       setActiveThread(created.thread)
       setComments(created.comments)
+      setActiveThreadReadState(created.readState)
+      setPendingFocusCommentId(created.readState?.lastReadCommentId ?? created.comments.at(-1)?.id ?? null)
       setNewThreadTitle('')
       setNewThreadBody('')
     } catch (error) {
@@ -409,6 +524,7 @@ export function CommunityPanel({
             }
           : prev,
       )
+      setPendingFocusCommentId(created.id)
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorizedSession()
@@ -490,12 +606,41 @@ export function CommunityPanel({
 
   return (
     <section className="collapsible side-drawer community-panel" aria-label="Community">
-      <h3>Community</h3>
+      <div className="community-panel-header">
+        <h3>Community</h3>
+      </div>
       <p className="updated-at">Thread in evidenza, tutti i thread, discussioni libere e like.</p>
 
+      {notificationsOpen ? (
+        <div className={`community-notification-tray ${notificationsOpen ? 'is-open overlay' : ''}`}>
+          {notifications.length === 0 ? (
+            <small>Nessuna notifica disponibile.</small>
+          ) : (
+            notifications.map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                className={`community-notification-item ${notification.readAt == null ? 'is-unread' : ''}`}
+                onClick={() => { void handleOpenNotification(notification) }}
+              >
+                <strong>{notification.sourceCommentAuthorUsername ?? 'Utente'}</strong>
+                <small>{notification.threadTitle}</small>
+                <span>{notification.preview}</span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
 
+      {activeThread ? (
+        <AutoSaveReadState
+          threadId={activeThread.id}
+          comments={comments}
+          activeReadState={activeThreadReadState}
+          setActiveThreadReadState={setActiveThreadReadState}
+        />
+      ) : null}
 
-      {/* Thread attivo in cima, ora come componente */}
       <div className="community-section" ref={activeThreadRef}>
         <button
           type="button"
@@ -509,6 +654,7 @@ export function CommunityPanel({
         {activeThreadOpen ? (
           <CommunityThreadCard
             activeThread={activeThread}
+            readState={activeThreadReadState}
             activeTarget={activeTarget}
             selectedSatelliteName={selectedSatelliteName}
             comments={comments}
@@ -529,6 +675,8 @@ export function CommunityPanel({
             handleSaveEdit={handleSaveEdit}
             handleDeleteComment={handleDeleteComment}
             handleReportComment={handleReportComment}
+            handleResumeReading={handleResumeReading}
+            handleGoToLatest={handleGoToLatest}
             ensureThread={ensureThread}
             onFocusSatellite={onFocusSatellite}
           />
@@ -599,4 +747,61 @@ export function CommunityPanel({
       </div>
     </section>
   )
+}
+
+function AutoSaveReadState({
+  threadId,
+  comments,
+  activeReadState,
+  setActiveThreadReadState,
+}: {
+  threadId: number
+  comments: CommunityComment[]
+  activeReadState: CommunityThreadReadState | null
+  setActiveThreadReadState: (s: CommunityThreadReadState | null) => void
+}) {
+  const timerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!threadId || comments.length === 0) return
+
+    const elements = Array.from(document.querySelectorAll('.community-comment-item')) as HTMLElement[]
+    if (elements.length === 0) return
+
+    const observer = new IntersectionObserver((entries) => {
+      const visibleIds: number[] = entries
+        .filter(e => e.isIntersecting && e.intersectionRatio > 0.5)
+        .map(e => {
+          const m = (e.target as HTMLElement).id.match(/community-comment-(\d+)/)
+          return m ? Number(m[1]) : NaN
+        })
+        .filter(n => Number.isFinite(n))
+
+      if (visibleIds.length === 0) return
+      const maxVisible = Math.max(...visibleIds)
+
+      if (activeReadState?.lastReadCommentId && maxVisible <= activeReadState.lastReadCommentId) return
+
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current)
+      }
+      timerRef.current = window.setTimeout(async () => {
+        try {
+          const updated = await updateCommunityThreadReadState(threadId, maxVisible)
+          setActiveThreadReadState(updated)
+        } catch {
+          // ignore errors silently
+        }
+      }, 800)
+    }, { threshold: [0.5] })
+
+    elements.forEach(el => observer.observe(el))
+    return () => {
+      observer.disconnect()
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, comments.map(c => c.id).join(','), activeReadState?.lastReadCommentId])
+
+  return null
 }

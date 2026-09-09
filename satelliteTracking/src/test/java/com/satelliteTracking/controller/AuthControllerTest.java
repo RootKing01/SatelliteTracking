@@ -30,9 +30,6 @@ public class AuthControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Autowired
-    private AuthService authService;
-
     @Test
     public void testRegisterEndpoint() throws Exception {
         // Arrange

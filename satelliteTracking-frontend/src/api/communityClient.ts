@@ -25,9 +25,17 @@ export type CommunityThread = {
   lastCommentAt: string | null
 }
 
+export type CommunityThreadReadState = {
+  threadId: number
+  lastReadCommentId: number | null
+  lastReadAt: string | null
+  unreadReplyCount: number
+}
+
 export type CommunityThreadWithComments = {
   thread: CommunityThread
   comments: CommunityComment[]
+  readState: CommunityThreadReadState | null
 }
 
 export type CommunityFeedItem = {
@@ -46,6 +54,20 @@ export type CommunityThreadLike = {
   threadId: number
   likesCount: number
   likedByMe: boolean
+}
+
+export type CommunityNotification = {
+  id: number
+  notificationType: string
+  threadId: number
+  threadTitle: string
+  targetType: 'SATELLITE' | 'SIGHTING' | 'PASS' | 'GENERAL'
+  targetId: string
+  sourceCommentId: number | null
+  sourceCommentAuthorUsername: string | null
+  preview: string
+  createdAt: string
+  readAt: string | null
 }
 
 export async function fetchCommunityThread(targetType: string, targetId: string, signal?: AbortSignal): Promise<CommunityThreadWithComments> {
@@ -131,5 +153,42 @@ export async function fetchFeaturedCommunityThreads(limit = 8, signal?: AbortSig
 
 export async function toggleCommunityThreadLike(threadId: number): Promise<CommunityThreadLike> {
   const response = await httpClient.post<CommunityThreadLike>(`/api/community/threads/${threadId}/likes`)
+  return response.data
+}
+
+export async function fetchCommunityNotifications(limit = 20, signal?: AbortSignal): Promise<CommunityNotification[]> {
+  const response = await httpClient.get<CommunityNotification[]>('/api/community/notifications', {
+    params: { limit },
+    signal,
+  })
+  return response.data
+}
+
+export async function fetchUnreadCommunityNotificationCount(signal?: AbortSignal): Promise<number> {
+  const response = await httpClient.get<{ unreadCount: number }>('/api/community/notifications/unread-count', {
+    signal,
+  })
+  return response.data.unreadCount
+}
+
+export async function markCommunityNotificationAsRead(notificationId: number): Promise<CommunityNotification> {
+  const response = await httpClient.post<CommunityNotification>(`/api/community/notifications/${notificationId}/read`)
+  return response.data
+}
+
+export async function fetchCommunityThreadReadState(threadId: number, signal?: AbortSignal): Promise<CommunityThreadReadState> {
+  const response = await httpClient.get<CommunityThreadReadState>(`/api/community/threads/${threadId}/read-state`, {
+    signal,
+  })
+  return response.data
+}
+
+export async function updateCommunityThreadReadState(
+  threadId: number,
+  lastReadCommentId: number | null,
+): Promise<CommunityThreadReadState> {
+  const response = await httpClient.put<CommunityThreadReadState>(`/api/community/threads/${threadId}/read-state`, {
+    lastReadCommentId,
+  })
   return response.data
 }

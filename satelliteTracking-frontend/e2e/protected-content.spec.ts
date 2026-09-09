@@ -6,7 +6,7 @@ test.describe('Protected Content', () => {
     await page.goto('/')
     await loginAndAssertAuthenticated(page, 'demo@satellitetracker.local', 'Demo123!')
 
-    await expect(page.locator('text=Live globe')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('section.viewer-section')).toBeVisible()
     await expect(page.locator('text=Satellite Tracker')).toBeVisible()
   })
 

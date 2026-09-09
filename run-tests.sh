@@ -50,18 +50,24 @@ ensure_java_toolchain() {
 }
 
 ensure_frontend_dependencies() {
-    if [[ -f package-lock.json ]]; then
-        npm ci --include=dev > /dev/null 2>&1
-    else
-        npm install --include=dev > /dev/null 2>&1
-    fi
+    print_header "Installing frontend dependencies"
+
+    npm install --include=dev --no-audit --no-fund
+    
 }
 
 ensure_playwright_browsers() {
-    npx playwright install > /dev/null 2>&1 || {
-        print_error "Installazione browser Playwright fallita. Esegui: cd satelliteTracking-frontend && npx playwright install"
+    if ! npx playwright --version >/dev/null 2>&1; then
+        echo "Playwright non installato"
         return 1
-    }
+    fi
+
+    if [[ ! -d "$HOME/.cache/ms-playwright" ]]; then
+        echo "Installing Playwright browsers..."
+        npx playwright install
+    else
+        echo "Playwright browsers già presenti"
+    fi
 }
 
 publish_playwright_report_web() {

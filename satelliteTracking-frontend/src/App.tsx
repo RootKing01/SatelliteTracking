@@ -52,12 +52,11 @@ import { PanelSidebarButtons, type SidebarPane } from './components/layout/Panel
 import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SatelliteGlobe, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
 import { computeMoonPosition } from './components/Moon'
-import { CommunityPanel, GroupsPanel, MusicFloatingPlayer, MusicPanel, MusicPlayerProvider, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
+import { CommunityPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import type { SatellitePosition } from './types/satellite'
 import './App.css'
 import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
-import useMusicWidgetHeight, { computeQuickZoomTop } from './helpers/appHelpers'
 
 const ionToken =
   import.meta.env.VITE_CESIUM_TOKEN ?? import.meta.env.VITE_CESIUM_ION_TOKEN
@@ -176,12 +175,6 @@ function App() {
       ),
     [discoveredCanonicalGroupKeys],
   )
-
-  // Measured height of the floating music widget so floating controls can follow it
-  const musicWidgetHeight = useMusicWidgetHeight()
-  const desktopMusicTop = 8
-  const desktopFocusTop = musicWidgetHeight > 0 ? Math.max(58, musicWidgetHeight + 16) : 58
-  const desktopZoomTop = musicWidgetHeight > 0 ? Math.max(108, musicWidgetHeight + 86) : 108
 
   const groupColorMap = useMemo(
     () =>
@@ -1010,26 +1003,23 @@ function App() {
 
   if (!ionToken) {
     return (
-      <MusicPlayerProvider>
-        <main className="app-shell">
-          <aside className="panel-section">
-            <section className="panel-component panel-component-token">
-              <h1>Cesium token mancante</h1>
-              <p>
-                Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
-                frontend.
-              </p>
-            </section>
-          </aside>
-          <section className="viewer-section" />
-        </main>
-      </MusicPlayerProvider>
+      <main className="app-shell">
+        <aside className="panel-section">
+          <section className="panel-component panel-component-token">
+            <h1>Cesium token mancante</h1>
+            <p>
+              Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
+              frontend.
+            </p>
+          </section>
+        </aside>
+        <section className="viewer-section" />
+      </main>
     )
   }
 
   return (
-    <MusicPlayerProvider>
-      <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
+    <main className={`app-shell ${focusGlobeMode ? 'focus-mode' : ''}`}>
         {!focusGlobeMode ? (
           <aside className="panel-section">
 
@@ -1157,11 +1147,6 @@ function App() {
                           </div>
                         ) : null}
 
-                        {openPane === 'music' ? (
-                          <div id="panel-music">
-                            <MusicPanel />
-                          </div>
-                        ) : null}
                         </section>
                       ) : null}
                     </section>
@@ -1173,21 +1158,13 @@ function App() {
         ) : null}
 
         <section className="viewer-section">
-          <MusicFloatingPlayer
-            floatingStyle={
-              landscapeMobileViewport
-                ? { right: 8, left: 'auto', top: 8 }
-                : { left: focusGlobeMode ? 10 : panelWidth + 20, top: desktopMusicTop }
-            }
-          />
-
           <button
             type="button"
             className="focus-toggle"
             style={
               landscapeMobileViewport
                 ? { right: 8, left: 'auto', top: 58 }
-                : { left: focusGlobeMode ? 10 : panelWidth + 20, right: 'auto', top: desktopFocusTop }
+                : { left: focusGlobeMode ? 10 : panelWidth + 20, right: 'auto', top: 58 }
             }
             onClick={() => setFocusGlobeMode((prev) => !prev)}
           >
@@ -1199,7 +1176,7 @@ function App() {
             style={{
               ...(landscapeMobileViewport
                 ? { right: 8, left: 'auto', top: 108 }
-                : { left: focusGlobeMode ? 10 : panelWidth + 20, top: computeQuickZoomTop(musicWidgetHeight, desktopZoomTop - musicWidgetHeight) ?? desktopZoomTop }),
+                : { left: focusGlobeMode ? 10 : panelWidth + 20, top: 108 }),
             }}
           >
             <button type="button" onClick={() => globeRef.current?.zoomIn()} aria-label="Zoom rapido in">
@@ -1411,7 +1388,6 @@ function App() {
           </section>
         ) : null}
       </main>
-    </MusicPlayerProvider>
   )
 }
 

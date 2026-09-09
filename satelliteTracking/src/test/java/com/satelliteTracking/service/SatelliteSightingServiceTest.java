@@ -23,6 +23,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,9 +82,9 @@ class SatelliteSightingServiceTest {
         when(orbitalParametersRepository.findTopBySatelliteOrderByFetchedAtDesc(satellite)).thenReturn(params);
         when(passTimeService.nowForObserver(any())).thenReturn(now);
         when(passTimeService.nowUtc()).thenReturn(AbsoluteDate.J2000_EPOCH);
-        when(satelliteSightingRepository.findByUserIdAndSatelliteIdAndSightedAtBetween(any(), any(), any(), any()))
+        when(satelliteSightingRepository.findByUserIdAndSatelliteIdAndSightedAtBetween(anyLong(), anyLong(), any(), any()))
             .thenReturn(List.of());
-        when(satellitePositionService.computeObservation(any(), any(), any(), any(), any(), any()))
+        when(satellitePositionService.computeObservation(any(), any(), any(), anyDouble(), anyDouble(), anyDouble()))
             .thenReturn(new SatellitePositionDTO(
                 42L,
                 "TESTSAT",

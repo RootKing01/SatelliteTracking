@@ -412,11 +412,6 @@
   filter: drop-shadow(0 0 8px rgba(255, 213, 107, 0.34));
 }
 
-.tab-icon-music {
-  color: #76f2c6;
-  filter: drop-shadow(0 0 8px rgba(118, 242, 198, 0.34));
-}
-
 .tab-icon-community {
   color: #ff6fa0;
   filter: drop-shadow(0 0 8px rgba(255, 111, 160, 0.34));

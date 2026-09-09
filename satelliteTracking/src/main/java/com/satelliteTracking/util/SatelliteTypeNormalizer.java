@@ -3,10 +3,34 @@ package com.satelliteTracking.util;
 import com.satelliteTracking.model.Satellite;
 
 import java.util.regex.Pattern;
+import java.util.Set;
 
 public final class SatelliteTypeNormalizer {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
+    private static final Set<String> FRONTEND_GROUPS = Set.of(
+        "stations",
+        "starlink",
+        "oneweb",
+        "iridium-next",
+        "spire",
+        "gps-ops",
+        "galileo",
+        "glonass-ops",
+        "beidou",
+        "sbas",
+        "science",
+        "weather",
+        "planet",
+        "radar",
+        "geo",
+        "amateur",
+        "cubesat",
+        "education",
+        "engineering",
+        "military",
+        "space-missions"
+    );
 
     private SatelliteTypeNormalizer() {
     }
@@ -21,7 +45,7 @@ public final class SatelliteTypeNormalizer {
 
     public static String canonicalizeType(String input) {
         String cleaned = normalizeToken(input);
-        if (cleaned.isBlank()) return "unknown";
+        if (cleaned.isBlank() || isPendingToken(cleaned)) return "unknown";
         return canonicalizeToken(cleaned);
     }
 
@@ -31,26 +55,66 @@ public final class SatelliteTypeNormalizer {
         String satelliteType = satellite.getSatelliteType();
         if (satelliteType != null && !satelliteType.isBlank()) {
             String normalizedSatelliteType = canonicalizeType(satelliteType);
-            if ("starlink".equalsIgnoreCase(normalizedSatelliteType)) {
-                return "starlink";
+            if (isFrontendGroup(normalizedSatelliteType)) {
+                return normalizedSatelliteType;
             }
         }
 
         String raw = satellite.getObjectTypeRaw();
-        if (raw == null || raw.isBlank() || "UNKNOWN".equalsIgnoreCase(raw)) {
-            raw = satellite.getObjectTypeInferred();
-        }
-        if (raw == null || raw.isBlank()) {
-            raw = satelliteType;
+        if (isPendingType(raw)) {
+            String inferred = canonicalizeType(satellite.getObjectTypeInferred());
+            return isFrontendGroup(inferred) ? inferred : "";
         }
 
-        return canonicalizeType(raw);
+        if (raw != null && !raw.isBlank()) {
+            String normalizedRaw = canonicalizeType(raw);
+            if (!normalizedRaw.isBlank() && !"unknown".equalsIgnoreCase(normalizedRaw)) {
+                return normalizedRaw;
+            }
+        }
+
+        String inferred = canonicalizeType(satellite.getObjectTypeInferred());
+        if (isFrontendGroup(inferred)) {
+            return inferred;
+        }
+
+        return canonicalizeType(satelliteType);
     }
 
     public static boolean isPendingClassification(Satellite satellite) {
         if (satellite == null) return false;
         String rawType = satellite.getObjectTypeRaw();
-        return rawType == null || rawType.isBlank() || "UNKNOWN".equalsIgnoreCase(rawType);
+        return isPendingType(rawType);
+    }
+
+    public static String resolveEffectiveType(Satellite satellite) {
+        if (satellite == null) {
+            return "unknown";
+        }
+
+        String satelliteType = canonicalizeType(satellite.getSatelliteType());
+        if (isFrontendGroup(satelliteType)) {
+            return satelliteType;
+        }
+
+        String raw = satellite.getObjectTypeRaw();
+        if (!isPendingType(raw)) {
+            String normalizedRaw = canonicalizeType(raw);
+            if (!normalizedRaw.isBlank() && !"unknown".equalsIgnoreCase(normalizedRaw)) {
+                return normalizedRaw;
+            }
+        }
+
+        String inferred = canonicalizeType(satellite.getObjectTypeInferred());
+        if (!inferred.isBlank() && !"unknown".equalsIgnoreCase(inferred)) {
+            return inferred;
+        }
+
+        if (!satelliteType.isBlank()) {
+            return satelliteType;
+        }
+
+        return "unknown";
     }
 
     private static String canonicalizeToken(String cleaned) {
@@ -88,5 +152,21 @@ public final class SatelliteTypeNormalizer {
         if (c.contains("rocket") || c.contains("stage") || c.contains("booster") || c.contains("upper stage") || c.contains("rocket body") || c.contains("rb")) return "space-rocket";
 
         return c;
+    }
+
+    private static boolean isFrontendGroup(String token) {
+        return token != null && FRONTEND_GROUPS.contains(token.toLowerCase());
+    }
+
+    private static boolean isPendingToken(String cleaned) {
+        return cleaned.isBlank()
+            || "unknown".equalsIgnoreCase(cleaned)
+            || cleaned.startsWith("tba")
+            || cleaned.contains("to be assigned")
+            || cleaned.contains("to be determined");
+    }
+
+    private static boolean isPendingType(String input) {
+        return isPendingToken(normalizeToken(input));
     }
 }

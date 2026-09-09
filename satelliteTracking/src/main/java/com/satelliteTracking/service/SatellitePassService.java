@@ -917,6 +917,10 @@ public class SatellitePassService {
                 if (sat == null || sat.getId() == null) {
                     continue;
                 }
+
+                if (SatelliteTypeNormalizer.isPendingClassification(sat)) {
+                    continue;
+                }
                 
                 double inclination = latestParams.getInclination();
                 if (canBeVisibleAtLatitude(inclination, observerLat)) {

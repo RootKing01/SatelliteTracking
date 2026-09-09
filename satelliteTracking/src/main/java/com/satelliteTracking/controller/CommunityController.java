@@ -4,9 +4,12 @@ import com.satelliteTracking.dto.CommunityCommentCreateRequestDTO;
 import com.satelliteTracking.dto.CommunityCommentDTO;
 import com.satelliteTracking.dto.CommunityCommentReportRequestDTO;
 import com.satelliteTracking.dto.CommunityCommentUpdateRequestDTO;
+import com.satelliteTracking.dto.CommunityNotificationDTO;
 import com.satelliteTracking.dto.CommunityFeedItemDTO;
 import com.satelliteTracking.dto.CommunityThreadCreateRequestDTO;
 import com.satelliteTracking.dto.CommunityThreadLikeDTO;
+import com.satelliteTracking.dto.CommunityThreadReadStateDTO;
+import com.satelliteTracking.dto.CommunityThreadReadStateUpdateRequestDTO;
 import com.satelliteTracking.dto.CommunityThreadWithCommentsDTO;
 import com.satelliteTracking.service.CommunityService;
 import org.springframework.http.ResponseEntity;
@@ -105,5 +108,35 @@ public class CommunityController {
     @PostMapping("/threads/{threadId}/likes")
     public ResponseEntity<CommunityThreadLikeDTO> toggleThreadLike(@PathVariable Long threadId) {
         return ResponseEntity.ok(communityService.toggleThreadLike(threadId));
+    }
+
+    @GetMapping("/notifications")
+    public ResponseEntity<List<CommunityNotificationDTO>> getNotifications(
+        @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ResponseEntity.ok(communityService.getNotifications(limit));
+    }
+
+    @GetMapping("/notifications/unread-count")
+    public ResponseEntity<Map<String, Long>> getUnreadNotificationCount() {
+        return ResponseEntity.ok(Map.of("unreadCount", communityService.getUnreadNotificationCount()));
+    }
+
+    @PostMapping("/notifications/{notificationId}/read")
+    public ResponseEntity<CommunityNotificationDTO> markNotificationAsRead(@PathVariable Long notificationId) {
+        return ResponseEntity.ok(communityService.markNotificationAsRead(notificationId));
+    }
+
+    @GetMapping("/threads/{threadId}/read-state")
+    public ResponseEntity<CommunityThreadReadStateDTO> getThreadReadState(@PathVariable Long threadId) {
+        return ResponseEntity.ok(communityService.getThreadReadState(threadId));
+    }
+
+    @PutMapping("/threads/{threadId}/read-state")
+    public ResponseEntity<CommunityThreadReadStateDTO> updateThreadReadState(
+        @PathVariable Long threadId,
+        @RequestBody(required = false) CommunityThreadReadStateUpdateRequestDTO request
+    ) {
+        return ResponseEntity.ok(communityService.updateThreadReadState(threadId, request));
     }
 }

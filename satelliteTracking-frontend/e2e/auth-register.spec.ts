@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { loginAndAssertAuthenticated } from './helpers/auth-helpers'
+import { Component } from 'react'
 
 test.describe('Authentication Register', () => {
   test('should register new user with valid data', async ({ page, browserName }, testInfo) => {
@@ -10,21 +11,24 @@ test.describe('Authentication Register', () => {
     const uniqueUsername = `testuser-${uniqueSuffix}`
     const uniqueEmail = `test-${uniqueSuffix}@example.com`
     const password = 'TestPassword123!'
+    const confirmPassword = 'TestPassword123!'
 
     const usernameInput = page.locator('label:has-text("Username") input')
     const emailInput = page.locator('label:has-text("Email") input')
     const passwordInput = page.locator('label:has-text("Password") input').first()
+    const passwordConfirmInput = page.locator('label:has-text("Password") input').nth(1)
 
     await usernameInput.fill(uniqueUsername)
     await emailInput.fill(uniqueEmail)
     await passwordInput.fill(password)
+    await passwordConfirmInput.fill(confirmPassword)
 
     const registerResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/auth/register') && response.request().method() === 'POST',
     )
 
-    await page.click('button:has-text("Crea account")')
+    await page.click('button:has-text("Registrati")')
 
     const registerResponse = await registerResponsePromise
     if (!registerResponse.ok()) {
@@ -41,7 +45,8 @@ test.describe('Authentication Register', () => {
     }
 
     await expect(logoutButton).toBeVisible({ timeout: 15000 })
-    await expect(page.locator('text=Live globe')).toBeVisible()
+    
+    await expect(page.locator('section.viewer-section')).toBeVisible()
   })
 
   test('should show validation error for short password', async ({ page }) => {
@@ -51,11 +56,13 @@ test.describe('Authentication Register', () => {
     const usernameInput = page.locator('label:has-text("Username") input')
     const emailInput = page.locator('label:has-text("Email") input')
     const passwordInput = page.locator('label:has-text("Password") input').first()
+    const passwordConfirmInput = page.locator('label:has-text("Conferma password") input')
 
     await usernameInput.fill(`user${Date.now()}`)
     await emailInput.fill(`test-${Date.now()}@example.com`)
     await passwordInput.fill('short')
-    await page.click('button:has-text("Crea account")')
+    await passwordConfirmInput.fill('short')
+    await page.click('button:has-text("Registrati")')
 
     await expect(page.locator('.auth-error')).toBeVisible({ timeout: 5000 })
   })

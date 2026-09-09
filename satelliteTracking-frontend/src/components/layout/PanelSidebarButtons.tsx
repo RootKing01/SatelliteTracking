@@ -1,4 +1,4 @@
-export type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'music' | 'community'
+export type SidebarPane = 'groups' | 'satellites' | 'visibility' | 'sightings' | 'community'
 
 type PanelSidebarButtonsProps = {
   openPane: SidebarPane | null
@@ -62,16 +62,6 @@ function SidebarTabIcon({ variant }: SidebarTabIconProps) {
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M4.5 6.8h10.2a2 2 0 0 1 2 2v4.2a2 2 0 0 1-2 2H11l-3.5 2.7V15H4.5a2 2 0 0 1-2-2V8.8a2 2 0 0 1 2-2Z" />
           <path d="M14.5 9.2h5a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1.9V18l-2.6-1.8" />
-        </svg>
-      )
-    case 'music':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M14.2 4.5v10.1" />
-          <path d="M14.2 4.5 19 3.1v10.1" />
-          <circle cx="9.1" cy="16.2" r="2.8" />
-          <circle cx="16.8" cy="14.8" r="2.8" />
-          <path d="M16.8 14.8V5.1" />
         </svg>
       )
     default:
@@ -140,18 +130,6 @@ export function PanelSidebarButtons({ openPane, onTogglePane }: PanelSidebarButt
       >
         <span className="tab-icon tab-icon-community" aria-hidden="true">
           <SidebarTabIcon variant="community" />
-        </span>
-      </button>
-      <button
-        type="button"
-        className={openPane === 'music' ? 'tab-active' : ''}
-        aria-expanded={openPane === 'music'}
-        aria-controls="panel-music"
-        onClick={() => onTogglePane('music')}
-        title="Musica"
-      >
-        <span className="tab-icon tab-icon-music" aria-hidden="true">
-          <SidebarTabIcon variant="music" />
         </span>
       </button>
     </nav>

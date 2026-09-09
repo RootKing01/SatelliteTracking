@@ -2,6 +2,7 @@ package com.satelliteTracking.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import com.satelliteTracking.util.SatelliteTypeNormalizer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,13 +62,7 @@ public class Satellite{
     // 2) objectTypeInferred se presente
     // 3) satelliteType (valore storico)
     public String getEffectiveType() {
-        if (objectTypeRaw != null && !objectTypeRaw.isBlank() && !"UNKNOWN".equalsIgnoreCase(objectTypeRaw)) {
-            return objectTypeRaw;
-        }
-        if (objectTypeInferred != null && !objectTypeInferred.isBlank()) {
-            return objectTypeInferred;
-        }
-        return satelliteType;
+        return SatelliteTypeNormalizer.resolveEffectiveType(this);
     }
 }
 

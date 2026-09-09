@@ -140,7 +140,7 @@ public class SpaceTrackService {
         this.webClient = builder
                 .baseUrl("https://www.space-track.org")
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
-            .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+            .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(50 * 1024 * 1024))
                 .build();
     }
 
@@ -643,7 +643,80 @@ public class SpaceTrackService {
         }
     }
 
-    // Download SATCAT info for a NORAD id
+    public String downloadFullSatcat() {
+    if (isSatcatRateLimited()) {
+        log.warn("⏸️ SATCAT in cooldown fino a {} / {}", satcatCooldownUntil, satcatDailyCooldownUntil);
+        return null;
+    }
+
+    //ensureLogin();
+
+    sessionCookie = null;
+    performLogin();
+    if (sessionCookie == null) {
+        log.warn("❌ Impossibile effettuare login prima di downloadFullSatcat");
+        return null;
+    }
+
+    if (!reserveSatcatRequestSlot()) {
+        return null;
+    }
+
+    boolean permitAcquired = false;
+    try {
+        permitAcquired = acquireSpaceTrackPermit("SATCAT full");
+        if (!permitAcquired) {
+            return null;
+        }
+
+        String path = "/basicspacedata/query/class/satcat/format/json";
+        ResponseEntity<byte[]> response = performSpaceTrackGet(path, Duration.ofMinutes(10), "SATCAT full");
+
+        byte[] body = response != null ? response.getBody() : null;
+        String result = body != null ? new String(body, StandardCharsets.UTF_8) : null;
+        int status = response != null ? response.getStatusCode().value() : -1;
+        logSpaceTrackResponse("SATCAT full", status, result);
+
+        // Retry se session scaduta
+        if (result != null && isHtmlResponse(result)) {
+            sessionCookie = null;
+            performLogin();
+            if (sessionCookie != null) {
+                response = performSpaceTrackGet(path, Duration.ofMinutes(10), "SATCAT full retry");
+                byte[] retryBody = response != null ? response.getBody() : null;
+                result = retryBody != null ? new String(retryBody, StandardCharsets.UTF_8) : null;
+                status = response != null ? response.getStatusCode().value() : -1;
+                logSpaceTrackResponse("SATCAT full retry", status, result);
+            }
+        }
+
+        if (result != null && !result.isBlank()) {
+            markSatcatDailyCooldown();
+        }
+
+        return result;
+
+    } catch (WebClientResponseException e) {
+        if (e.getStatusCode().value() == 429) {
+            satcatCooldownUntil = LocalDateTime.now().plus(SATCAT_COOLDOWN);
+            log.error("❌ HTTP 429 SATCAT: cooldown fino a {}", satcatCooldownUntil);
+            synchronized (this) {
+                satcatRequestsThisWindow.set(0);
+                satcatRequestsThisMinute.set(0);
+                satcatWindowStart = LocalDateTime.now();
+                satcatMinuteWindowStart = LocalDateTime.now();
+            }
+            return null;
+        }
+        log.error("❌ HTTP error SATCAT: {}", e.getStatusCode());
+        return null;
+    } finally {
+        releaseSpaceTrackPermit(permitAcquired);
+    }
+}
+
+
+
     public String downloadSatcatByNoradId(Long noradId) {
         List<Long> single = List.of(noradId);
         String res = downloadSatcatByNoradIds(single);

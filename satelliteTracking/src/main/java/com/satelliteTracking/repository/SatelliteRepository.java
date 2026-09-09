@@ -24,6 +24,6 @@ public interface SatelliteRepository extends JpaRepository<Satellite, Long> {
     // Trova un satellite per nome esatto
     Optional<Satellite> findByObjectName(String objectName);
 
-    @Query("select s from Satellite s where s.objectTypeRaw is null or upper(s.objectTypeRaw)=upper(:unknown)")
+    @Query("select s from Satellite s where s.objectTypeRaw is null or upper(s.objectTypeRaw)=upper(:unknown) or upper(s.objectTypeRaw) like 'TBA%' or upper(s.objectTypeRaw) like '%TO BE ASSIGNED%'")
     Page<Satellite> findUnknown(@Param("unknown") String unknown, Pageable pageable);
 }
