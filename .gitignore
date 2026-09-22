@@ -1,0 +1,58 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+target/
+build/
+*.jar
+*.war
+*.ear
+
+# Dependencies
+node_modules/
+/.classpath
+/.project
+/.settings
+/bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Orekit data
+/orekit-data/
+orekit-data-volume/
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Generated test and report artifacts
+**/playwright-report/
+**/test-results/
+**/coverage/
+**/.nyc_output/
+**/.vite/
+
+# Documentation
+/docs/
+TELEGRAM_NOTIFICATIONS.md
+FIREBASE_FCM_SETUP.md
+
+# logs file (repo root)
+/full_logs.txt
+/satellite-new-satellites.txt
+/typescript
