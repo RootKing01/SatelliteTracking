@@ -1,4 +1,13 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react'
 import {
   BoundingSphere,
   Cartesian3,
@@ -93,6 +102,109 @@ function updateSatellitePointPrimitive(
   primitive.outlineColor = Color.WHITE
   primitive.outlineWidth = outlineWidth
   primitive.disableDepthTestDistance = showBackSideSatellites ? Number.POSITIVE_INFINITY : 0
+}
+
+type PointPrimitiveLayerConfig<TItem, TKey> = {
+  viewer: CesiumViewer
+  collectionRef: MutableRefObject<PointPrimitiveCollection | null>
+  primitiveByKeyRef: MutableRefObject<Map<TKey, PointPrimitive>>
+  nextKeysRef: MutableRefObject<Set<TKey>>
+  items: TItem[]
+  getKey: (item: TItem) => TKey
+  getEntityId: (item: TItem) => string
+  getSatellite: (item: TItem) => SatellitePosition
+  getColor: (item: TItem) => Color
+  selectedEntityId: string | null
+  showBackSideSatellites: boolean
+  selectedPixelSize: number
+  unselectedPixelSize: number
+  selectedOutlineWidth: number
+  unselectedOutlineWidth: number
+}
+
+function updatePointPrimitiveLayer<TItem, TKey>(
+  config: PointPrimitiveLayerConfig<TItem, TKey>,
+) {
+  const {
+    viewer,
+    collectionRef,
+    primitiveByKeyRef,
+    nextKeysRef,
+    items,
+    getKey,
+    getEntityId,
+    getSatellite,
+    getColor,
+    selectedEntityId,
+    showBackSideSatellites,
+    selectedPixelSize,
+    unselectedPixelSize,
+    selectedOutlineWidth,
+    unselectedOutlineWidth,
+  } = config
+
+  if (!collectionRef.current) {
+    collectionRef.current = viewer.scene.primitives.add(new PointPrimitiveCollection())
+  }
+
+  const collection = collectionRef.current
+  if (!collection) {
+    return () => {}
+  }
+
+  const nextKeys = nextKeysRef.current
+  nextKeys.clear()
+
+  return scheduleChunkedUpdate(
+    items.length,
+    (start, end) => {
+      for (let idx = start; idx < end; idx += 1) {
+        const item = items[idx]
+        const key = getKey(item)
+        nextKeys.add(key)
+
+        const entityId = getEntityId(item)
+        const isSelected = selectedEntityId === entityId
+        const satellite = getSatellite(item)
+        const color = getColor(item)
+        const pixelSize = isSelected ? selectedPixelSize : unselectedPixelSize
+        const outlineWidth = isSelected ? selectedOutlineWidth : unselectedOutlineWidth
+        const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
+
+        let primitive = primitiveByKeyRef.current.get(key)
+
+        if (!primitive) {
+          primitive = collection.add({
+            position: Cartesian3.fromDegrees(
+              satellite.longitudeDeg,
+              satellite.latitudeDeg,
+              altitudeMeters,
+            ),
+            color,
+            pixelSize,
+            outlineColor: Color.WHITE,
+            outlineWidth,
+            disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
+            id: {
+              entityId,
+            },
+          })
+          primitiveByKeyRef.current.set(key, primitive)
+          continue
+        }
+
+        updateSatellitePointPrimitive(primitive, satellite, color, pixelSize, outlineWidth, showBackSideSatellites)
+      }
+    },
+    () => {
+      for (const [key, primitive] of primitiveByKeyRef.current) {
+        if (!nextKeys.has(key)) {
+          collection.remove(primitive)
+          primitiveByKeyRef.current.delete(key)
+        }
+      }
+    },
+  )
 }
 
 export type VisibleSatelliteItem = {
@@ -535,73 +647,23 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         return
       }
 
-      if (!starlinkPointsRef.current) {
-        starlinkPointsRef.current = viewer.scene.primitives.add(new PointPrimitiveCollection())
-      }
-
-      const collection = starlinkPointsRef.current
-      if (!collection) {
-        return
-      }
-
-      const starlinkColor = groupColorMap.starlink
-      const nextIds = starlinkNextIdsRef.current
-      nextIds.clear()
-      const cleanupChunkedUpdate = scheduleChunkedUpdate(
-        starlinkSatellites.length,
-        (start, end) => {
-        for (let idx = start; idx < end; idx += 1) {
-          const satellite = starlinkSatellites[idx]
-          const satelliteId = satellite.satelliteId
-          nextIds.add(satelliteId)
-
-          const entityId = `starlink-${satelliteId}`
-          const isSelected = selectedEntityId === entityId
-          const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
-          let primitive = starlinkPrimitiveByIdRef.current.get(satelliteId)
-
-          if (!primitive) {
-            primitive = collection.add({
-              position: Cartesian3.fromDegrees(
-                satellite.longitudeDeg,
-                satellite.latitudeDeg,
-                altitudeMeters,
-              ),
-              color: starlinkColor,
-              pixelSize: isSelected ? 6 : 4,
-              outlineColor: Color.WHITE,
-              outlineWidth: isSelected ? 3 : 0,
-              disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
-              id: {
-                entityId,
-              },
-            })
-            starlinkPrimitiveByIdRef.current.set(satelliteId, primitive)
-            continue
-          }
-
-          updateSatellitePointPrimitive(
-            primitive,
-            satellite,
-            starlinkColor,
-            isSelected ? 6 : 4,
-            isSelected ? 3 : 0,
-            showBackSideSatellites,
-          )
-        }
-        },
-        () => {
-          // cleanup removed primitives after finishing updates
-          for (const [satelliteId, primitive] of starlinkPrimitiveByIdRef.current) {
-            if (!nextIds.has(satelliteId)) {
-              collection.remove(primitive)
-              starlinkPrimitiveByIdRef.current.delete(satelliteId)
-            }
-          }
-        },
-      )
-
-      return cleanupChunkedUpdate
+      return updatePointPrimitiveLayer({
+        viewer,
+        collectionRef: starlinkPointsRef,
+        primitiveByKeyRef: starlinkPrimitiveByIdRef,
+        nextKeysRef: starlinkNextIdsRef,
+        items: starlinkSatellites,
+        getKey: (satellite) => satellite.satelliteId,
+        getEntityId: (satellite) => `starlink-${satellite.satelliteId}`,
+        getSatellite: (satellite) => satellite,
+        getColor: () => groupColorMap.starlink,
+        selectedEntityId,
+        showBackSideSatellites,
+        selectedPixelSize: 6,
+        unselectedPixelSize: 4,
+        selectedOutlineWidth: 3,
+        unselectedOutlineWidth: 0,
+      })
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, starlinkSatellites])
 
     useEffect(() => {
@@ -610,71 +672,23 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         return
       }
 
-      if (!groupPointsRef.current) {
-        groupPointsRef.current = viewer.scene.primitives.add(new PointPrimitiveCollection())
-      }
-
-      const collection = groupPointsRef.current
-      if (!collection) {
-        return
-      }
-
-      const nextEntityIds = groupNextEntityIdsRef.current
-      nextEntityIds.clear()
-      const cleanupChunkedUpdate = scheduleChunkedUpdate(
-        visibleEntitySatellites.length,
-        (start, end) => {
-        for (let idx = start; idx < end; idx += 1) {
-          const { group, satellite } = visibleEntitySatellites[idx]
-          const entityId = `${group.key}-${satellite.satelliteId}`
-          nextEntityIds.add(entityId)
-
-          const isSelected = selectedEntityId === entityId
-          const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
-          const groupColor = groupColorMap[group.key]
-          let primitive = groupPrimitiveByEntityIdRef.current.get(entityId)
-
-          if (!primitive) {
-            primitive = collection.add({
-              position: Cartesian3.fromDegrees(
-                satellite.longitudeDeg,
-                satellite.latitudeDeg,
-                altitudeMeters,
-              ),
-              color: groupColor,
-              pixelSize: isSelected ? 13 : 7,
-              outlineColor: Color.WHITE,
-              outlineWidth: isSelected ? 3 : 1,
-              disableDepthTestDistance: showBackSideSatellites ? Number.POSITIVE_INFINITY : 0,
-              id: {
-                entityId,
-              },
-            })
-            groupPrimitiveByEntityIdRef.current.set(entityId, primitive)
-            continue
-          }
-
-          updateSatellitePointPrimitive(
-            primitive,
-            satellite,
-            groupColor,
-            isSelected ? 13 : 7,
-            isSelected ? 3 : 1,
-            showBackSideSatellites,
-          )
-        }
-        },
-        () => {
-          for (const [entityId, primitive] of groupPrimitiveByEntityIdRef.current) {
-            if (!nextEntityIds.has(entityId)) {
-              collection.remove(primitive)
-              groupPrimitiveByEntityIdRef.current.delete(entityId)
-            }
-          }
-        },
-      )
-
-      return cleanupChunkedUpdate
+      return updatePointPrimitiveLayer({
+        viewer,
+        collectionRef: groupPointsRef,
+        primitiveByKeyRef: groupPrimitiveByEntityIdRef,
+        nextKeysRef: groupNextEntityIdsRef,
+        items: visibleEntitySatellites,
+        getKey: (item) => `${item.group.key}-${item.satellite.satelliteId}`,
+        getEntityId: (item) => `${item.group.key}-${item.satellite.satelliteId}`,
+        getSatellite: (item) => item.satellite,
+        getColor: (item) => groupColorMap[item.group.key],
+        selectedEntityId,
+        showBackSideSatellites,
+        selectedPixelSize: 13,
+        unselectedPixelSize: 7,
+        selectedOutlineWidth: 3,
+        unselectedOutlineWidth: 1,
+      })
     }, [groupColorMap, selectedEntityId, showBackSideSatellites, visibleEntitySatellites])
 
     useEffect(() => {
