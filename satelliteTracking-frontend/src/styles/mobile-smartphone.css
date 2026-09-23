@@ -16,8 +16,7 @@
 
   /* NASCONDI ELEMENTI NON ESSENZIALI SU MOBILE */
   .group-meta,
-  .sync-footer-card,
-  .refresh-guard-note {
+  .sync-footer-card{
     display: none !important;
   }
 
@@ -161,8 +160,6 @@
   .auth-tabs button,
   .search-result-item,
   .group-preset-row select,
-  .refresh-controls select,
-  .refresh-controls input,
   .visibility-grid input,
   .visibility-city-row input,
   .sighting-city-input,
@@ -198,7 +195,6 @@
 
   .search-label,
   .group-preset-row label,
-  .refresh-controls label,
   .visibility-grid label,
   .visibility-city-row,
   .auth-form label {
@@ -228,12 +224,6 @@
 
   .toolbar button {
     width: 100%;
-  }
-
-  .refresh-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
   }
 
   .group-preset-row {
@@ -522,8 +512,6 @@
   .visibility-overlay-header button,
   .visibility-full-list-actions button,
   .group-preset-row select,
-  .refresh-controls input,
-  .refresh-controls select,
   .visibility-grid input,
   .visibility-city-row input,
   .sighting-city-input,
@@ -631,7 +619,6 @@
 
   .group-meta,
   .sync-footer-card,
-  .refresh-guard-note,
   .panel-badge {
     display: none !important;
   }
@@ -745,7 +732,6 @@
   }
 
   .toolbar,
-  .refresh-controls,
   .group-preset-row,
   .visibility-grid,
   .visibility-actions,
@@ -763,8 +749,6 @@
   .auth-submit,
   .auth-tabs button,
   .group-preset-row select,
-  .refresh-controls input,
-  .refresh-controls select,
   .visibility-grid input,
   .visibility-city-row input,
   .sighting-city-input,
@@ -1017,10 +1001,4 @@
     z-index: 101;
   }
 
-  /* Previeni scroll body quando overlay aperto */
-  body.overlay-open {
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-  }
 }

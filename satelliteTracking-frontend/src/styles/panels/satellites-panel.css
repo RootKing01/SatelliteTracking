@@ -61,22 +61,3 @@
   margin-top: 0;
 }
 
-.sync-footer-card .compass-row:first-of-type {
-  margin-top: 8px;
-}
-
-.compass-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  color: #c0d8ef;
-}
-
-.compass-row + .compass-row {
-  margin-top: 4px;
-}
-
-.compass-row strong {
-  color: #f2f8ff;
-}

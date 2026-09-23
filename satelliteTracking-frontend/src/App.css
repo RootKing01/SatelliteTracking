@@ -555,45 +555,6 @@
   font-size: 0.8rem;
 }
 
-.refresh-guard-note {
-  color: #9de4ff;
-  font-size: 0.74rem;
-  line-height: 1.35;
-}
-
-.refresh-controls {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.refresh-controls label {
-  color: #a6c8e8;
-  font-size: 0.8rem;
-}
-
-.refresh-controls input {
-  width: 76px;
-  border-radius: 8px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
-  color: #e2f7ff;
-  padding: 5px 7px;
-  font-size: 0.8rem;
-}
-
-.refresh-controls select {
-  width: 92px;
-  border-radius: 8px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
-  color: #e2f7ff;
-  padding: 5px 7px;
-  font-size: 0.8rem;
-}
-
 .viewer-hud {
   position: absolute;
   top: 124px;
@@ -725,14 +686,6 @@
 .sighting-coords {
   color: #8fc4e8;
   font-size: 0.74rem;
-}
-
-.sighting-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #c7def5;
-  font-size: 0.82rem;
 }
 
 .sighting-actions button {

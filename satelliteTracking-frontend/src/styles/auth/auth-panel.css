@@ -1,114 +1,3 @@
-/* Ping badge stile coerente con gli altri badge di stato */
-.system-health-badge.system-health-ping-badge {
-  margin-left: 18px;
-  background: linear-gradient(90deg, #0ff 0%, #00ffe1 100%);
-  color: #0a2a3a;
-  border: 1.5px solid #00ffe1cc;
-  box-shadow: 0 0 12px #00ffe1a0, 0 2px 12px #0ff2;
-  font-weight: 700;
-  font-family: 'Orbitron', 'Share Tech Mono', 'Audiowide', Arial, sans-serif;
-  font-size: 1.04rem;
-  letter-spacing: 0.04em;
-  padding: 6px 18px 6px 12px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  transition: box-shadow 0.18s, color 0.18s, border-color 0.18s, background 0.18s;
-  cursor: pointer;
-  user-select: none;
-}
-
-.system-health-badge.system-health-ping-badge:hover {
-  color: #fff;
-  border-color: #00ffe1;
-  box-shadow: 0 0 18px #00ffe1cc, 0 2px 16px #0ff2;
-}
-
-.system-health-badge.system-health-ping-badge.loading {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.system-health-dot.system-health-ping-dot {
-  width: 12px;
-  height: 12px;
-  background: linear-gradient(135deg, #00ffe1 60%, #0ff 100%);
-  box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
-  margin-right: 2px;
-  animation: pingDotPulse 1.2s infinite alternate;
-}
-
-.system-health-badge.system-health-ping-badge.loading .system-health-dot.system-health-ping-dot {
-  animation: pingDotSpin 0.7s linear infinite;
-}
-/* System Health Ping Button */
-.system-health-ping-btn {
-  margin-left: 18px;
-  padding: 6px 18px 6px 12px;
-  border-radius: 8px;
-  border: 1.5px solid #00ffe1cc;
-  background: rgba(8, 24, 45, 0.55);
-  color: #aefcff;
-  font-family: 'Orbitron', 'Share Tech Mono', 'Audiowide', Arial, sans-serif;
-  font-size: 1.04rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  box-shadow: 0 0 8px #00ffe1a0, 0 2px 8px #0ff2;
-  text-shadow: 0 0 8px #00ffe1, 0 1px 0 #0ff;
-  cursor: pointer;
-  outline: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  transition: box-shadow 0.18s, color 0.18s, border-color 0.18s, background 0.18s;
-  position: relative;
-  z-index: 1;
-}
-
-.system-health-ping-btn:hover:not(:disabled) {
-  color: #fff;
-  border-color: #00ffe1;
-  box-shadow: 0 0 18px #00ffe1cc, 0 2px 16px #0ff2;
-}
-
-.system-health-ping-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.system-health-ping-dot {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #00ffe1 60%, #0ff 100%);
-  box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
-  margin-right: 2px;
-  animation: pingDotPulse 1.2s infinite alternate;
-}
-
-.system-health-ping-btn.loading .system-health-ping-dot {
-  animation: pingDotSpin 0.7s linear infinite;
-}
-
-@keyframes pingDotPulse {
-  0% {
-    box-shadow: 0 0 8px #00ffe1cc, 0 0 16px #00ffe1a0;
-  }
-  100% {
-    box-shadow: 0 0 18px #00ffe1, 0 0 32px #00ffe1cc;
-  }
-}
-
-@keyframes pingDotSpin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
 @import url('https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@700&family=Share+Tech+Mono&display=swap');
 
 .auth-shell {
@@ -188,11 +77,9 @@
 .auth-logo-glow-wrap,
 .auth-card-header,
 .auth-separator-glow,
-.auth-welcome,
 .auth-info,
 .auth-switcher,
-.auth-form,
-.auth-hint {
+.auth-form {
   position: relative;
   z-index: 1;
 }
@@ -329,14 +216,6 @@
   }
 }
 
-.auth-tabs {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.auth-tabs button,
 .auth-submit {
   transition:
     border-color 180ms ease,
@@ -344,23 +223,6 @@
     background-color 180ms ease,
     box-shadow 220ms ease,
     transform 180ms ease;
-}
-
-.auth-tabs button {
-  border-radius: 12px;
-  border: 1.5px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
-  color: #d8f8ff;
-  padding: 10px 0;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.auth-tabs button.is-active {
-  background: linear-gradient(180deg, rgba(16, 53, 94, 0.95), rgba(8, 22, 42, 0.95));
-  border-color: rgba(125, 244, 255, 0.9);
-  box-shadow: 0 0 10px rgba(95, 245, 255, 0.26);
 }
 
 .auth-form {
@@ -455,15 +317,7 @@
   text-align: center;
 }
 
-.auth-hint {
-  margin-top: 10px;
-  text-align: center;
-  color: #93b6d8;
-  font-size: 0.84rem;
-}
-
 @media (hover: hover) and (pointer: fine) {
-  .auth-tabs button:hover,
   .auth-submit:hover:not(:disabled) {
     border-color: rgba(141, 255, 249, 0.95);
     color: #ecffff;
@@ -472,14 +326,12 @@
       0 0 14px rgba(95, 245, 255, 0.12);
   }
 
-  .auth-tabs button:active,
   .auth-submit:active:not(:disabled) {
     box-shadow: none;
     transform: translateY(1px);
   }
 }
 
-.auth-tabs button:focus-visible,
 .auth-submit:focus-visible,
 .auth-switcher button:focus-visible {
   outline: none;

@@ -164,14 +164,6 @@ export function AuthPanel({
             {authMode === 'login' ? 'Accedi' : 'Registrati'}
           </button>
         </form>
-        
-        {/* <div className="auth-hint">
-          <p>
-            Profilo base: <strong>demo</strong> / <strong>Demo123!</strong>
-          </p>
-        </div>
-        */}
-       
       </section>
     </main>
   )
