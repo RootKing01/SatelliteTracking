@@ -1,10 +1,7 @@
 package com.satelliteTracking.controller;
 
-import com.satelliteTracking.dto.AuthLoginRequestDTO;
-import com.satelliteTracking.dto.AuthRegisterRequestDTO;
-import com.satelliteTracking.dto.AuthResponseDTO;
-import com.satelliteTracking.service.AuthService;
-import com.satelliteTracking.service.JwtService;
+import java.time.Duration;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -14,9 +11,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import jakarta.servlet.http.HttpServletRequest;
 
-import java.time.Duration;
+import com.satelliteTracking.dto.AuthLoginRequestDTO;
+import com.satelliteTracking.dto.AuthRegisterRequestDTO;
+import com.satelliteTracking.dto.AuthResponseDTO;
+import com.satelliteTracking.service.AuthService;
+import com.satelliteTracking.service.JwtService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -33,31 +35,48 @@ public class AuthController {
 
     @Value("${app.security.jwt.cookie-same-site:Lax}")
     private String jwtCookieSameSite;
-
+ 
     public AuthController(AuthService authService, JwtService jwtService) {
         this.authService = authService;
         this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponseDTO> register(@RequestBody AuthRegisterRequestDTO request,
-                                                    HttpServletRequest httpRequest) {
+    public ResponseEntity<AuthResponseDTO> register(
+        @RequestBody AuthRegisterRequestDTO request,
+        HttpServletRequest httpRequest) {
+
         AuthResponseDTO response = authService.register(request);
+
+        // Il JWT viene inserito nel cookie HttpOnly.
         ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
-        return ResponseEntity.ok()
-            .header(HttpHeaders.SET_COOKIE, cookie.toString())
-            .body(response);
+
+    // Il JWT non viene restituito nel body JSON.
+    AuthResponseDTO safeResponse = withoutToken(response);
+
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, cookie.toString())
+        .body(safeResponse);
+
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponseDTO> login(@RequestBody AuthLoginRequestDTO request,
-                                                 HttpServletRequest httpRequest) {
-        AuthResponseDTO response = authService.login(request);
-        ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
-        return ResponseEntity.ok()
-            .header(HttpHeaders.SET_COOKIE, cookie.toString())
-            .body(response);
-    }
+public ResponseEntity<AuthResponseDTO> login(
+        @RequestBody AuthLoginRequestDTO request,
+        HttpServletRequest httpRequest) {
+
+    AuthResponseDTO response = authService.login(request);
+
+    // Il JWT viene inserito nel cookie HttpOnly.
+    ResponseCookie cookie = buildAuthCookie(response.token(), httpRequest);
+
+    // Il JWT non viene restituito nel body JSON.
+    AuthResponseDTO safeResponse = withoutToken(response);
+
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, cookie.toString())
+        .body(safeResponse);
+}
 
     @GetMapping("/me")
     public ResponseEntity<AuthResponseDTO> me() {
@@ -103,5 +122,14 @@ public class AuthController {
         }
 
         return false;
+    }
+
+    private AuthResponseDTO withoutToken(AuthResponseDTO response) {
+    return new AuthResponseDTO(
+        response.authenticated(),
+        response.message(),
+        response.user(),
+        null
+        );
     }
 }

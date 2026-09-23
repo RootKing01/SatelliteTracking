@@ -1,20 +1,26 @@
 package com.satelliteTracking.config;
 
+import java.io.File;
+
 import org.orekit.data.DataContext;
 import org.orekit.data.DataProvidersManager;
 import org.orekit.data.DirectoryCrawler;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
+
 import jakarta.annotation.PostConstruct;
-import java.io.File;
 
 /**
  * Configurazione per la libreria Orekit
  * Orekit richiede dati astronomici per calcoli precisi
+ * 
+ * 
  */
 @Configuration
 public class OrekitConfig {
+
+    
 
     private volatile boolean orekitDataLoaded;
     private volatile String orekitDataPath = "/orekit-data";

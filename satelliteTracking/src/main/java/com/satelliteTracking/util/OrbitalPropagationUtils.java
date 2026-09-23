@@ -1,6 +1,9 @@
 package com.satelliteTracking.util;
 
-import com.satelliteTracking.model.OrbitalParameters;
+import java.util.Optional;
+
+import org.hipparchus.ode.nonstiff.DormandPrince853Integrator;
+import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.forces.drag.DragForce;
 import org.orekit.forces.drag.IsotropicDrag;
 import org.orekit.forces.gravity.HolmesFeatherstoneAttractionModel;
@@ -9,7 +12,6 @@ import org.orekit.forces.gravity.potential.NormalizedSphericalHarmonicsProvider;
 import org.orekit.frames.Frame;
 import org.orekit.frames.FramesFactory;
 import org.orekit.models.earth.atmosphere.SimpleExponentialAtmosphere;
-import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.orbits.KeplerianOrbit;
 import org.orekit.orbits.PositionAngleType;
 import org.orekit.propagation.Propagator;
@@ -22,9 +24,8 @@ import org.orekit.time.AbsoluteDate;
 import org.orekit.time.TimeScalesFactory;
 import org.orekit.utils.Constants;
 import org.orekit.utils.IERSConventions;
-import org.hipparchus.ode.nonstiff.DormandPrince853Integrator;
 
-import java.util.Optional;
+import com.satelliteTracking.model.OrbitalParameters;
 
 public final class OrbitalPropagationUtils {
 
