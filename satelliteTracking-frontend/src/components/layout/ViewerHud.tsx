@@ -37,14 +37,7 @@ export function SatelliteDetailsHud({
         <div className="details-head">
           <strong>{selectedSatellite.satellite.satelliteName}</strong>
           <div className="details-head-actions">
-            <button
-              type="button"
-              className="primary-sighting-button"
-              onClick={onReportSighting}
-              disabled={reportingSighting}
-            >
-              {reportingSighting ? 'Invio...' : 'Invia avvistamento'}
-            </button>
+
             <button type="button" onClick={onClose}>Chiudi</button>
           </div>
         </div>
@@ -112,8 +105,13 @@ export function SatelliteDetailsHud({
           ) : null}
           {sightingInfo ? <small className="sighting-coords">{sightingInfo}</small> : null}
           {sightingsError ? <small className="sighting-error-inline">{sightingsError}</small> : null}
-          <button type="button" onClick={onReportSighting} disabled={reportingSighting}>
-            {reportingSighting ? 'Invio avvistamento...' : 'Conferma avvistamento'}
+          <button
+              type="button"
+              className="primary-sighting-button"
+              onClick={onReportSighting}
+              disabled={reportingSighting}
+            >
+              {reportingSighting ? 'Invio...' : 'Invia avvistamento'}
           </button>
         </div>
       </section>

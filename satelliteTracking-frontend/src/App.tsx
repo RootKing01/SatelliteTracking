@@ -4,11 +4,11 @@ import {
   useCalculateVisibility,
   useFocusBySatelliteId,
 } from './hooks/useInteractionHandlers'
-import { useLiveSatelliteGroups } from './hooks/useLiveSatelliteGroups'
+import { defaultEnabledGroups, useSatelliteTracking } from './hooks/useSatelliteTracking'
 import { useAuthFlow } from './hooks/useAuthFlow'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
-import { Color, Ion } from 'cesium'
+import { Ion } from 'cesium'
 import {
   loadOrekitStatus,
   loadSystemHealth,
@@ -18,20 +18,16 @@ import {
 import {
   fetchMySightings,
   fetchSatelliteCatalogByType,
-  fetchSatelliteGroupsStats,
   fetchSatellitePositionById,
   type SatelliteCatalogItem,
   type SatelliteSighting,
   type UpcomingPass,
 } from './api/satelliteClient'
-import { satelliteGroupSources } from './api/groups'
-import type { SatelliteGroupKey, SatelliteGroupSource } from './api/groups/types'
+import type { SatelliteGroupKey } from './api/groups/types'
 import { extractAuthErrorMessage } from './helpers/appErrorHelpers'
 import { handleUseBrowserLocationImpl, handleUseBrowserLocationForVisibilityImpl } from './helpers/locationHelpers'
-import { buildEnabledGroupsFromPreset, buildGroupRows, buildRuntimeSatelliteGroupSources, createDefaultEnabledGroups, type GroupPreset } from './helpers/groupHelpers'
+import { buildEnabledGroupsFromPreset, buildGroupRows, type GroupPreset } from './helpers/groupHelpers'
 import {
-  buildLiveEntityIdBySatelliteId,
-  buildSatelliteLookupByEntityId,
   buildSearchResultItems,
   type SatelliteSearchScope,
   type SelectedSatelliteState,
@@ -46,7 +42,7 @@ import { PanelSidebarButtons, type SidebarPane } from './components/layout/Panel
 import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SidebarPaneContent } from './components/layout/SidebarPaneContent'
 import { MoonDetailsHud, SatelliteDetailsHud } from './components/layout/ViewerHud'
-import { SatelliteGlobe, type SatelliteGlobeHandle, type VisibleSatelliteItem } from './components/SatelliteGlobe'
+import { SatelliteGlobe, type SatelliteGlobeHandle } from './components/SatelliteGlobe'
 import { CommunityPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import './App.css'
 import './styles/orekit-badge.css'
@@ -59,13 +55,8 @@ if (ionToken && !import.meta.env.DEV) {
   Ion.defaultAccessToken = ionToken
 }
 
-const defaultEnabledGroups = createDefaultEnabledGroups(satelliteGroupSources)
-
 function App() {
   const globeRef = useRef<SatelliteGlobeHandle>(null)
-
-  const [discoveredCanonicalGroupKeys, setDiscoveredCanonicalGroupKeys] = useState<string[]>([])
-  const [groupDiscoveryReady, setGroupDiscoveryReady] = useState(false)
 
   const [enabledGroups, setEnabledGroups] =
     useState<Record<SatelliteGroupKey, boolean>>(defaultEnabledGroups)
@@ -115,8 +106,19 @@ function App() {
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
-  const clearSightingsOnLogout = useCallback(() => {
+  const clearPrivateSessionState = useCallback(() => {
     setMySightings([])
+    setSelectedSatellite(null)
+    setSelectedEntityId(null)
+    setCatalogByGroup({})
+    setVisibilityResults([])
+    setVisibilityAllResults([])
+    setVisibilityOverlayOpen(false)
+    setVisibilityOverlayQuery('')
+    setSightingsError('')
+    setSightingInfo('')
+    setVisibilityError('')
+    setVisibilityInfo('')
   }, [])
 
   const {
@@ -143,56 +145,7 @@ function App() {
     submitLogin,
     submitRegister,
     handleLogout,
-  } = useAuthFlow({ onLogoutSuccess: clearSightingsOnLogout })
-
-  const allGroups = useMemo(
-    () =>
-      buildRuntimeSatelliteGroupSources(
-        satelliteGroupSources as readonly SatelliteGroupSource[],
-        discoveredCanonicalGroupKeys,
-      ),
-    [discoveredCanonicalGroupKeys],
-  )
-
-  const groupColorMap = useMemo(
-    () =>
-      Object.fromEntries(
-        allGroups.map((group) => [group.key, Color.fromCssColorString(group.color)]),
-      ) as Record<SatelliteGroupKey, Color>,
-    [allGroups],
-  )
-
-  useEffect(() => {
-    if (!authUser) {
-      return
-    }
-
-    const controller = new AbortController()
-
-    void fetchSatelliteGroupsStats(controller.signal)
-      .then(({ stats }) => {
-        setDiscoveredCanonicalGroupKeys(Object.keys(stats))
-      })
-      .catch(() => {
-        setDiscoveredCanonicalGroupKeys([])
-      })
-      .finally(() => {
-        setGroupDiscoveryReady(true)
-      })
-
-    return () => {
-      controller.abort()
-    }
-  }, [authUser])
-
-  const effectiveEnabledGroups = useMemo(
-    () => buildEnabledGroupsFromPreset(allGroups, selectedPreset) ?? enabledGroups,
-    [allGroups, enabledGroups, selectedPreset],
-  )
-
-  const activeGroups = useMemo(() => {
-    return allGroups.filter((group) => effectiveEnabledGroups[group.key])
-  }, [allGroups, effectiveEnabledGroups])
+  } = useAuthFlow({ onLogoutSuccess: clearPrivateSessionState })
 
   const handleLiveSessionExpired = useCallback(() => {
     setAuthUser(null)
@@ -201,16 +154,24 @@ function App() {
   }, [setAuthError, setAuthInfo, setAuthUser])
 
   const {
+    allGroups,
+    groupColorMap,
+    effectiveEnabledGroups,
     groupPositions,
     groupLoading,
     groupErrors,
     isRefreshing,
     hasLoadedOnce,
     refreshIntervalMs,
-  } = useLiveSatelliteGroups({
-    activeGroups,
+    totalVisibleCount,
+    visibleEntitySatellites,
+    starlinkSatellites,
+    satelliteLookupByEntityId,
+    liveEntityIdBySatelliteId,
+  } = useSatelliteTracking({
     authenticated: Boolean(authUser),
-    enabled: groupDiscoveryReady,
+    enabledGroups,
+    selectedPreset,
     compactMobileViewport,
     onSessionExpired: handleLiveSessionExpired,
   })
@@ -218,15 +179,6 @@ function App() {
   const allSelected = useMemo(
     () => allGroups.every((group) => effectiveEnabledGroups[group.key]),
     [allGroups, effectiveEnabledGroups],
-  )
-
-  const totalVisibleCount = useMemo(
-    () =>
-      activeGroups.reduce(
-        (total, group) => total + (groupPositions[group.key]?.length ?? 0),
-        0,
-      ),
-    [activeGroups, groupPositions],
   )
 
   useEffect(() => {
@@ -248,34 +200,6 @@ function App() {
       window.removeEventListener('orientationchange', resizeHandler)
     }
   }, [])
-
-  const visibleEntitySatellites = useMemo<VisibleSatelliteItem[]>(
-    () =>
-      activeGroups.flatMap((group) =>
-        group.key === 'starlink'
-          ? []
-          : (groupPositions[group.key] ?? []).map((satellite) => ({
-              group,
-              satellite,
-            })),
-      ),
-    [activeGroups, groupPositions],
-  )
-
-  const starlinkSatellites = useMemo(
-    () => (enabledGroups.starlink ? groupPositions.starlink ?? [] : []),
-    [enabledGroups.starlink, groupPositions.starlink],
-  )
-
-  const satelliteLookupByEntityId = useMemo(
-    () => buildSatelliteLookupByEntityId(allGroups, groupPositions),
-    [allGroups, groupPositions],
-  )
-
-  const liveEntityIdBySatelliteId = useMemo(
-    () => buildLiveEntityIdBySatelliteId(allGroups, groupPositions),
-    [allGroups, groupPositions],
-  )
 
   const visibilityQueryLocationLabel = useMemo(() => {
     return buildVisibilityQueryLocationLabel(visibilityCity, visibilityLatitude, visibilityLongitude)
@@ -573,6 +497,7 @@ function App() {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState: clearPrivateSessionState,
   })
 
   const handleUseBrowserLocation = useCallback(() => {
@@ -616,6 +541,7 @@ function App() {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState: clearPrivateSessionState,
   })
 
   const openVisibilityFullResultsOverlay = useCallback(() => {

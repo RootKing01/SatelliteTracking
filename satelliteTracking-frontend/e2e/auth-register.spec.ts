@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
 import { loginAndAssertAuthenticated } from './helpers/auth-helpers'
-import { Component } from 'react'
 
 test.describe('Authentication Register', () => {
   test('should register new user with valid data', async ({ page, browserName }, testInfo) => {

@@ -20,9 +20,11 @@ type AuthSessionSetters = {
   setAuthUser: Dispatch<SetStateAction<import('../api/authClient').AuthUser | null>>
   setAuthInfo: Dispatch<SetStateAction<string>>
   setAuthError: Dispatch<SetStateAction<string>>
+  clearSessionState?: () => void
 }
 
 function handleUnauthorizedInteraction(options: AuthSessionSetters & { message: string }) {
+  options.clearSessionState?.()
   options.setAuthUser(null)
   options.setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
   options.setAuthError(options.message)
@@ -133,6 +135,7 @@ export function useReportSighting(options: {
           setAuthUser,
           setAuthInfo,
           setAuthError,
+          clearSessionState: options.clearSessionState,
           message: 'Sessione non valida per registrare l\'avvistamento.',
         })
         return
@@ -191,6 +194,7 @@ export function useCalculateVisibility(options: {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState,
   } = options
 
   return useCallback(async () => {
@@ -224,6 +228,7 @@ export function useCalculateVisibility(options: {
           setAuthUser,
           setAuthInfo,
           setAuthError,
+          clearSessionState,
           message: 'Sessione non valida per il calcolo visibilita.',
         })
         return

@@ -1,19 +1,5 @@
 package com.satelliteTracking.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.satelliteTracking.model.OrbitalParameters;
-import com.satelliteTracking.model.Satellite;
-import com.satelliteTracking.service.SpaceTrackService.DeltaFetchResult;
-import com.satelliteTracking.service.SpaceTrackService.DeltaFetchStatus;
-import com.satelliteTracking.repository.OrbitalParametersRepository;
-import com.satelliteTracking.repository.SatelliteRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -21,9 +7,23 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.satelliteTracking.model.OrbitalParameters;
+import com.satelliteTracking.model.Satellite;
+import com.satelliteTracking.repository.OrbitalParametersRepository;
+import com.satelliteTracking.repository.SatelliteRepository;
+import com.satelliteTracking.service.SpaceTrackService.DeltaFetchResult;
+import com.satelliteTracking.service.SpaceTrackService.DeltaFetchStatus;
 
 @Service
 public class TleDataService {
@@ -244,7 +244,7 @@ public class TleDataService {
                 return FetchOutcome.FALLBACK_USED;
             }
 
-            // ⚡ FIX: passa il timestamp diretto, non una stringa di query
+            // FIX: passa il timestamp diretto, non una stringa di query
             DeltaFetchResult delta = spaceTrackService.downloadDeltaTle(lastFetchedAt);
             if (delta == null || delta.getStatus() == DeltaFetchStatus.ERROR) {
                 log.warn("❌ Space-Track ha restituito un errore sul delta");
