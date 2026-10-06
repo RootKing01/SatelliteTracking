@@ -41,11 +41,11 @@ export function SightingsPanel({
       <h3>Avvistamenti</h3>
       <p className="updated-at">Storico personale validato dal backend.</p>
 
-      {sightingInfo ? <p className="sighting-info">{sightingInfo}</p> : null}
-      {sightingsError ? <p className="sighting-error">{sightingsError}</p> : null}
+      {sightingInfo ? <p className="sighting-info" aria-live="polite">{sightingInfo}</p> : null}
+      {sightingsError ? <p className="sighting-error" role="alert">{sightingsError}</p> : null}
 
       {sightingsLoading ? (
-        <p className="updated-at">Caricamento avvistamenti...</p>
+        <p className="updated-at" aria-live="polite">Caricamento avvistamenti...</p>
       ) : mySightings.length === 0 ? (
         <p className="updated-at">Nessun avvistamento registrato.</p>
       ) : (

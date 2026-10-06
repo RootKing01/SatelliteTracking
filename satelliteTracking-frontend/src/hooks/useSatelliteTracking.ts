@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Color } from 'cesium'
 import { fetchSatelliteGroupsStats } from '../api/satelliteClient'
 import { satelliteGroupSources } from '../api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
@@ -48,8 +47,8 @@ export function useSatelliteTracking({
   const groupColorMap = useMemo(
     () =>
       Object.fromEntries(
-        allGroups.map((group) => [group.key, Color.fromCssColorString(group.color)]),
-      ) as Record<SatelliteGroupKey, Color>,
+        allGroups.map((group) => [group.key, group.color]),
+      ) as Record<SatelliteGroupKey, string>,
     [allGroups],
   )
 

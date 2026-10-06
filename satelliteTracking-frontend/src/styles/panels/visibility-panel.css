@@ -13,9 +13,9 @@
 
 .visibility-grid input,
 .visibility-city-row input {
-  border-radius: 8px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-accent);
+  background: var(--surface-input);
   color: #e2f7ff;
   padding: 6px 7px;
   font-size: 0.8rem;

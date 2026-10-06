@@ -6,6 +6,21 @@ body,
   height: 100%;
 }
 
+:root {
+  --color-bg: #02050b;
+  --color-text: #d8fcff;
+  --color-muted: #8fc4e8;
+  --color-accent: #60faff;
+  --color-accent-bright: #7ff9ff;
+  --color-danger: #ff9ea9;
+  --surface-input: rgba(9, 24, 45, 0.85);
+  --border-accent: rgba(96, 250, 255, 0.36);
+  --radius-control: 8px;
+  --radius-panel: 10px;
+  --transition-control: border-color 180ms ease, color 180ms ease,
+    background-color 180ms ease, box-shadow 220ms ease;
+}
+
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }

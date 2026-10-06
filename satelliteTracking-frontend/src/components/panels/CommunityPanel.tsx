@@ -472,15 +472,6 @@ export function CommunityPanel({
     )
   }
 
-  if (!authUser) {
-    return (
-      <section className="collapsible side-drawer community-panel" aria-label="Community">
-        <h3>Community</h3>
-        <p className="updated-at">Verifica sessione in corso...</p>
-      </section>
-    )
-  }
-
   return (
     <section className="collapsible side-drawer community-panel" aria-label="Community">
       <div className="community-panel-header">

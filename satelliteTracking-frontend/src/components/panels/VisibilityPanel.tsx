@@ -116,8 +116,8 @@ export function VisibilityPanel({
         </small>
       )}
 
-      {visibilityInfo ? <p className="sighting-info">{visibilityInfo}</p> : null}
-      {visibilityError ? <p className="sighting-error">{visibilityError}</p> : null}
+      {visibilityInfo ? <p className="sighting-info" aria-live="polite">{visibilityInfo}</p> : null}
+      {visibilityError ? <p className="sighting-error" role="alert">{visibilityError}</p> : null}
 
       {visibilityResultsTotal > 0 ? (
         <div className="visibility-full-list-actions">

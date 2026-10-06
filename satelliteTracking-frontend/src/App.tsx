@@ -6,9 +6,8 @@ import {
 } from './hooks/useInteractionHandlers'
 import { defaultEnabledGroups, useSatelliteTracking } from './hooks/useSatelliteTracking'
 import { useAuthFlow } from './hooks/useAuthFlow'
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
-import { Ion } from 'cesium'
 import {
   loadOrekitStatus,
   loadSystemHealth,
@@ -42,7 +41,7 @@ import { PanelSidebarButtons, type SidebarPane } from './components/layout/Panel
 import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SidebarPaneContent } from './components/layout/SidebarPaneContent'
 import { MoonDetailsHud, SatelliteDetailsHud } from './components/layout/ViewerHud'
-import { SatelliteGlobe, type SatelliteGlobeHandle } from './components/SatelliteGlobe'
+import type { SatelliteGlobeHandle } from './components/SatelliteGlobe'
 import { CommunityPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import './App.css'
 import './styles/orekit-badge.css'
@@ -51,8 +50,14 @@ import './styles/mobile-smartphone.css'
 const ionToken =
   import.meta.env.VITE_CESIUM_TOKEN ?? import.meta.env.VITE_CESIUM_ION_TOKEN
 
+const LazySatelliteGlobe = lazy(() =>
+  import('./components/SatelliteGlobe').then(({ SatelliteGlobe }) => ({ default: SatelliteGlobe })),
+)
+
 if (ionToken && !import.meta.env.DEV) {
-  Ion.defaultAccessToken = ionToken
+  void import('cesium').then(({ Ion }) => {
+    Ion.defaultAccessToken = ionToken
+  })
 }
 
 function App() {
@@ -105,6 +110,7 @@ function App() {
   const [visibilityLongitude, setVisibilityLongitude] = useState<number | null>(null)
   const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
+  const visibilityOverlayCloseRef = useRef<HTMLButtonElement>(null)
 
   const clearPrivateSessionState = useCallback(() => {
     setMySightings([])
@@ -148,10 +154,11 @@ function App() {
   } = useAuthFlow({ onLogoutSuccess: clearPrivateSessionState })
 
   const handleLiveSessionExpired = useCallback(() => {
+    clearPrivateSessionState()
     setAuthUser(null)
     setAuthError('Sessione scaduta. Esegui di nuovo l\'accesso.')
     setAuthInfo('Sessione non valida per le API live.')
-  }, [setAuthError, setAuthInfo, setAuthUser])
+  }, [clearPrivateSessionState, setAuthError, setAuthInfo, setAuthUser])
 
   const {
     allGroups,
@@ -562,6 +569,26 @@ function App() {
     downloadVisibilityResultsCsv(visibilityOverlayFilteredResults)
   }, [visibilityOverlayFilteredResults])
 
+  useEffect(() => {
+    if (!visibilityOverlayOpen) {
+      return
+    }
+
+    const previousFocus = document.activeElement as HTMLElement | null
+    visibilityOverlayCloseRef.current?.focus()
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setVisibilityOverlayOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+      previousFocus?.focus()
+    }
+  }, [visibilityOverlayOpen])
+
   const focusBySatelliteHandler = useFocusBySatelliteId({
     liveEntityIdBySatelliteId,
     satelliteLookupByEntityId,
@@ -823,31 +850,44 @@ function App() {
             <MoonDetailsHud onClose={() => setMoonDetailsOpen(false)} />
           ) : null}
 
-          <SatelliteGlobe
-            ref={globeRef}
-            autoRotate={autoRotate}
-            showBackSideSatellites={compactMobileViewport ? false : showBackSideSatellites}
-            showMoon={showMoon}
-            performanceMode={compactMobileViewport}
-            groupColorMap={groupColorMap}
-            selectedEntityId={selectedEntityId}
-            starlinkSatellites={starlinkSatellites}
-            visibleEntitySatellites={visibleEntitySatellites}
-            onPickEntityId={handlePickEntityId}
-          />
+          <Suspense fallback={<p className="viewer-loading" aria-live="polite">Caricamento globo...</p>}>
+            <LazySatelliteGlobe
+              ref={globeRef}
+              autoRotate={autoRotate}
+              showBackSideSatellites={compactMobileViewport ? false : showBackSideSatellites}
+              showMoon={showMoon}
+              performanceMode={compactMobileViewport}
+              groupColorMap={groupColorMap}
+              selectedEntityId={selectedEntityId}
+              starlinkSatellites={starlinkSatellites}
+              visibleEntitySatellites={visibleEntitySatellites}
+              onPickEntityId={handlePickEntityId}
+            />
+          </Suspense>
         </section>
 
         {visibilityOverlayOpen ? (
-          <section className="visibility-overlay" role="dialog" aria-modal="true" aria-label="Lista completa passaggi visibili">
-            <div className="visibility-overlay-backdrop" onClick={() => setVisibilityOverlayOpen(false)} />
+          <section className="visibility-overlay" role="dialog" aria-modal="true" aria-labelledby="visibility-overlay-title">
+            <div
+              className="visibility-overlay-backdrop"
+              role="button"
+              tabIndex={0}
+              aria-label="Chiudi lista completa"
+              onClick={() => setVisibilityOverlayOpen(false)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  setVisibilityOverlayOpen(false)
+                }
+              }}
+            />
             <article className="visibility-overlay-card">
               <header className="visibility-overlay-header">
-                <h2>Passaggi visibili - Lista completa</h2>
+                <h2 id="visibility-overlay-title">Passaggi visibili - Lista completa</h2>
                 <div className="visibility-overlay-header-actions">
                   <button type="button" onClick={exportVisibilityOverlayCsv}>
                     Export CSV
                   </button>
-                  <button type="button" onClick={() => setVisibilityOverlayOpen(false)}>
+                  <button ref={visibilityOverlayCloseRef} type="button" onClick={() => setVisibilityOverlayOpen(false)}>
                     Chiudi
                   </button>
                 </div>

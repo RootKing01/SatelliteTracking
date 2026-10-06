@@ -1,4 +1,4 @@
-import { computeMoonPosition } from '../Moon'
+import { computeMoonPosition } from '../../helpers/moonPosition'
 import type { SelectedSatelliteState } from '../../helpers/searchHelpers'
 
 type SatelliteDetailsHudProps = {

@@ -7,7 +7,8 @@
   padding-left: 8px;
   padding-right: 8px;
 }
-.orekit-badge {
+.orekit-badge,
+.system-health-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -20,7 +21,8 @@
   white-space: nowrap;
 }
 
-.orekit-dot {
+.orekit-dot,
+.system-health-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -70,25 +72,6 @@
 .orekit-badge-error .orekit-dot {
   background: #ff6e7e;
   box-shadow: 0 0 10px rgba(255, 110, 126, 0.9);
-}
-
-.system-health-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-
-.system-health-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 .system-health-up {

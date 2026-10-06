@@ -66,8 +66,7 @@
     gap: 8px;
   }
 
-  .sidebar-buttons-shell,
-  .sidebar-buttons-shell.expanded {
+  .sidebar-buttons-shell {
     width: 100%;
     min-height: 0;
     border-radius: 12px;
@@ -651,8 +650,7 @@
     gap: 8px;
   }
 
-  .sidebar-buttons-shell,
-  .sidebar-buttons-shell.expanded {
+  .sidebar-buttons-shell {
     position: sticky;
     top: 0;
     z-index: 40;

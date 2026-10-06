@@ -6,11 +6,7 @@
   position: relative;
   background:
     radial-gradient(circle at 12% 12%, rgba(14, 33, 58, 0.34), transparent 44%),
-    linear-gradient(180deg, #050910 0%, #02050b 100%);
-}
-
-.app-shell.focus-mode {
-  grid-template-columns: 1fr;
+    linear-gradient(180deg, #050910 0%, var(--color-bg) 100%);
 }
 
 .app-shell.focus-mode .viewer-section {
@@ -64,7 +60,7 @@
 .viewer-section {
   height: 100vh;
   position: relative;
-  background: #02050b;
+  background: var(--color-bg);
 }
 
 .quick-zoom {
@@ -73,7 +69,7 @@
   display: grid;
   gap: 6px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: rgba(6, 16, 30, 0.45);
   border: 1px solid rgba(96, 250, 255, 0.16);
   backdrop-filter: blur(6px);
@@ -175,11 +171,7 @@
 .details-head button,
 .sighting-actions button,
 .visibility-overlay-header button {
-  transition:
-    border-color 180ms ease,
-    color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 220ms ease;
+  transition: var(--transition-control);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -318,10 +310,6 @@
   box-shadow: inset 0 0 0 1px rgba(2, 8, 18, 0.42);
   padding: 8px;
   overflow: hidden;
-}
-
-.sidebar-buttons-shell.expanded {
-  width: 100%;
 }
 
 .sidebar-tabs {
@@ -587,7 +575,6 @@
   box-shadow: 0 0 12px rgba(90, 236, 255, 0.34);
 }
 
-.viewer-hud .hud-card,
 .viewer-hud .hud-details {
   pointer-events: auto;
 }
@@ -606,13 +593,9 @@
 .details-card {
   margin-top: 12px;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   background: linear-gradient(180deg, rgba(11, 28, 51, 0.78), rgba(7, 16, 31, 0.78));
   border: 1px solid rgba(89, 240, 255, 0.26);
-}
-
-.details-card[open] summary {
-  margin-bottom: 8px;
 }
 
 .details-head {
@@ -639,13 +622,6 @@
   font-size: 0.75rem;
   line-height: 1;
   cursor: pointer;
-}
-
-.details-head .primary-sighting-button {
-  border-color: rgba(127, 249, 255, 0.84);
-  background: linear-gradient(180deg, rgba(24, 73, 128, 0.95), rgba(8, 24, 46, 0.95));
-  color: #e9fdff;
-  box-shadow: 0 0 10px rgba(90, 236, 255, 0.26);
 }
 
 .details-grid {
@@ -675,16 +651,16 @@
 }
 
 .sighting-city-input {
-  border-radius: 8px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-accent);
+  background: var(--surface-input);
   color: #e2f7ff;
   padding: 7px 8px;
   font-size: 0.8rem;
 }
 
 .sighting-coords {
-  color: #8fc4e8;
+  color: var(--color-muted);
   font-size: 0.74rem;
 }
 
@@ -721,7 +697,7 @@
 }
 
 .sighting-error-inline {
-  color: #ff9ea9;
+  color: var(--color-danger);
   font-size: 0.74rem;
 }
 
@@ -793,9 +769,9 @@
 }
 
 .visibility-overlay-filter-row input {
-  border-radius: 8px;
-  border: 1px solid rgba(96, 250, 255, 0.36);
-  background: rgba(9, 24, 45, 0.85);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-accent);
+  background: var(--surface-input);
   color: #e2f7ff;
   padding: 6px 8px;
   font-size: 0.82rem;

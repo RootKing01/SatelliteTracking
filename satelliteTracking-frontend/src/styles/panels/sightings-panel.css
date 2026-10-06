@@ -6,7 +6,7 @@
 
 .sighting-item {
   border: 1px solid rgba(96, 250, 255, 0.2);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: rgba(10, 27, 51, 0.7);
   padding: 0;
   display: grid;

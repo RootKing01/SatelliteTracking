@@ -26,7 +26,8 @@ import {
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, Viewer, type CesiumComponentRef } from 'resium'
-import Moon, { computeMoonPosition } from './Moon'
+import Moon from './Moon'
+import { computeMoonPosition } from '../helpers/moonPosition'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
 import type { SatellitePosition } from '../types/satellite'
 
@@ -240,7 +241,7 @@ type SatelliteGlobeProps = {
   showBackSideSatellites: boolean
   showMoon?: boolean
   performanceMode?: boolean
-  groupColorMap: Record<SatelliteGroupKey, Color>
+  groupColorMap: Record<SatelliteGroupKey, string>
   selectedEntityId: string | null
   starlinkSatellites: SatellitePosition[]
   visibleEntitySatellites: VisibleSatelliteItem[]
@@ -278,6 +279,12 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     const terrainProvider = useMemo(() => new EllipsoidTerrainProvider(), [])
     const selectedPulsePixelSize = 18
     const selectedPulseColor = useMemo(() => Color.fromAlpha(Color.WHITE, 0.28), [])
+    const cesiumGroupColorMap = useMemo(
+      () => Object.fromEntries(
+        Object.entries(groupColorMap).map(([key, color]) => [key, Color.fromCssColorString(color)]),
+      ) as Record<SatelliteGroupKey, Color>,
+      [groupColorMap],
+    )
     const selectedReticleImage = useMemo(() => {
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -656,7 +663,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         getKey: (satellite) => satellite.satelliteId,
         getEntityId: (satellite) => `starlink-${satellite.satelliteId}`,
         getSatellite: (satellite) => satellite,
-        getColor: () => groupColorMap.starlink,
+        getColor: () => cesiumGroupColorMap.starlink,
         selectedEntityId,
         showBackSideSatellites,
         selectedPixelSize: 6,
@@ -664,7 +671,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         selectedOutlineWidth: 3,
         unselectedOutlineWidth: 0,
       })
-    }, [groupColorMap, selectedEntityId, showBackSideSatellites, starlinkSatellites])
+    }, [cesiumGroupColorMap, selectedEntityId, showBackSideSatellites, starlinkSatellites])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement
@@ -681,7 +688,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         getKey: (item) => `${item.group.key}-${item.satellite.satelliteId}`,
         getEntityId: (item) => `${item.group.key}-${item.satellite.satelliteId}`,
         getSatellite: (item) => item.satellite,
-        getColor: (item) => groupColorMap[item.group.key],
+        getColor: (item) => cesiumGroupColorMap[item.group.key],
         selectedEntityId,
         showBackSideSatellites,
         selectedPixelSize: 13,
@@ -689,7 +696,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         selectedOutlineWidth: 3,
         unselectedOutlineWidth: 1,
       })
-    }, [groupColorMap, selectedEntityId, showBackSideSatellites, visibleEntitySatellites])
+    }, [cesiumGroupColorMap, selectedEntityId, showBackSideSatellites, visibleEntitySatellites])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement

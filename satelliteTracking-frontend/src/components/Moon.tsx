@@ -1,24 +1,10 @@
 import { useMemo } from 'react'
 import { Cartesian3, Color, HorizontalOrigin, NearFarScalar, VerticalOrigin } from 'cesium'
 import { Entity } from 'resium'
+import { computeMoonPosition } from '../helpers/moonPosition'
 
 type MoonProps = {
   show?: boolean
-}
-
-// Approximate moon position and simple phase calculation
-export const computeMoonPosition = () => {
-  const MOON_MEAN_DISTANCE_M = 384400000
-  const LUNAR_PERIOD_SEC = 27.321661 * 24 * 3600
-  const nowSec = Date.now() / 1000
-  const phase = (nowSec % LUNAR_PERIOD_SEC) / LUNAR_PERIOD_SEC
-  const lon = ((phase * 360 + 180) % 360) - 180
-  const lat = 0
-  // Simple phase angle (0..1)
-  const phaseFrac = phase
-  // distance variation small; keep mean
-  const distance = MOON_MEAN_DISTANCE_M
-  return { lon, lat, altMeters: distance, phase: phaseFrac }
 }
 
 const createMoonTexture = (phase: number) => {
