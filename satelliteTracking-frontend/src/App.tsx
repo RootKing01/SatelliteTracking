@@ -1,13 +1,18 @@
 import {
   useSearchResultSelect,
   useReportSighting,
-  useCalculateVisibility,
   useFocusBySatelliteId,
 } from './hooks/useInteractionHandlers'
 import { defaultEnabledGroups, useSatelliteTracking } from './hooks/useSatelliteTracking'
+import { useVisibility } from './hooks/useVisibility'
+import { useSightings } from './hooks/useSightings'
 import { useAuthFlow } from './hooks/useAuthFlow'
+import { useCommunityNotifications } from './hooks/useCommunityNotifications'
+import {
+  markCommunityNotificationAsRead,
+  type CommunityNotification,
+} from './api/communityClient'
 import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isAxiosError } from 'axios'
 import {
   loadOrekitStatus,
   loadSystemHealth,
@@ -15,15 +20,11 @@ import {
   type SystemHealthResponse,
 } from './api/systemStatusClient'
 import {
-  fetchMySightings,
   fetchSatelliteCatalogByType,
   fetchSatellitePositionById,
   type SatelliteCatalogItem,
-  type SatelliteSighting,
-  type UpcomingPass,
 } from './api/satelliteClient'
 import type { SatelliteGroupKey } from './api/groups/types'
-import { extractAuthErrorMessage } from './helpers/appErrorHelpers'
 import { handleUseBrowserLocationImpl, handleUseBrowserLocationForVisibilityImpl } from './helpers/locationHelpers'
 import { buildEnabledGroupsFromPreset, buildGroupRows, type GroupPreset } from './helpers/groupHelpers'
 import {
@@ -31,24 +32,21 @@ import {
   type SatelliteSearchScope,
   type SelectedSatelliteState,
 } from './helpers/searchHelpers'
-import {
-  buildVisibilityQueryLocationLabel,
-  downloadVisibilityResultsCsv,
-  filterVisibilityResults,
-} from './helpers/visibilityHelpers'
+import { downloadVisibilityResultsCsv } from './helpers/visibilityHelpers'
 import { AuthPanel } from './components/auth/AuthPanel'
+import { CommunityNotificationTray } from './components/community/CommunityNotificationTray'
 import { PanelSidebarButtons, type SidebarPane } from './components/layout/PanelSidebarButtons'
 import { PanelTopSection } from './components/layout/PanelTopSection'
 import { SidebarPaneContent } from './components/layout/SidebarPaneContent'
-import { MoonDetailsHud, SatelliteDetailsHud } from './components/layout/ViewerHud'
+import { SatelliteDetailsHud } from './components/layout/ViewerHud'
+import { VisibilityResultsTable } from './components/visibility/VisibilityResultsTable'
 import type { SatelliteGlobeHandle } from './components/SatelliteGlobe'
 import { CommunityPanel, GroupsPanel, SatellitesPanel, SightingsPanel, VisibilityPanel } from './components/panels'
 import './App.css'
 import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
 
-const ionToken =
-  import.meta.env.VITE_CESIUM_TOKEN ?? import.meta.env.VITE_CESIUM_ION_TOKEN
+const ionToken = import.meta.env.VITE_CESIUM_TOKEN
 
 const LazySatelliteGlobe = lazy(() =>
   import('./components/SatelliteGlobe').then(({ SatelliteGlobe }) => ({ default: SatelliteGlobe })),
@@ -76,8 +74,6 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [showBackSideSatellites, setShowBackSideSatellites] = useState(false)
-  const [showMoon, setShowMoon] = useState(true)
-  const [moonDetailsOpen, setMoonDetailsOpen] = useState(false)
   const [compactMobileViewport, setCompactMobileViewport] = useState(false)
   const [landscapeMobileViewport, setLandscapeMobileViewport] = useState(false)
   const [orekitStatus, setOrekitStatus] = useState<OrekitStatusResponse | null>(null)
@@ -86,45 +82,22 @@ function App() {
   const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null)
   const [systemHealthLoading, setSystemHealthLoading] = useState(false)
   const [systemHealthError, setSystemHealthError] = useState('')
-  const [mySightings, setMySightings] = useState<SatelliteSighting[]>([])
-  const [sightingsLoading, setSightingsLoading] = useState(false)
-  const [sightingsError, setSightingsError] = useState('')
   const [reportingSighting, setReportingSighting] = useState(false)
-  const [sightingInfo, setSightingInfo] = useState('')
   const [sightingCity, setSightingCity] = useState('')
   const [sightingLatitude, setSightingLatitude] = useState<number | null>(null)
   const [sightingLongitude, setSightingLongitude] = useState<number | null>(null)
   const [sightingAltitude, setSightingAltitude] = useState<number | null>(null)
   const [locatingBrowser, setLocatingBrowser] = useState(false)
-  const [visibilityHours, setVisibilityHours] = useState(12)
-  const [visibilityMinElevation, setVisibilityMinElevation] = useState(10)
-  const [visibilityLoading, setVisibilityLoading] = useState(false)
-  const [visibilityError, setVisibilityError] = useState('')
-  const [visibilityInfo, setVisibilityInfo] = useState('')
-  const [visibilityCity, setVisibilityCity] = useState('')
-  const [visibilityResults, setVisibilityResults] = useState<UpcomingPass[]>([])
-  const [visibilityAllResults, setVisibilityAllResults] = useState<UpcomingPass[]>([])
-  const [visibilityOverlayOpen, setVisibilityOverlayOpen] = useState(false)
-  const [visibilityOverlayQuery, setVisibilityOverlayQuery] = useState('')
-  const [visibilityLatitude, setVisibilityLatitude] = useState<number | null>(null)
-  const [visibilityLongitude, setVisibilityLongitude] = useState<number | null>(null)
-  const [visibilityAltitude, setVisibilityAltitude] = useState<number | null>(null)
-  const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
+  const [pendingCommunityNotification, setPendingCommunityNotification] =
+    useState<CommunityNotification | null>(null)
   const visibilityOverlayCloseRef = useRef<HTMLButtonElement>(null)
 
+  const clearSessionRef = useRef<() => void>(() => {})
   const clearPrivateSessionState = useCallback(() => {
-    setMySightings([])
+    clearSessionRef.current()
     setSelectedSatellite(null)
     setSelectedEntityId(null)
     setCatalogByGroup({})
-    setVisibilityResults([])
-    setVisibilityAllResults([])
-    setVisibilityOverlayOpen(false)
-    setVisibilityOverlayQuery('')
-    setSightingsError('')
-    setSightingInfo('')
-    setVisibilityError('')
-    setVisibilityInfo('')
   }, [])
 
   const {
@@ -152,6 +125,55 @@ function App() {
     submitRegister,
     handleLogout,
   } = useAuthFlow({ onLogoutSuccess: clearPrivateSessionState })
+
+  const {
+    notificationsOpen,
+    setNotificationsOpen,
+    notifications,
+    setNotifications,
+    notificationCount,
+    setNotificationCount,
+  } = useCommunityNotifications({ authUser })
+
+  const visibility = useVisibility({
+    setAuthUser,
+    setAuthInfo,
+    setAuthError,
+    clearSessionState: clearPrivateSessionState,
+  })
+  const sightings = useSightings({
+    authUser,
+    openPane,
+    setAuthUser,
+    setAuthInfo,
+    setAuthError,
+  })
+  const {
+    visibilityHours, setVisibilityHours, visibilityMinElevation, setVisibilityMinElevation,
+    visibilityLoading, visibilityError, visibilityInfo, visibilityCity, setVisibilityCity,
+    visibilityResults, visibilityAllResults, visibilityOverlayOpen, setVisibilityOverlayOpen,
+    visibilityOverlayQuery, setVisibilityOverlayQuery, visibilityLatitude, setVisibilityLongitude,
+    visibilityLongitude, visibilityLocatingBrowser, setVisibilityLocatingBrowser,
+    setVisibilityError, setVisibilityInfo, setVisibilityLatitude, setVisibilityAltitude,
+    handleCalculateVisibility, visibilityQueryLocationLabel, visibilityOverlayFilteredResults,
+  } = visibility
+  const {
+    mySightings, setMySightings, sightingsLoading, sightingsError, setSightingsError,
+    sightingInfo, setSightingInfo,
+  } = sightings
+  useEffect(() => {
+    clearSessionRef.current = () => {
+      sightings.setMySightings([])
+      visibility.setVisibilityResults([])
+      visibility.setVisibilityAllResults([])
+      visibility.setVisibilityOverlayOpen(false)
+      visibility.setVisibilityOverlayQuery('')
+      sightings.setSightingsError('')
+      sightings.setSightingInfo('')
+      visibility.setVisibilityError('')
+      visibility.setVisibilityInfo('')
+    }
+  }, [sightings, visibility])
 
   const handleLiveSessionExpired = useCallback(() => {
     clearPrivateSessionState()
@@ -208,14 +230,6 @@ function App() {
     }
   }, [])
 
-  const visibilityQueryLocationLabel = useMemo(() => {
-    return buildVisibilityQueryLocationLabel(visibilityCity, visibilityLatitude, visibilityLongitude)
-  }, [visibilityCity, visibilityLatitude, visibilityLongitude])
-
-  const visibilityOverlayFilteredResults = useMemo(() => {
-    return filterVisibilityResults(visibilityAllResults, visibilityOverlayQuery)
-  }, [visibilityAllResults, visibilityOverlayQuery])
-
   const groupRows = useMemo(
     () =>
       openPane === 'groups'
@@ -243,21 +257,13 @@ function App() {
     (entityId: string | null) => {
       setSelectedEntityId(entityId)
 
-      if (entityId === 'moon-entity') {
-        setMoonDetailsOpen(true)
-      }
-
       if (!entityId) {
         setSelectedSatellite(null)
-        setMoonDetailsOpen(false)
         return
       }
 
       const selected = satelliteLookupByEntityId.get(entityId)
       setSelectedSatellite(selected ?? null)
-      if (entityId !== 'moon-entity') {
-        setMoonDetailsOpen(false)
-      }
     },
     [satelliteLookupByEntityId],
   )
@@ -325,6 +331,32 @@ function App() {
     }))
   }, [])
 
+  const handleToggleNotifications = useCallback(() => {
+    if (openPane !== 'community') {
+      setOpenPane('community')
+      setNotificationsOpen(true)
+      return
+    }
+
+    setNotificationsOpen((previous) => !previous)
+  }, [openPane, setNotificationsOpen])
+
+  const handleSelectNotification = useCallback(async (notification: CommunityNotification) => {
+    if (notification.readAt == null) {
+      try {
+        const updated = await markCommunityNotificationAsRead(notification.id)
+        setNotifications((previous) => previous.map((item) => item.id === updated.id ? updated : item))
+        setNotificationCount((previous) => Math.max(0, previous - 1))
+      } catch (error) {
+        console.error('Impossibile segnare la notifica come letta', error)
+      }
+    }
+
+    setOpenPane('community')
+    setPendingCommunityNotification(notification)
+    setNotificationsOpen(false)
+  }, [setNotificationCount, setNotifications, setNotificationsOpen])
+
   const handleZoomIn = useCallback(() => globeRef.current?.zoomIn(), [])
   const handleZoomOut = useCallback(() => globeRef.current?.zoomOut(), [])
   const handleGoHome = useCallback(() => globeRef.current?.goToInitialView(), [])
@@ -335,9 +367,6 @@ function App() {
   const handleToggleBackSideSatellites = useCallback(() => {
     setShowBackSideSatellites((prev) => !prev)
   }, [])
-  const handleToggleShowMoon = useCallback(() => {
-    setShowMoon((prev) => !prev)
-  }, [])
   const handlePingSystemHealth = useCallback(() => {
     setSystemHealthLoading(true)
     setSystemHealthError('')
@@ -345,7 +374,6 @@ function App() {
       .then(({ status, error }) => {
         setSystemHealth(status)
         setSystemHealthError(error)
-        console.log('[HEALTH CHECK]', status, error)
       })
       .finally(() => {
         setSystemHealthLoading(false)
@@ -427,32 +455,6 @@ function App() {
     [],
   )
 
-  const loadAuthenticatedSightings = useCallback(
-    (signal: AbortSignal) => {
-      setSightingsLoading(true)
-      setSightingsError('')
-
-      void fetchMySightings(signal)
-        .then((items) => {
-          setMySightings(items)
-        })
-        .catch((error) => {
-          if (isAxiosError(error) && error.response?.status === 401) {
-            setAuthUser(null)
-            setAuthInfo('Sessione scaduta. Esegui di nuovo l\'accesso.')
-            setAuthError('Sessione non valida per caricare gli avvistamenti.')
-            return
-          }
-
-          setSightingsError(extractAuthErrorMessage(error, 'Errore nel caricamento avvistamenti'))
-        })
-        .finally(() => {
-          setSightingsLoading(false)
-        })
-    },
-    [setAuthError, setAuthInfo, setAuthUser],
-  )
-
   useEffect(() => {
     if (!authUser) {
       return
@@ -471,23 +473,6 @@ function App() {
       healthController.abort()
     }
   }, [authUser, loadAuthenticatedSystemStatus])
-
-  useEffect(() => {
-    if (!authUser || openPane !== 'sightings') {
-      return
-    }
-
-    const controller = new AbortController()
-    queueMicrotask(() => {
-      if (!controller.signal.aborted) {
-        loadAuthenticatedSightings(controller.signal)
-      }
-    })
-
-    return () => {
-      controller.abort()
-    }
-  }, [authUser, loadAuthenticatedSightings, openPane])
 
   const handleReportSighting = useReportSighting({
     getSelectedSatellite: () => selectedSatellite,
@@ -517,7 +502,7 @@ function App() {
       setSightingAltitude,
       setSightingInfo,
     })
-  }, [locatingBrowser])
+  }, [locatingBrowser, setSightingAltitude, setSightingInfo, setSightingLatitude, setSightingLongitude, setSightingsError])
 
   const handleUseBrowserLocationForVisibility = useCallback(() => {
     handleUseBrowserLocationForVisibilityImpl({
@@ -529,27 +514,7 @@ function App() {
       setVisibilityAltitude,
       setVisibilityInfo,
     })
-  }, [visibilityLocatingBrowser])
-
-  const handleCalculateVisibility = useCalculateVisibility({
-    getVisibilityLoading: () => visibilityLoading,
-    setVisibilityLoading: (b: boolean) => setVisibilityLoading(b),
-    setVisibilityError: (s: string) => setVisibilityError(s),
-    setVisibilityInfo: (s: string) => setVisibilityInfo(s),
-    visibilityCity,
-    visibilityHours,
-    visibilityMinElevation,
-    getVisibilityLatitude: () => visibilityLatitude,
-    getVisibilityLongitude: () => visibilityLongitude,
-    getVisibilityAltitude: () => visibilityAltitude,
-    setVisibilityAllResults,
-    setVisibilityResults,
-    setVisibilityOverlayOpen,
-    setAuthUser,
-    setAuthInfo,
-    setAuthError,
-    clearSessionState: clearPrivateSessionState,
-  })
+  }, [setVisibilityAltitude, setVisibilityError, setVisibilityInfo, setVisibilityLatitude, setVisibilityLocatingBrowser, setVisibilityLongitude, visibilityLocatingBrowser])
 
   const openVisibilityFullResultsOverlay = useCallback(() => {
     if (visibilityAllResults.length === 0) {
@@ -558,7 +523,7 @@ function App() {
     }
     setVisibilityOverlayQuery('')
     setVisibilityOverlayOpen(true)
-  }, [visibilityAllResults.length])
+  }, [setVisibilityError, setVisibilityOverlayOpen, setVisibilityOverlayQuery, visibilityAllResults.length])
 
   const exportVisibilityOverlayCsv = useCallback(() => {
     if (visibilityOverlayFilteredResults.length === 0) {
@@ -567,7 +532,7 @@ function App() {
     }
 
     downloadVisibilityResultsCsv(visibilityOverlayFilteredResults)
-  }, [visibilityOverlayFilteredResults])
+  }, [setVisibilityError, visibilityOverlayFilteredResults])
 
   useEffect(() => {
     if (!visibilityOverlayOpen) {
@@ -587,7 +552,7 @@ function App() {
       document.removeEventListener('keydown', handleEscape)
       previousFocus?.focus()
     }
-  }, [visibilityOverlayOpen])
+  }, [setVisibilityOverlayOpen, visibilityOverlayOpen])
 
   const focusBySatelliteHandler = useFocusBySatelliteId({
     liveEntityIdBySatelliteId,
@@ -597,14 +562,6 @@ function App() {
     fetchSatellitePositionById,
     setVisibilityError,
   })
-
-  const handleFocusFromVisibility = useCallback((pass: UpcomingPass) => {
-    focusBySatelliteHandler(pass)
-  }, [focusBySatelliteHandler])
-
-  const handleFocusBySatelliteId = useCallback((satelliteId: number) => {
-    focusBySatelliteHandler(satelliteId)
-  }, [focusBySatelliteHandler])
 
   const panelWidth = 470
 
@@ -649,7 +606,7 @@ function App() {
           <section className="panel-component panel-component-token">
             <h1>Cesium token mancante</h1>
             <p>
-              Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env in root e riavvia il
+              Aggiungi <strong>VITE_CESIUM_TOKEN</strong> nel file .env alla radice e riavvia il
               frontend.
             </p>
           </section>
@@ -674,10 +631,19 @@ function App() {
                 systemHealth={systemHealth}
                 systemHealthLoading={systemHealthLoading}
                 systemHealthError={systemHealthError}
+                notificationCount={notificationCount}
+                onToggleNotifications={handleToggleNotifications}
                 onLogout={() => {
                   void handleLogout()
                 }}
                 onPingSystemHealth={handlePingSystemHealth}
+              />
+              <CommunityNotificationTray
+                open={notificationsOpen}
+                notifications={notifications}
+                onSelect={(notification) => {
+                  void handleSelectNotification(notification)
+                }}
               />
             </section>
 
@@ -722,8 +688,6 @@ function App() {
                             <SatellitesPanel
                               autoRotate={autoRotate}
                               showBackSideSatellites={showBackSideSatellites}
-                              showMoon={showMoon}
-                              onToggleShowMoon={handleToggleShowMoon}
                               hasLoadedOnce={hasLoadedOnce}
                               isRefreshing={isRefreshing}
                               refreshIntervalMs={refreshIntervalMs}
@@ -759,7 +723,7 @@ function App() {
                                 void handleCalculateVisibility()
                               }}
                               onOpenFullResults={openVisibilityFullResultsOverlay}
-                              onFocusFromVisibility={handleFocusFromVisibility}
+                              onFocusFromVisibility={focusBySatelliteHandler}
                             />
                           </SidebarPaneContent>
                         ) : null}
@@ -772,7 +736,7 @@ function App() {
                               sightingsLoading={sightingsLoading}
                               mySightings={mySightings}
                               compactLandscapeViewport={landscapeMobileViewport}
-                              onFocusSightingSatellite={handleFocusBySatelliteId}
+                              onFocusSightingSatellite={focusBySatelliteHandler}
                             />
                           </SidebarPaneContent>
                         ) : null}
@@ -783,7 +747,9 @@ function App() {
                               authUser={authUser}
                               selectedSatelliteId={selectedSatellite?.satellite.satelliteId ?? null}
                               selectedSatelliteName={selectedSatellite?.satellite.satelliteName ?? null}
-                              onFocusSatellite={handleFocusBySatelliteId}
+                              onFocusSatellite={focusBySatelliteHandler}
+                              pendingNotification={pendingCommunityNotification}
+                              onPendingNotificationHandled={() => setPendingCommunityNotification(null)}
                             />
                           </SidebarPaneContent>
                         ) : null}
@@ -846,16 +812,11 @@ function App() {
             />
           ) : null}
 
-          {selectedEntityId === 'moon-entity' && moonDetailsOpen ? (
-            <MoonDetailsHud onClose={() => setMoonDetailsOpen(false)} />
-          ) : null}
-
           <Suspense fallback={<p className="viewer-loading" aria-live="polite">Caricamento globo...</p>}>
             <LazySatelliteGlobe
               ref={globeRef}
               autoRotate={autoRotate}
               showBackSideSatellites={compactMobileViewport ? false : showBackSideSatellites}
-              showMoon={showMoon}
               performanceMode={compactMobileViewport}
               groupColorMap={groupColorMap}
               selectedEntityId={selectedEntityId}
@@ -905,38 +866,7 @@ function App() {
                   placeholder="Nome satellite, NORAD, condizione..."
                 />
               </label>
-              <div className="visibility-overlay-table-wrap">
-                <table className="visibility-overlay-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Satellite</th>
-                      <th>NORAD ID</th>
-                      <th>Rise</th>
-                      <th>Set</th>
-                      <th>Elev. max</th>
-                      <th>Magnitudine</th>
-                      <th>Condizione</th>
-                      <th>Visibilita</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibilityOverlayFilteredResults.map((pass, index) => (
-                      <tr key={`${pass.satelliteId}-${pass.riseTime}-${pass.setTime}-${index}`}>
-                        <td>{index + 1}</td>
-                        <td>{pass.satelliteName}</td>
-                        <td>{pass.satelliteId}</td>
-                        <td>{new Date(pass.riseTime).toLocaleString('it-IT')}</td>
-                        <td>{new Date(pass.setTime).toLocaleString('it-IT')}</td>
-                        <td>{pass.maxElevation.toFixed(1)}deg</td>
-                        <td>{pass.estimatedMagnitude.toFixed(1)}</td>
-                        <td>{pass.observingCondition}</td>
-                        <td>{pass.visibility}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <VisibilityResultsTable results={visibilityOverlayFilteredResults} />
             </article>
           </section>
         ) : null}

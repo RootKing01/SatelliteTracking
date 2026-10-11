@@ -2,12 +2,9 @@ import { useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import type { AuthUser } from '../api/authClient'
 import {
-  fetchCommunityNotifications,
   fetchFeaturedCommunityThreads,
   fetchCommunityFeed,
-  fetchUnreadCommunityNotificationCount,
   type CommunityFeedItem,
-  type CommunityNotification,
 } from '../api/communityClient'
 import { fetchAndMapSatelliteNames, updateMissingSatelliteNames } from './satelliteNameHelper'
 
@@ -19,22 +16,18 @@ const ERROR_THREAD_LOAD = 'Impossibile caricare i thread community.'
 type UseCommunityDataOptions = {
   authUser: AuthUser | null
   sessionVerified: boolean
-  notificationsOpen: boolean
   onUnauthorized: () => void
 }
 
 export function useCommunityData({
   authUser,
   sessionVerified,
-  notificationsOpen,
   onUnauthorized,
 }: UseCommunityDataOptions) {
   const [satelliteNames, setSatelliteNames] = useState<Record<string, string>>({})
   const [featuredThreads, setFeaturedThreads] = useState<CommunityFeedItem[]>([])
   const [allThreads, setAllThreads] = useState<CommunityFeedItem[]>([])
   const [threadsError, setThreadsError] = useState('')
-  const [notifications, setNotifications] = useState<CommunityNotification[]>([])
-  const [notificationCount, setNotificationCount] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -69,7 +62,6 @@ export function useCommunityData({
         setFeaturedThreads([])
         setAllThreads([])
         setThreadsError('')
-        setNotificationCount(0)
       })
       return
     }
@@ -78,16 +70,6 @@ export function useCommunityData({
 
     let cancelled = false
     const controller = new AbortController()
-
-    const refreshUnreadCount = () => {
-      fetchUnreadCommunityNotificationCount(controller.signal)
-        .then((unreadCount) => {
-          if (!cancelled) setNotificationCount(unreadCount)
-        })
-        .catch(() => {
-          if (!cancelled) setNotificationCount(0)
-        })
-    }
 
     const fetchThreads = () => {
       Promise.all([
@@ -110,11 +92,9 @@ export function useCommunityData({
             setThreadsError(ERROR_THREAD_LOAD)
           }
         })
-        .finally(refreshUnreadCount)
     }
 
     fetchThreads()
-    refreshUnreadCount()
     const interval = window.setInterval(fetchThreads, COMMUNITY_POLL_INTERVAL)
 
     return () => {
@@ -123,22 +103,6 @@ export function useCommunityData({
       window.clearInterval(interval)
     }
   }, [authUser, onUnauthorized, sessionVerified])
-
-  useEffect(() => {
-    try {
-      window.dispatchEvent(new CustomEvent('communityNotificationsCount', { detail: notificationCount }))
-    } catch {
-      // ignore
-    }
-  }, [notificationCount])
-
-  useEffect(() => {
-    if (!notificationsOpen || !authUser) return
-
-    fetchCommunityNotifications(12)
-      .then(setNotifications)
-      .catch(() => setNotifications([]))
-  }, [authUser, notificationsOpen])
 
   return {
     satelliteNames,
@@ -149,9 +113,5 @@ export function useCommunityData({
     setAllThreads,
     threadsError,
     setThreadsError,
-    notifications,
-    setNotifications,
-    notificationCount,
-    setNotificationCount,
   }
 }

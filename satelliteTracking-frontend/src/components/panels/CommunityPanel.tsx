@@ -13,7 +13,6 @@ import {
   createCommunityComment,
   deleteCommunityComment,
   fetchCommunityThread,
-  markCommunityNotificationAsRead,
   reportCommunityComment,
   updateCommunityThreadReadState,
   toggleCommunityThreadLike,
@@ -26,13 +25,13 @@ import {
   type CommunityThreadReadState,
 } from '../../api/communityClient'
 import '../../styles/panels/community-panel.css'
-
-
 type CommunityPanelProps = {
   authUser: AuthUser | null
   selectedSatelliteId: number | null
   selectedSatelliteName: string | null
   onFocusSatellite: (satelliteId: number) => void
+  pendingNotification: CommunityNotification | null
+  onPendingNotificationHandled: () => void
 }
 
 export function CommunityPanel({
@@ -40,8 +39,9 @@ export function CommunityPanel({
   selectedSatelliteId,
   selectedSatelliteName,
   onFocusSatellite,
+  pendingNotification,
+  onPendingNotificationHandled,
 }: CommunityPanelProps) {
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [activeThread, setActiveThread] = useState<CommunityThread | null>(null)
   const [comments, setComments] = useState<CommunityComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -75,22 +75,11 @@ export function CommunityPanel({
     setAllThreads,
     threadsError,
     setThreadsError,
-    notifications,
-    setNotifications,
-    setNotificationCount,
   } = useCommunityData({
     authUser,
     sessionVerified: Boolean(authUser),
-    notificationsOpen,
     onUnauthorized: handleUnauthorizedSession,
   })
-
-  // Listen for global toggle events dispatched by top bar
-  useEffect(() => {
-    const handler = () => setNotificationsOpen((prev) => !prev)
-    window.addEventListener('toggleCommunityNotifications', handler)
-    return () => window.removeEventListener('toggleCommunityNotifications', handler)
-  }, [])
 
   const activeTarget = useMemo(() => {
     if (!selectedSatelliteId) {
@@ -251,20 +240,6 @@ export function CommunityPanel({
     }
   }, [activeThread, comments, scrollToComment])
 
-  const handleOpenNotification = async (notification: CommunityNotification) => {
-    try {
-      if (notification.readAt == null) {
-        const updated = await markCommunityNotificationAsRead(notification.id)
-        setNotifications((prev) => prev.map((item) => item.id === updated.id ? updated : item))
-        setNotificationCount((prev) => Math.max(0, prev - 1))
-      }
-      await handleOpenThread(notification.targetType, notification.targetId, notification.sourceCommentId ?? null)
-      setNotificationsOpen(false)
-    } catch {
-      setCommentsError('Impossibile aprire la notifica selezionata.')
-    }
-  }
-
   useEffect(() => {
     if (!activeThread?.id || !activeThreadReadState) {
       return
@@ -280,6 +255,28 @@ export function CommunityPanel({
       scrollToComment(comments[comments.length - 1].id)
     }
   }, [activeThread?.id, activeThreadReadState, comments, pendingFocusCommentId, scrollToComment])
+
+  const pendingNotificationIdRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!pendingNotification) {
+      pendingNotificationIdRef.current = null
+      return
+    }
+
+    if (pendingNotificationIdRef.current === pendingNotification.id) {
+      return
+    }
+
+    pendingNotificationIdRef.current = pendingNotification.id
+    void handleOpenThread(
+      pendingNotification.targetType,
+      pendingNotification.targetId,
+      pendingNotification.sourceCommentId,
+    ).finally(onPendingNotificationHandled)
+  // The pending notification id ref prevents duplicate thread loads when handlers are recreated.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onPendingNotificationHandled, pendingNotification])
 
   const applyLikeUpdateToCollections = (threadId: number, likesCount: number, likedByMe: boolean) => {
     const updater = (items: CommunityFeedItem[]) =>
@@ -478,27 +475,6 @@ export function CommunityPanel({
         <h3>Community</h3>
       </div>
       <p className="updated-at">Thread in evidenza, tutti i thread, discussioni libere e like.</p>
-
-      {notificationsOpen ? (
-        <div className={`community-notification-tray ${notificationsOpen ? 'is-open overlay' : ''}`}>
-          {notifications.length === 0 ? (
-            <small>Nessuna notifica disponibile.</small>
-          ) : (
-            notifications.map((notification) => (
-              <button
-                key={notification.id}
-                type="button"
-                className={`community-notification-item ${notification.readAt == null ? 'is-unread' : ''}`}
-                onClick={() => { void handleOpenNotification(notification) }}
-              >
-                <strong>{notification.sourceCommentAuthorUsername ?? 'Utente'}</strong>
-                <small>{notification.threadTitle}</small>
-                <span>{notification.preview}</span>
-              </button>
-            ))
-          )}
-        </div>
-      ) : null}
 
       {activeThread ? (
         <AutoSaveReadState

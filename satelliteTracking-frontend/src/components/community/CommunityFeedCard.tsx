@@ -72,7 +72,7 @@ export function CommunityFeedCard({
                       }
                     }}
                   >
-                    Focus sat
+                    Metti a fuoco satellite
                   </button>
                 ) : null}
                 <button

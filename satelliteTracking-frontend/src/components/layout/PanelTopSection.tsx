@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 import type { OrekitStatusResponse, SystemHealthResponse } from '../../api/systemStatusClient'
 
 type PanelTopSectionProps = {
@@ -10,6 +10,8 @@ type PanelTopSectionProps = {
   systemHealthLoading: boolean
   systemHealthError: string
   onLogout: () => void
+  notificationCount: number
+  onToggleNotifications: () => void
 }
 
 function PanelTopSectionBase({
@@ -21,22 +23,10 @@ function PanelTopSectionBase({
   systemHealthLoading,
   systemHealthError,
   onLogout,
+  notificationCount,
+  onToggleNotifications,
   onPingSystemHealth,
 }: PanelTopSectionProps & { onPingSystemHealth?: () => void }) {
-  const [notifCount, setNotifCount] = useState<number>(0)
-
-  useEffect(() => {
-    const handler = (ev: Event) => {
-      const detail = (ev as CustomEvent<number>).detail
-      setNotifCount(typeof detail === 'number' ? detail : 0)
-    }
-    window.addEventListener('communityNotificationsCount', handler as EventListener)
-    return () => window.removeEventListener('communityNotificationsCount', handler as EventListener)
-  }, [])
-
-  const toggleNotifications = () => {
-    window.dispatchEvent(new CustomEvent('toggleCommunityNotifications'))
-  }
   return (
     <section className="panel-top-shell">
       <div className="panel-header">
@@ -45,10 +35,10 @@ function PanelTopSectionBase({
           <button
             type="button"
             className="panel-notifications"
-            onClick={toggleNotifications}
-            aria-label={`Notifiche community, ${notifCount} non lette`}
+            onClick={onToggleNotifications}
+            aria-label={`Notifiche community, ${notificationCount} non lette`}
           >
-            Notifiche{notifCount > 0 ? <span style={{marginLeft:8}} className="panel-badge">{notifCount}</span> : null}
+            Notifiche{notificationCount > 0 ? <span style={{marginLeft:8}} className="panel-badge">{notificationCount}</span> : null}
           </button>
 
           <button
@@ -67,14 +57,14 @@ function PanelTopSectionBase({
           Live
         </span>
         <span
-          className={`orekit-badge ${
+          className={`status-badge ${
             orekitStatus?.orekitDataLoaded
-              ? 'orekit-badge-loaded'
+              ? 'status-badge--success'
               : orekitStatusError
-                ? 'orekit-badge-error'
+                ? 'status-badge--error'
                 : orekitStatusLoading
-                  ? 'orekit-badge-pending'
-                  : 'orekit-badge-fallback'
+                  ? 'status-badge--pending'
+                  : 'status-badge--warning'
           }`}
           title={
             orekitStatus
@@ -82,7 +72,7 @@ function PanelTopSectionBase({
               : orekitStatusError || 'Stato Orekit non disponibile'
           }
         >
-          <span className="orekit-dot" />
+          <span className="status-badge-dot" />
           {orekitStatus?.orekitDataLoaded
             ? 'Orekit ON'
             : orekitStatusError
@@ -92,16 +82,16 @@ function PanelTopSectionBase({
                 : 'Orekit OFF'}
         </span>
         <span
-          className={`system-health-badge ${
+          className={`status-badge ${
             systemHealth?.status === 'UP'
-              ? 'system-health-up'
+              ? 'status-badge--success'
               : systemHealth?.status === 'DEGRADED'
-                ? 'system-health-degraded'
+                ? 'status-badge--warning'
                 : systemHealthError
-                  ? 'system-health-error'
+                  ? 'status-badge--error'
                   : systemHealthLoading
-                    ? 'system-health-pending'
-                    : 'system-health-down'
+                    ? 'status-badge--pending'
+                    : 'status-badge--error'
           }`}
           title={
             systemHealth
@@ -109,7 +99,7 @@ function PanelTopSectionBase({
               : systemHealthError || 'Stato sistema non disponibile'
           }
         >
-          <span className="system-health-dot" />
+          <span className="status-badge-dot" />
           {systemHealth?.status
             ? `System ${systemHealth.status}`
             : systemHealthError
@@ -119,25 +109,25 @@ function PanelTopSectionBase({
                 : 'System DOWN'}
         </span>
         <span
-          className={`system-health-badge system-health-ping-minimal ${
+          className={`status-badge status-badge--minimal ${
             systemHealthLoading
-              ? 'system-health-pending'
+              ? 'status-badge--pending'
               : systemHealth?.status === 'UP'
-                ? 'system-health-up'
+                ? 'status-badge--success'
                 : systemHealth?.status === 'DEGRADED'
-                  ? 'system-health-degraded'
+                  ? 'status-badge--warning'
                   : systemHealth?.status === 'DOWN'
-                    ? 'system-health-down'
+                    ? 'status-badge--error'
                     : systemHealthError
-                      ? 'system-health-error'
-                      : 'system-health-pending'
+                      ? 'status-badge--error'
+                      : 'status-badge--pending'
           }`}
           title="Ping System Health"
           onClick={systemHealthLoading ? undefined : onPingSystemHealth}
-          style={{ cursor: systemHealthLoading ? 'wait' : 'pointer', userSelect: 'none' }}
+          aria-disabled={systemHealthLoading}
         >
-          <span className="system-health-dot" />
-          Check Health
+          <span className="status-badge-dot" />
+          Controlla salute
         </span>
       </div>
     </section>

@@ -4,8 +4,6 @@ import '../../styles/panels/satellites-panel.css'
 type SatellitesPanelProps = {
   autoRotate: boolean
   showBackSideSatellites: boolean
-  showMoon?: boolean
-  onToggleShowMoon?: () => void
   hasLoadedOnce: boolean
   isRefreshing: boolean
   refreshIntervalMs: number
@@ -20,8 +18,6 @@ type SatellitesPanelProps = {
 function SatellitesPanelBase({
   autoRotate,
   showBackSideSatellites,
-  showMoon = true,
-  onToggleShowMoon,
   hasLoadedOnce,
   isRefreshing,
   refreshIntervalMs,
@@ -50,13 +46,6 @@ function SatellitesPanelBase({
         >
           {showBackSideSatellites ? 'Nascondi lato opposto' : 'Mostra lato opposto'}
         </button>
-        <button
-          type="button"
-          className={showMoon ? 'toggle-active' : ''}
-          onClick={onToggleShowMoon}
-        >
-          {showMoon ? 'Nascondi Luna' : 'Mostra Luna'}
-        </button>
       </div>
 
       <section className="sync-footer-card" aria-label="Stato sincronizzazione e camera">
@@ -65,7 +54,7 @@ function SatellitesPanelBase({
           Sincronizzazione live attiva
         </p>
         <p className="sync-status">
-          <strong>Visibilita:</strong> {showBackSideSatellites ? 'anche lato opposto' : 'solo lato visibile'}
+          <strong>Visibilità:</strong> {showBackSideSatellites ? 'anche lato opposto' : 'solo lato visibile'}
         </p>
         <p className="sync-status">
           <strong>Refresh:</strong> ogni {(refreshIntervalMs / 1000).toFixed(1)}s

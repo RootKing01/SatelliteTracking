@@ -1,4 +1,3 @@
-import { computeMoonPosition } from '../../helpers/moonPosition'
 import type { SelectedSatelliteState } from '../../helpers/searchHelpers'
 
 type SatelliteDetailsHudProps = {
@@ -79,7 +78,7 @@ export function SatelliteDetailsHud({
               className="sighting-city-input"
               value={sightingCity}
               onChange={(event) => onSightingCityChange(event.target.value)}
-              placeholder="Inserisci citta (alternativa al browser)"
+              placeholder="Inserisci città (alternativa al browser)"
             />
             <button
               type="button"
@@ -119,30 +118,3 @@ export function SatelliteDetailsHud({
   )
 }
 
-export function MoonDetailsHud({ onClose }: { onClose: () => void }) {
-  const moonPosition = computeMoonPosition()
-
-  return (
-    <aside className="viewer-hud">
-      <section className="details-card hud-details">
-        <h3>Dettagli Luna</h3>
-        <div className="details-head">
-          <strong>Moon</strong>
-          <div className="details-head-actions">
-            <button type="button" onClick={onClose}>Chiudi</button>
-          </div>
-        </div>
-        <div className="details-grid">
-          <span>Nome</span>
-          <span>Moon</span>
-          <span>Fase</span>
-          <span>{(moonPosition.phase * 100).toFixed(1)}%</span>
-          <span>Lat/Lon</span>
-          <span>{moonPosition.lat.toFixed(2)} / {moonPosition.lon.toFixed(2)}</span>
-          <span>Distanza</span>
-          <span>{(moonPosition.altMeters / 1000).toFixed(0)} km</span>
-        </div>
-      </section>
-    </aside>
-  )
-}

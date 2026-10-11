@@ -6,8 +6,7 @@ import {
   getCurrentUser,
   type AuthUser,
 } from '../api/authClient'
-
-type AuthMode = 'login' | 'register'
+import type { AuthMode } from '../types/auth'
 
 type UseAuthFlowOptions = {
   onLogoutSuccess?: () => void

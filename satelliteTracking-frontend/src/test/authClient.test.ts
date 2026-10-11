@@ -31,7 +31,6 @@ const authenticatedResponse = {
     email: 'test@example.com',
     role: 'USER',
   },
-  token: null,
 }
 
 describe('Auth Client', () => {

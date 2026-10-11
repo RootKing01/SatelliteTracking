@@ -102,7 +102,7 @@ export function PanelSidebarButtons({ openPane, onTogglePane }: PanelSidebarButt
         aria-expanded={openPane === 'visibility'}
         aria-controls="panel-visibility"
         onClick={() => onTogglePane('visibility')}
-        title="Visibilita"
+        title="Visibilità"
       >
         <span className="tab-icon tab-icon-visibility" aria-hidden="true">
           <SidebarTabIcon variant="visibility" />

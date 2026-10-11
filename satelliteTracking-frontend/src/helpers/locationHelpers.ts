@@ -125,8 +125,7 @@ export function handleUseBrowserLocationForVisibilityImpl(options: {
     setLongitude: options.setVisibilityLongitude,
     setAltitude: options.setVisibilityAltitude,
     setInfo: options.setVisibilityInfo,
-    successMessage: 'Posizione browser attiva per il calcolo visibilita.',
+    successMessage: 'Posizione browser attiva per il calcolo della visibilità.',
   })
 }
 
-export default {}

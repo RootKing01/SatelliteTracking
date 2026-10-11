@@ -1,40 +1,28 @@
-import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
+import type { GroupPositionsState, SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
+import { canonicalGroupAliases } from '../api/groups'
 import { fetchSatellitePositionsByType } from '../api/satelliteClient'
-import type { SatellitePosition } from '../types/satellite'
 
 export type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 
-const canonicalKeyAliases: Record<string, string> = {
-  'space-missions': 'spaceMissions',
-  'iridium-NEXT': 'iridiumNext',
-  'gps-ops': 'gpsOps',
-  'glonass-ops': 'glonassOps',
-  'space-rocket': 'spaceRocket',
-}
-
 type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
 type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
-type GroupPositionsState = Partial<Record<SatelliteGroupKey, SatellitePosition[]>>
+export type GroupRow = {
+  key: SatelliteGroupKey
+  label: string
+  color: string
+  count: number
+  loading: boolean
+  error: string
+  checked: boolean
+}
 
 export function createDefaultEnabledGroups(groups: readonly SatelliteGroupSource[]) {
   return Object.fromEntries(
-    groups.map((group) => [group.key, group.key === 'stations' || group.key === 'spaceMissions']),
+    groups.map((group) => [group.key, group.key === 'stations']),
   ) as Record<SatelliteGroupKey, boolean>
 }
 
 function humanizeGroupLabel(key: string): string {
-  const customLabels: Record<string, string> = {
-    'space-missions': 'Space Missions',
-    'iridium-NEXT': 'Iridium NEXT',
-    'gps-ops': 'GPS Ops',
-    'glonass-ops': 'GLONASS Ops',
-    debris: 'Debris',
-    payload: 'Payload',
-    'space-rocket': 'Space Rocket',
-  }
-
-  if (customLabels[key]) return customLabels[key]
-
   return key
     .replace(/[-_]+/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -59,7 +47,7 @@ export function buildRuntimeSatelliteGroupSources(
   const runtimeGroups = [...baseGroups]
 
   for (const canonicalKey of [...discoveredCanonicalKeys].sort((left, right) => left.localeCompare(right))) {
-    const frontendKey = canonicalKeyAliases[canonicalKey] ?? canonicalKey
+    const frontendKey = canonicalGroupAliases[canonicalKey] ?? canonicalKey
     if (groupsByFrontendKey.has(frontendKey)) continue
 
     groupsByFrontendKey.set(frontendKey, {
@@ -124,7 +112,7 @@ export function buildGroupRows(
   groupPositions: GroupPositionsState,
   groupLoading: GroupLoadingState,
   groupErrors: GroupErrorState,
-) {
+): GroupRow[] {
   return allGroups.map((group) => ({
     key: group.key,
     label: group.label,

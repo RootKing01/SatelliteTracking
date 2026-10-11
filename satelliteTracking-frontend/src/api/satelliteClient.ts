@@ -102,7 +102,6 @@ export async function fetchSatelliteCatalogByType(
       config.params = { type }
     }
     const response = await httpClient.get<SatelliteCatalogItem[]>(url, config)
-    console.log('[satelliteClient] response', response)
     return response.data
   } catch (error) {
     console.error('[satelliteClient] fetch catalog error', error)

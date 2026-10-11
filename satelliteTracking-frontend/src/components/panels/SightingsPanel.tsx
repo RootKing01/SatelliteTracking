@@ -79,7 +79,7 @@ export function SightingsPanel({
                   className="sighting-focus-button"
                   onClick={() => onFocusSightingSatellite(item.satelliteId)}
                 >
-                  Focus satellite
+                  Metti a fuoco satellite
                 </button>
               </div>
             </details>

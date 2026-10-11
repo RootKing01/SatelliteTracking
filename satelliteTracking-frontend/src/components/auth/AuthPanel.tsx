@@ -1,8 +1,7 @@
 
 import '../../styles/auth/auth-panel.css'
 import logo from '../../assets/logo.svg'
-
-type AuthMode = 'login' | 'register'
+import type { AuthMode } from '../../types/auth'
 
 type AuthPanelProps = {
   authChecking: boolean

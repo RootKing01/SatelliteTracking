@@ -12,7 +12,6 @@ export type AuthResponse = {
   authenticated: boolean
   message: string
   user: AuthUser | null
-  token?: string | null
 }
 
 export async function login(payload: {

@@ -43,8 +43,8 @@ export function VisibilityPanel({
   onFocusFromVisibility,
 }: VisibilityPanelProps) {
   return (
-    <section className="collapsible side-drawer" aria-label="Calcolo visibilita satelliti">
-      <h3>Visibilita prossime ore</h3>
+    <section className="collapsible side-drawer" aria-label="Calcolo visibilità satelliti">
+      <h3>Visibilità prossime ore</h3>
       <div className="visibility-grid">
         <label>
           Ore
@@ -75,7 +75,7 @@ export function VisibilityPanel({
       </div>
 
       <label className="visibility-city-row">
-        Citta (opzionale, prioritaria)
+        Città (opzionale, prioritaria)
         <input
           type="text"
           value={visibilityCity}
@@ -102,7 +102,7 @@ export function VisibilityPanel({
           )}
         </button>
         <button type="button" onClick={onCalculateVisibility}>
-          {visibilityLoading ? 'Calcolo...' : 'Calcola visibilita'}
+          {visibilityLoading ? 'Calcolo...' : 'Calcola visibilità'}
         </button>
       </div>
 
@@ -143,10 +143,10 @@ export function VisibilityPanel({
                 Elev. max {pass.maxElevation.toFixed(1)}deg | Mag {pass.estimatedMagnitude.toFixed(1)}
               </small>
               <small>
-                Condizione: {pass.observingCondition} | Visibilita: {pass.visibility}
+                Condizione: {pass.observingCondition} | Visibilità: {pass.visibility}
               </small>
               <button type="button" onClick={() => onFocusFromVisibility(pass)}>
-                Focus satellite
+                Metti a fuoco satellite
               </button>
             </article>
           ))}

@@ -18,7 +18,15 @@ test.describe('Authentication Login', () => {
 test('should show viewer after login (stable UI check)', async ({ page }) => {
 
   // 🔒 blocca dipendenze instabili (satelliti/globe)
-  await page.route('**/api/satellites/**', route => {
+  await page.route('**/api/satellites/groups-stats', route => {
+    route.fulfill({
+      status: 200,
+      body: JSON.stringify({ stats: { stations: 1 }, total: 1 }),
+      contentType: 'application/json'
+    })
+  })
+
+  await page.route('**/api/satellites/positions**', route => {
     route.fulfill({
       status: 200,
       body: JSON.stringify([]),
@@ -26,10 +34,15 @@ test('should show viewer after login (stable UI check)', async ({ page }) => {
     })
   })
 
-  await page.route('**/api/live/**', route => {
+  await page.route('**/api/system/health', route => {
     route.fulfill({
       status: 200,
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        status: 'UP',
+        checkedAt: '2026-10-11T12:00:00Z',
+        components: { api: 'UP', database: 'UP', orekit: 'UP' },
+        orekitDataPath: '/orekit-data'
+      }),
       contentType: 'application/json'
     })
   })

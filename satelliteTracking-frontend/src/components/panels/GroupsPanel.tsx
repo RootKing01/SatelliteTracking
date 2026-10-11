@@ -1,33 +1,12 @@
 import type { SatelliteGroupKey } from '../../api/groups/types'
+import type { GroupRow } from '../../helpers/groupHelpers'
+import type { SearchResultItem, SatelliteSearchScope } from '../../helpers/searchHelpers'
 import { memo } from 'react'
 import '../../styles/panels/groups-panel.css'
-
-type SatelliteSearchScope = 'enabled' | 'all' | SatelliteGroupKey
-
-type SearchResultItem = {
-  entityId: string
-  groupKey: SatelliteGroupKey
-  groupLabel: string
-  satelliteId: number
-  satelliteName: string
-  objectId: string
-  noradCatId: number
-  hasLivePosition: boolean
-}
 
 type ScopeOption = {
   key: SatelliteGroupKey
   label: string
-}
-
-type GroupRow = {
-  key: SatelliteGroupKey
-  label: string
-  color: string
-  count: number
-  loading: boolean
-  error: string
-  checked: boolean
 }
 
 type GroupsPanelProps = {

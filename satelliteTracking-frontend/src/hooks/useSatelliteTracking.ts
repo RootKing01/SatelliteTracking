@@ -39,9 +39,9 @@ export function useSatelliteTracking({
     () =>
       buildRuntimeSatelliteGroupSources(
         satelliteGroupSources as readonly SatelliteGroupSource[],
-        discoveredCanonicalGroupKeys,
+        authenticated ? discoveredCanonicalGroupKeys : [],
       ),
-    [discoveredCanonicalGroupKeys],
+    [authenticated, discoveredCanonicalGroupKeys],
   )
 
   const groupColorMap = useMemo(
@@ -54,8 +54,6 @@ export function useSatelliteTracking({
 
   useEffect(() => {
     if (!authenticated) {
-      setGroupDiscoveryReady(false)
-      setDiscoveredCanonicalGroupKeys([])
       return
     }
 
@@ -95,7 +93,7 @@ export function useSatelliteTracking({
   } = useLiveSatelliteGroups({
     activeGroups,
     authenticated,
-    enabled: groupDiscoveryReady,
+    enabled: authenticated && groupDiscoveryReady,
     compactMobileViewport,
     onSessionExpired,
   })
@@ -148,6 +146,5 @@ export function useSatelliteTracking({
     starlinkSatellites,
     satelliteLookupByEntityId,
     liveEntityIdBySatelliteId,
-    defaultEnabledGroups,
   }
 }

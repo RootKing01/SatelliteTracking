@@ -176,13 +176,6 @@ export async function markCommunityNotificationAsRead(notificationId: number): P
   return response.data
 }
 
-export async function fetchCommunityThreadReadState(threadId: number, signal?: AbortSignal): Promise<CommunityThreadReadState> {
-  const response = await httpClient.get<CommunityThreadReadState>(`/api/community/threads/${threadId}/read-state`, {
-    signal,
-  })
-  return response.data
-}
-
 export async function updateCommunityThreadReadState(
   threadId: number,
   lastReadCommentId: number | null,

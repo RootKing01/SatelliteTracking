@@ -64,7 +64,7 @@ export function buildVisibilityQueryLocationLabel(
   longitude: number | null,
 ) {
   if (city.trim()) {
-    return `Citta: ${city.trim()}`
+    return `Città: ${city.trim()}`
   }
   if (latitude !== null && longitude !== null) {
     return `Coordinate browser: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`

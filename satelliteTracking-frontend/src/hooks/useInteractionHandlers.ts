@@ -98,6 +98,7 @@ export function useReportSighting(options: {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState,
   } = options
 
   return useCallback(async () => {
@@ -110,7 +111,7 @@ export function useReportSighting(options: {
     const hasCity = getSightingCity().trim().length > 0
 
     if (!hasBrowserCoords && !hasCity) {
-      setSightingsError('Inserisci una citta o usa la posizione del browser.')
+      setSightingsError('Inserisci una città o usa la posizione del browser.')
       return
     }
 
@@ -135,7 +136,7 @@ export function useReportSighting(options: {
           setAuthUser,
           setAuthInfo,
           setAuthError,
-          clearSessionState: options.clearSessionState,
+          clearSessionState,
           message: 'Sessione non valida per registrare l\'avvistamento.',
         })
         return
@@ -159,6 +160,7 @@ export function useReportSighting(options: {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState,
   ])
 }
 
@@ -229,7 +231,7 @@ export function useCalculateVisibility(options: {
           setAuthInfo,
           setAuthError,
           clearSessionState,
-          message: 'Sessione non valida per il calcolo visibilita.',
+          message: 'Sessione non valida per il calcolo della visibilità.',
         })
         return
       }
@@ -238,7 +240,7 @@ export function useCalculateVisibility(options: {
       setVisibilityAllResults(resetState.allResults)
       setVisibilityResults(resetState.previewResults)
       setVisibilityOverlayOpen(!resetState.closeOverlay)
-      setVisibilityError(extractAuthErrorMessage(error, 'Errore durante il calcolo della visibilita'))
+      setVisibilityError(extractAuthErrorMessage(error, 'Errore durante il calcolo della visibilità'))
     } finally {
       setVisibilityLoading(false)
     }
@@ -259,6 +261,7 @@ export function useCalculateVisibility(options: {
     setAuthUser,
     setAuthInfo,
     setAuthError,
+    clearSessionState,
   ])
 }
 
@@ -305,4 +308,3 @@ export function useFocusBySatelliteId(options: {
   }, [liveEntityIdBySatelliteId, satelliteLookupByEntityId, handlePickEntityId, globeRef, fetchSatellitePositionById, setVisibilityError])
 }
 
-export default {}

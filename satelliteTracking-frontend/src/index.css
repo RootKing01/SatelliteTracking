@@ -13,6 +13,14 @@ body,
   --color-accent: #60faff;
   --color-accent-bright: #7ff9ff;
   --color-danger: #ff9ea9;
+  --color-success: #45f18a;
+  --color-warning: #ffa852;
+  --color-status-pending: #9fb2cb;
+  --color-surface-deep: rgba(5, 14, 26, 0.92);
+  --color-surface-panel: rgba(10, 24, 42, 0.72);
+  --color-border-soft: rgba(96, 250, 255, 0.24);
+  --color-text-strong: #d3f7ff;
+  --color-text-subtle: #a6c6d8;
   --surface-input: rgba(9, 24, 45, 0.85);
   --border-accent: rgba(96, 250, 255, 0.36);
   --radius-control: 8px;

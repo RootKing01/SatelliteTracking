@@ -26,14 +26,24 @@ import {
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, Viewer, type CesiumComponentRef } from 'resium'
-import Moon from './Moon'
-import { computeMoonPosition } from '../helpers/moonPosition'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
 import type { SatellitePosition } from '../types/satellite'
 
 const earthRotationSpeed = 0.00015
 const initialCameraDestination = Cartesian3.fromDegrees(-20, -6, 24000000)
 const initialCameraOrientation = new HeadingPitchRoll(0, -1.5, 0)
+
+function positionFromDegrees(longitudeDeg: number, latitudeDeg: number, altitudeKm: number) {
+  return Cartesian3.fromDegrees(
+    longitudeDeg,
+    latitudeDeg,
+    Math.max(0, altitudeKm * 1000),
+  )
+}
+
+function satellitePositionToCartesian3(satellite: SatellitePosition) {
+  return positionFromDegrees(satellite.longitudeDeg, satellite.latitudeDeg, satellite.altitudeKm)
+}
 
 type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
@@ -93,11 +103,7 @@ function updateSatellitePointPrimitive(
   outlineWidth: number,
   showBackSideSatellites: boolean,
 ) {
-  primitive.position = Cartesian3.fromDegrees(
-    satellite.longitudeDeg,
-    satellite.latitudeDeg,
-    Math.max(0, satellite.altitudeKm * 1000),
-  )
+  primitive.position = satellitePositionToCartesian3(satellite)
   primitive.color = color
   primitive.pixelSize = pixelSize
   primitive.outlineColor = Color.WHITE
@@ -170,17 +176,11 @@ function updatePointPrimitiveLayer<TItem, TKey>(
         const color = getColor(item)
         const pixelSize = isSelected ? selectedPixelSize : unselectedPixelSize
         const outlineWidth = isSelected ? selectedOutlineWidth : unselectedOutlineWidth
-        const altitudeMeters = Math.max(0, satellite.altitudeKm * 1000)
-
         let primitive = primitiveByKeyRef.current.get(key)
 
         if (!primitive) {
           primitive = collection.add({
-            position: Cartesian3.fromDegrees(
-              satellite.longitudeDeg,
-              satellite.latitudeDeg,
-              altitudeMeters,
-            ),
+            position: satellitePositionToCartesian3(satellite),
             color,
             pixelSize,
             outlineColor: Color.WHITE,
@@ -227,7 +227,6 @@ export type SatelliteGlobeHandle = {
   zoomOut: () => void
   goToInitialView: () => void
   alignToEarthAxis: () => void
-  focusOnMoon: () => void
   focusOnSatellite: (
     longitudeDeg: number,
     latitudeDeg: number,
@@ -239,7 +238,6 @@ export type SatelliteGlobeHandle = {
 type SatelliteGlobeProps = {
   autoRotate: boolean
   showBackSideSatellites: boolean
-  showMoon?: boolean
   performanceMode?: boolean
   groupColorMap: Record<SatelliteGroupKey, string>
   selectedEntityId: string | null
@@ -253,7 +251,6 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     {
       autoRotate,
       showBackSideSatellites,
-      showMoon = true,
       performanceMode = false,
       groupColorMap,
       selectedEntityId,
@@ -358,7 +355,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       }
 
       return null
-    }, [selectedEntityId, selectedStarlinkSatellite, selectedVisibleSatellite])
+    }, [selectedStarlinkSatellite, selectedVisibleSatellite])
     useEffect(() => {
       if (viewerReadyTick > 0) {
         return
@@ -435,31 +432,6 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           duration: 0.9,
         })
       },
-      focusOnMoon: () => {
-        const viewer = viewerRef.current?.cesiumElement
-        if (!viewer) {
-          return
-        }
-
-        const { lon, lat, altMeters } = computeMoonPosition()
-        const moonPosition = Cartesian3.fromDegrees(lon, lat, altMeters)
-
-        viewer.camera.cancelFlight()
-        pauseAutoRotateUntilRef.current = Date.now() + 1800
-
-        const moonSphere = new BoundingSphere(moonPosition, 900000)
-        viewer.camera.flyToBoundingSphere(moonSphere, {
-          offset: new HeadingPitchRange(viewer.camera.heading, CesiumMath.toRadians(-22), 2600000),
-          duration: 1.35,
-        })
-
-        const entity = viewer.entities.getById('moon-entity')
-        if (entity) {
-          viewer.selectedEntity = entity
-          viewer.trackedEntity = entity
-          lastTrackedEntityIdRef.current = 'moon-entity'
-        }
-      },
       focusOnSatellite: (
         longitudeDeg: number,
         latitudeDeg: number,
@@ -479,11 +451,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         const normalizedLongitude = ((((longitudeDeg + 180) % 360) + 360) % 360) - 180
 
         const safeAltitudeKm = Math.max(200, altitudeKm)
-        const targetPosition = Cartesian3.fromDegrees(
-          normalizedLongitude,
-          clampedLatitude,
-          safeAltitudeKm * 1000,
-        )
+        const targetPosition = positionFromDegrees(normalizedLongitude, clampedLatitude, safeAltitudeKm)
 
         if (entityId) {
           const entity = viewer.entities.getById(entityId)
@@ -605,7 +573,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       })
 
       viewer.camera.percentageChanged = 0.002
-    }, [viewerReadyTick])
+    }, [performanceMode, viewerReadyTick])
 
     useEffect(() => {
       const viewer = viewerRef.current?.cesiumElement
@@ -743,18 +711,23 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     }, [onPickEntityId])
 
     useEffect(() => {
+      const viewer = viewerRef.current?.cesiumElement
+      const starlinkPoints = starlinkPointsRef.current
+      const groupPoints = groupPointsRef.current
+      const starlinkPrimitives = starlinkPrimitiveByIdRef.current
+      const groupPrimitives = groupPrimitiveByEntityIdRef.current
+
       return () => {
-        const viewer = viewerRef.current?.cesiumElement
-        if (viewer && starlinkPointsRef.current) {
-          viewer.scene.primitives.remove(starlinkPointsRef.current)
+        if (viewer && starlinkPoints) {
+          viewer.scene.primitives.remove(starlinkPoints)
           starlinkPointsRef.current = null
         }
-        if (viewer && groupPointsRef.current) {
-          viewer.scene.primitives.remove(groupPointsRef.current)
+        if (viewer && groupPoints) {
+          viewer.scene.primitives.remove(groupPoints)
           groupPointsRef.current = null
         }
-        starlinkPrimitiveByIdRef.current.clear()
-        groupPrimitiveByEntityIdRef.current.clear()
+        starlinkPrimitives.clear()
+        groupPrimitives.clear()
       }
     }, [])
 
@@ -779,11 +752,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             id={`starlink-${selectedStarlinkSatellite.satelliteId}`}
             name={selectedStarlinkSatellite.satelliteName}
             description={`Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`}
-            position={Cartesian3.fromDegrees(
-              selectedStarlinkSatellite.longitudeDeg,
-              selectedStarlinkSatellite.latitudeDeg,
-              Math.max(0, selectedStarlinkSatellite.altitudeKm * 1000),
-            )}
+            position={satellitePositionToCartesian3(selectedStarlinkSatellite)}
             point={{
               pixelSize: 1,
               color: Color.TRANSPARENT,
@@ -800,11 +769,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             id={`${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}`}
             name={selectedVisibleSatellite.satellite.satelliteName}
             description={`${selectedVisibleSatellite.group.label} | NORAD ${selectedVisibleSatellite.satellite.noradCatId}`}
-            position={Cartesian3.fromDegrees(
-              selectedVisibleSatellite.satellite.longitudeDeg,
-              selectedVisibleSatellite.satellite.latitudeDeg,
-              Math.max(0, selectedVisibleSatellite.satellite.altitudeKm * 1000),
-            )}
+            position={satellitePositionToCartesian3(selectedVisibleSatellite.satellite)}
             point={{
               pixelSize: 1,
               color: Color.TRANSPARENT,
@@ -820,10 +785,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
             <Entity
               key={`${selectedTarget.entityId}-reticle-halo`}
               id={`${selectedTarget.entityId}-reticle-halo`}
-              position={Cartesian3.fromDegrees(
+              position={positionFromDegrees(
                 selectedTarget.longitudeDeg,
                 selectedTarget.latitudeDeg,
-                Math.max(0, selectedTarget.altitudeKm * 1000),
+                selectedTarget.altitudeKm,
               )}
               billboard={{
                 image: selectedReticleHaloImage,
@@ -839,10 +804,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
               id={`${selectedTarget.entityId}-reticle`}
               name={`${selectedTarget.satelliteName} mirino`}
               description={selectedTarget.description}
-              position={Cartesian3.fromDegrees(
+              position={positionFromDegrees(
                 selectedTarget.longitudeDeg,
                 selectedTarget.latitudeDeg,
-                Math.max(0, selectedTarget.altitudeKm * 1000),
+                selectedTarget.altitudeKm,
               )}
               billboard={{
                 image: selectedReticleImage,
@@ -856,17 +821,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
           </>
         ) : null}
 
-        {/* Moon component handles its own visuals and glow */}
-        <Moon show={!!showMoon} />
-
         {selectedVisibleSatellite ? (
           <Entity
             key={`${selectedVisibleSatellite.group.key}-${selectedVisibleSatellite.satellite.satelliteId}-pulse`}
-            position={Cartesian3.fromDegrees(
-              selectedVisibleSatellite.satellite.longitudeDeg,
-              selectedVisibleSatellite.satellite.latitudeDeg,
-              Math.max(0, selectedVisibleSatellite.satellite.altitudeKm * 1000),
-            )}
+            position={satellitePositionToCartesian3(selectedVisibleSatellite.satellite)}
             point={{
               pixelSize: selectedPulsePixelSize,
               color: selectedPulseColor,
