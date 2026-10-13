@@ -19,6 +19,9 @@ import com.satelliteTracking.service.AuthService;
 import com.satelliteTracking.service.JwtService;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -26,19 +29,23 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtService jwtService;
+    private final CookieCsrfTokenRepository csrfTokenRepository;
 
     @Value("${app.security.jwt.cookie-name:st_auth}")
     private String jwtCookieName;
 
-    @Value("${app.security.jwt.cookie-secure:false}")
+    @Value("${app.security.jwt.cookie-secure:true}")
     private boolean jwtCookieSecure;
 
     @Value("${app.security.jwt.cookie-same-site:Lax}")
     private String jwtCookieSameSite;
  
-    public AuthController(AuthService authService, JwtService jwtService) {
+    public AuthController(AuthService authService,
+                          JwtService jwtService,
+                          CookieCsrfTokenRepository csrfTokenRepository) {
         this.authService = authService;
         this.jwtService = jwtService;
+        this.csrfTokenRepository = csrfTokenRepository;
     }
 
     @PostMapping("/register")
@@ -83,6 +90,16 @@ public ResponseEntity<AuthResponseDTO> login(
         return ResponseEntity.ok(authService.currentUser());
     }
 
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(HttpServletRequest request, HttpServletResponse response) {
+        CsrfToken token = csrfTokenRepository.loadToken(request);
+        if (token == null) {
+            token = csrfTokenRepository.generateToken(request);
+            csrfTokenRepository.saveToken(token, request, response);
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<AuthResponseDTO> logout(HttpServletRequest httpRequest) {
         ResponseCookie cookie = clearAuthCookie(httpRequest);
@@ -94,7 +111,7 @@ public ResponseEntity<AuthResponseDTO> login(
     private ResponseCookie buildAuthCookie(String token, HttpServletRequest request) {
         return ResponseCookie.from(jwtCookieName, token == null ? "" : token)
             .httpOnly(true)
-            .secure(isSecureRequest(request))
+            .secure(jwtCookieSecure || isSecureRequest(request))
             .path("/")
             .sameSite(jwtCookieSameSite)
             .maxAge(Duration.ofMillis(jwtService.getJwtExpirationMs()))
@@ -104,7 +121,7 @@ public ResponseEntity<AuthResponseDTO> login(
     private ResponseCookie clearAuthCookie(HttpServletRequest request) {
         return ResponseCookie.from(jwtCookieName, "")
             .httpOnly(true)
-            .secure(isSecureRequest(request))
+            .secure(jwtCookieSecure || isSecureRequest(request))
             .path("/")
             .sameSite(jwtCookieSameSite)
             .maxAge(Duration.ZERO)

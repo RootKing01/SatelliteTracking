@@ -23,15 +23,22 @@ import {
   ScreenSpaceEventType,
   Math as CesiumMath,
   VerticalOrigin,
+  Ion,
   type Viewer as CesiumViewer,
 } from 'cesium'
 import { Entity, Viewer, type CesiumComponentRef } from 'resium'
+import { STARLINK_GROUP_KEY } from '../api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
 import type { SatellitePosition } from '../types/satellite'
 
 const earthRotationSpeed = 0.00015
 const initialCameraDestination = Cartesian3.fromDegrees(-20, -6, 24000000)
 const initialCameraOrientation = new HeadingPitchRoll(0, -1.5, 0)
+
+const ionToken = import.meta.env.VITE_CESIUM_TOKEN
+if (ionToken && !import.meta.env.DEV) {
+  Ion.defaultAccessToken = ionToken
+}
 
 function positionFromDegrees(longitudeDeg: number, latitudeDeg: number, altitudeKm: number) {
   return Cartesian3.fromDegrees(
@@ -278,7 +285,10 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     const selectedPulseColor = useMemo(() => Color.fromAlpha(Color.WHITE, 0.28), [])
     const cesiumGroupColorMap = useMemo(
       () => Object.fromEntries(
-        Object.entries(groupColorMap).map(([key, color]) => [key, Color.fromCssColorString(color)]),
+        Object.entries(groupColorMap).map(([key, color]) => [
+          key,
+          Color.fromCssColorString(color || '#ffffff'),
+        ]),
       ) as Record<SatelliteGroupKey, Color>,
       [groupColorMap],
     )
@@ -307,11 +317,11 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
     }, [])
     const selectedStarlinkSatellite = useMemo(() => {
-      if (!selectedEntityId || !selectedEntityId.startsWith('starlink-')) {
+      if (!selectedEntityId || !selectedEntityId.startsWith(`${STARLINK_GROUP_KEY}-`)) {
         return null
       }
 
-      const parsedId = Number(selectedEntityId.replace('starlink-', ''))
+      const parsedId = Number(selectedEntityId.replace(`${STARLINK_GROUP_KEY}-`, ''))
       if (!Number.isFinite(parsedId)) {
         return null
       }
@@ -321,7 +331,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       )
     }, [selectedEntityId, starlinkSatellites])
     const selectedVisibleSatellite = useMemo(() => {
-      if (!selectedEntityId || selectedEntityId.startsWith('starlink-')) {
+      if (!selectedEntityId || selectedEntityId.startsWith(`${STARLINK_GROUP_KEY}-`)) {
         return null
       }
 
@@ -334,7 +344,7 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
     const selectedTarget = useMemo<SelectedSatelliteTarget | null>(() => {
       if (selectedStarlinkSatellite) {
         return {
-          entityId: `starlink-${selectedStarlinkSatellite.satelliteId}`,
+          entityId: `${STARLINK_GROUP_KEY}-${selectedStarlinkSatellite.satelliteId}`,
           satelliteName: selectedStarlinkSatellite.satelliteName,
           description: `Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`,
           longitudeDeg: selectedStarlinkSatellite.longitudeDeg,
@@ -629,9 +639,9 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
         nextKeysRef: starlinkNextIdsRef,
         items: starlinkSatellites,
         getKey: (satellite) => satellite.satelliteId,
-        getEntityId: (satellite) => `starlink-${satellite.satelliteId}`,
+        getEntityId: (satellite) => `${STARLINK_GROUP_KEY}-${satellite.satelliteId}`,
         getSatellite: (satellite) => satellite,
-        getColor: () => cesiumGroupColorMap.starlink,
+        getColor: () => cesiumGroupColorMap[STARLINK_GROUP_KEY],
         selectedEntityId,
         showBackSideSatellites,
         selectedPixelSize: 6,
@@ -748,8 +758,8 @@ const SatelliteGlobeBase = forwardRef<SatelliteGlobeHandle, SatelliteGlobeProps>
       >
         {selectedStarlinkSatellite ? (
           <Entity
-            key={`starlink-${selectedStarlinkSatellite.satelliteId}`}
-            id={`starlink-${selectedStarlinkSatellite.satelliteId}`}
+            key={`${STARLINK_GROUP_KEY}-${selectedStarlinkSatellite.satelliteId}`}
+            id={`${STARLINK_GROUP_KEY}-${selectedStarlinkSatellite.satelliteId}`}
             name={selectedStarlinkSatellite.satelliteName}
             description={`Starlink | NORAD ${selectedStarlinkSatellite.noradCatId}`}
             position={satellitePositionToCartesian3(selectedStarlinkSatellite)}

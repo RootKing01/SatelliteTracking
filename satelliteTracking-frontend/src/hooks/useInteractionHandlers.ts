@@ -71,12 +71,12 @@ export function useSearchResultSelect(options: {
 }
 
 export function useReportSighting(options: {
-  getSelectedSatellite: () => SelectedSatelliteState | null
-  getReportingSighting: () => boolean
-  getSightingLatitude: () => number | null
-  getSightingLongitude: () => number | null
-  getSightingAltitude: () => number | null
-  getSightingCity: () => string
+  selectedSatellite: SelectedSatelliteState | null
+  reportingSighting: boolean
+  sightingLatitude: number | null
+  sightingLongitude: number | null
+  sightingAltitude: number | null
+  sightingCity: string
   setSightingsError: (s: string) => void
   setReportingSighting: (b: boolean) => void
   setSightingInfo: (s: string) => void
@@ -84,12 +84,12 @@ export function useReportSighting(options: {
   setOpenPane: Dispatch<SetStateAction<SidebarPane | null>>
 } & AuthSessionSetters) {
   const {
-    getSelectedSatellite,
-    getReportingSighting,
-    getSightingLatitude,
-    getSightingLongitude,
-    getSightingAltitude,
-    getSightingCity,
+    selectedSatellite,
+    reportingSighting,
+    sightingLatitude,
+    sightingLongitude,
+    sightingAltitude,
+    sightingCity,
     setSightingsError,
     setReportingSighting,
     setSightingInfo,
@@ -102,13 +102,12 @@ export function useReportSighting(options: {
   } = options
 
   return useCallback(async () => {
-    const selectedSatellite = getSelectedSatellite()
-    if (!selectedSatellite || getReportingSighting()) {
+    if (!selectedSatellite || reportingSighting) {
       return
     }
 
-    const hasBrowserCoords = getSightingLatitude() !== null && getSightingLongitude() !== null
-    const hasCity = getSightingCity().trim().length > 0
+    const hasBrowserCoords = sightingLatitude !== null && sightingLongitude !== null
+    const hasCity = sightingCity.trim().length > 0
 
     if (!hasBrowserCoords && !hasCity) {
       setSightingsError('Inserisci una città o usa la posizione del browser.')
@@ -122,10 +121,10 @@ export function useReportSighting(options: {
     try {
       const created = await reportSighting({
         satelliteId: selectedSatellite.satellite.satelliteId,
-        city: hasBrowserCoords ? undefined : getSightingCity().trim(),
-        latitude: hasBrowserCoords ? getSightingLatitude() ?? undefined : undefined,
-        longitude: hasBrowserCoords ? getSightingLongitude() ?? undefined : undefined,
-        altitudeMeters: hasBrowserCoords ? (getSightingAltitude() ?? undefined) : undefined,
+        city: hasBrowserCoords ? undefined : sightingCity.trim(),
+        latitude: hasBrowserCoords ? sightingLatitude ?? undefined : undefined,
+        longitude: hasBrowserCoords ? sightingLongitude ?? undefined : undefined,
+        altitudeMeters: hasBrowserCoords ? (sightingAltitude ?? undefined) : undefined,
       })
       setMySightings((prev) => [created, ...prev])
       setSightingInfo(created.validationMessage)
@@ -146,12 +145,12 @@ export function useReportSighting(options: {
       setReportingSighting(false)
     }
   }, [
-    getSelectedSatellite,
-    getReportingSighting,
-    getSightingLatitude,
-    getSightingLongitude,
-    getSightingAltitude,
-    getSightingCity,
+    selectedSatellite,
+    reportingSighting,
+    sightingLatitude,
+    sightingLongitude,
+    sightingAltitude,
+    sightingCity,
     setSightingsError,
     setReportingSighting,
     setSightingInfo,
@@ -165,31 +164,31 @@ export function useReportSighting(options: {
 }
 
 export function useCalculateVisibility(options: {
-  getVisibilityLoading: () => boolean
+  visibilityLoading: boolean
   setVisibilityLoading: (b: boolean) => void
   setVisibilityError: (s: string) => void
   setVisibilityInfo: (s: string) => void
   visibilityCity: string
   visibilityHours: number
   visibilityMinElevation: number
-  getVisibilityLatitude: () => number | null
-  getVisibilityLongitude: () => number | null
-  getVisibilityAltitude: () => number | null
+  visibilityLatitude: number | null
+  visibilityLongitude: number | null
+  visibilityAltitude: number | null
   setVisibilityAllResults: Dispatch<SetStateAction<UpcomingPass[]>>
   setVisibilityResults: Dispatch<SetStateAction<UpcomingPass[]>>
   setVisibilityOverlayOpen: (b: boolean) => void
 } & AuthSessionSetters) {
   const {
-    getVisibilityLoading,
+    visibilityLoading,
     setVisibilityLoading,
     setVisibilityError,
     setVisibilityInfo,
     visibilityCity,
     visibilityHours,
     visibilityMinElevation,
-    getVisibilityLatitude,
-    getVisibilityLongitude,
-    getVisibilityAltitude,
+    visibilityLatitude,
+    visibilityLongitude,
+    visibilityAltitude,
     setVisibilityAllResults,
     setVisibilityResults,
     setVisibilityOverlayOpen,
@@ -200,7 +199,7 @@ export function useCalculateVisibility(options: {
   } = options
 
   return useCallback(async () => {
-    if (getVisibilityLoading()) {
+    if (visibilityLoading) {
       return
     }
 
@@ -213,9 +212,9 @@ export function useCalculateVisibility(options: {
         city: visibilityCity,
         hours: visibilityHours,
         minElevation: visibilityMinElevation,
-        latitude: getVisibilityLatitude(),
-        longitude: getVisibilityLongitude(),
-        altitude: getVisibilityAltitude(),
+        latitude: visibilityLatitude,
+        longitude: visibilityLongitude,
+        altitude: visibilityAltitude,
       })
 
       setVisibilityAllResults(results)
@@ -245,16 +244,16 @@ export function useCalculateVisibility(options: {
       setVisibilityLoading(false)
     }
   }, [
-    getVisibilityLoading,
+    visibilityLoading,
     setVisibilityLoading,
     setVisibilityError,
     setVisibilityInfo,
     visibilityCity,
     visibilityHours,
     visibilityMinElevation,
-    getVisibilityLatitude,
-    getVisibilityLongitude,
-    getVisibilityAltitude,
+    visibilityLatitude,
+    visibilityLongitude,
+    visibilityAltitude,
     setVisibilityAllResults,
     setVisibilityResults,
     setVisibilityOverlayOpen,

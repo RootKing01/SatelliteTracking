@@ -16,7 +16,7 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    @Value("${app.security.jwt.secret:change-me-super-secret-key-change-me-super-secret-key}")
+    @Value("${app.security.jwt.secret}")
     private String jwtSecret;
 
     @Value("${app.security.jwt.expiration-ms:28800000}")

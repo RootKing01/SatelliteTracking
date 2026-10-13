@@ -1,8 +1,11 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
-import type { GroupPositionsState, SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
-type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
-type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
+import type {
+  GroupErrorState,
+  GroupLoadingState,
+  GroupPositionsState,
+  SatelliteGroupSource,
+} from '../api/groups/types'
 
 type UseLiveSatelliteGroupsOptions = {
   activeGroups: SatelliteGroupSource[]

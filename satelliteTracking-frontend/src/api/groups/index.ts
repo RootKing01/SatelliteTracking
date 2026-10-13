@@ -2,10 +2,11 @@ import { fetchSatellitePositionsByType } from '../satelliteClient'
 import type { SatelliteGroupSource } from './types'
 
 type SatelliteGroupDefinition = Omit<SatelliteGroupSource, 'loadPositions'>
+export const STARLINK_GROUP_KEY = 'starlink' as const
 
 const satelliteGroupDefinitions = [
   { key: 'stations', label: 'Stations', type: 'stations', color: '#63d6ff' },
-  { key: 'starlink', label: 'Starlink', type: 'starlink', color: '#ff8f67' },
+  { key: STARLINK_GROUP_KEY, label: 'Starlink', type: STARLINK_GROUP_KEY, color: '#ff8f67' },
   { key: 'oneweb', label: 'OneWeb', type: 'oneweb', color: '#6ca8ff' },
   { key: 'iridiumNext', label: 'Iridium NEXT', type: 'iridium-NEXT', color: '#89ffe2' },
   { key: 'spire', label: 'Spire', type: 'spire', color: '#7effac' },

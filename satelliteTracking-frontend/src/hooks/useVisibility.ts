@@ -27,16 +27,16 @@ export function useVisibility(options: VisibilityOptions) {
   const [visibilityLocatingBrowser, setVisibilityLocatingBrowser] = useState(false)
 
   const handleCalculateVisibility = useCalculateVisibility({
-    getVisibilityLoading: () => visibilityLoading,
+    visibilityLoading,
     setVisibilityLoading,
     setVisibilityError,
     setVisibilityInfo,
     visibilityCity,
     visibilityHours,
     visibilityMinElevation,
-    getVisibilityLatitude: () => visibilityLatitude,
-    getVisibilityLongitude: () => visibilityLongitude,
-    getVisibilityAltitude: () => visibilityAltitude,
+    visibilityLatitude,
+    visibilityLongitude,
+    visibilityAltitude,
     setVisibilityAllResults,
     setVisibilityResults,
     setVisibilityOverlayOpen,

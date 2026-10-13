@@ -46,17 +46,12 @@ import './App.css'
 import './styles/orekit-badge.css'
 import './styles/mobile-smartphone.css'
 
-const ionToken = import.meta.env.VITE_CESIUM_TOKEN
 
 const LazySatelliteGlobe = lazy(() =>
   import('./components/SatelliteGlobe').then(({ SatelliteGlobe }) => ({ default: SatelliteGlobe })),
 )
 
-if (ionToken && !import.meta.env.DEV) {
-  void import('cesium').then(({ Ion }) => {
-    Ion.defaultAccessToken = ionToken
-  })
-}
+const ionToken = import.meta.env.VITE_CESIUM_TOKEN
 
 function App() {
   const globeRef = useRef<SatelliteGlobeHandle>(null)
@@ -155,6 +150,7 @@ function App() {
     visibilityOverlayQuery, setVisibilityOverlayQuery, visibilityLatitude, setVisibilityLongitude,
     visibilityLongitude, visibilityLocatingBrowser, setVisibilityLocatingBrowser,
     setVisibilityError, setVisibilityInfo, setVisibilityLatitude, setVisibilityAltitude,
+    setVisibilityResults, setVisibilityAllResults,
     handleCalculateVisibility, visibilityQueryLocationLabel, visibilityOverlayFilteredResults,
   } = visibility
   const {
@@ -163,17 +159,27 @@ function App() {
   } = sightings
   useEffect(() => {
     clearSessionRef.current = () => {
-      sightings.setMySightings([])
-      visibility.setVisibilityResults([])
-      visibility.setVisibilityAllResults([])
-      visibility.setVisibilityOverlayOpen(false)
-      visibility.setVisibilityOverlayQuery('')
-      sightings.setSightingsError('')
-      sightings.setSightingInfo('')
-      visibility.setVisibilityError('')
-      visibility.setVisibilityInfo('')
+      setMySightings([])
+      setVisibilityResults([])
+      setVisibilityAllResults([])
+      setVisibilityOverlayOpen(false)
+      setVisibilityOverlayQuery('')
+      setSightingsError('')
+      setSightingInfo('')
+      setVisibilityError('')
+      setVisibilityInfo('')
     }
-  }, [sightings, visibility])
+  }, [
+    setMySightings,
+    setVisibilityAllResults,
+    setVisibilityError,
+    setVisibilityInfo,
+    setVisibilityOverlayOpen,
+    setVisibilityOverlayQuery,
+    setVisibilityResults,
+    setSightingsError,
+    setSightingInfo,
+  ])
 
   const handleLiveSessionExpired = useCallback(() => {
     clearPrivateSessionState()
@@ -475,12 +481,12 @@ function App() {
   }, [authUser, loadAuthenticatedSystemStatus])
 
   const handleReportSighting = useReportSighting({
-    getSelectedSatellite: () => selectedSatellite,
-    getReportingSighting: () => reportingSighting,
-    getSightingLatitude: () => sightingLatitude,
-    getSightingLongitude: () => sightingLongitude,
-    getSightingAltitude: () => sightingAltitude,
-    getSightingCity: () => sightingCity,
+    selectedSatellite,
+    reportingSighting,
+    sightingLatitude,
+    sightingLongitude,
+    sightingAltitude,
+    sightingCity,
     setSightingsError: (s: string) => setSightingsError(s),
     setReportingSighting: (b: boolean) => setReportingSighting(b),
     setSightingInfo: (s: string) => setSightingInfo(s),

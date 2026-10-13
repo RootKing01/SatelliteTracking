@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchSatelliteGroupsStats } from '../api/satelliteClient'
-import { satelliteGroupSources } from '../api/groups'
+import { satelliteGroupSources, STARLINK_GROUP_KEY } from '../api/groups'
 import type { SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
 import {
   buildEnabledGroupsFromPreset,
@@ -108,7 +108,7 @@ export function useSatelliteTracking({
 
   const visibleEntitySatellites = useMemo<VisibleSatelliteItem[]>(
     () => activeGroups.flatMap((group) =>
-      group.key === 'starlink'
+      group.key === STARLINK_GROUP_KEY
         ? []
         : (groupPositions[group.key] ?? []).map((satellite) => ({ group, satellite })),
     ),
@@ -116,8 +116,8 @@ export function useSatelliteTracking({
   )
 
   const starlinkSatellites = useMemo(
-    () => (enabledGroups.starlink ? groupPositions.starlink ?? [] : []),
-    [enabledGroups.starlink, groupPositions.starlink],
+    () => (enabledGroups[STARLINK_GROUP_KEY] ? groupPositions[STARLINK_GROUP_KEY] ?? [] : []),
+    [enabledGroups[STARLINK_GROUP_KEY], groupPositions[STARLINK_GROUP_KEY]],
   )
 
   const satelliteLookupByEntityId = useMemo(

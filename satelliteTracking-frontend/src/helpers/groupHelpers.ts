@@ -1,11 +1,15 @@
-import type { GroupPositionsState, SatelliteGroupKey, SatelliteGroupSource } from '../api/groups/types'
+import type {
+  GroupErrorState,
+  GroupLoadingState,
+  GroupPositionsState,
+  SatelliteGroupKey,
+  SatelliteGroupSource,
+} from '../api/groups/types'
 import { canonicalGroupAliases } from '../api/groups'
 import { fetchSatellitePositionsByType } from '../api/satelliteClient'
 
 export type GroupPreset = 'custom' | 'all' | 'stations' | 'navigation' | 'leo'
 
-type GroupLoadingState = Partial<Record<SatelliteGroupKey, boolean>>
-type GroupErrorState = Partial<Record<SatelliteGroupKey, string>>
 export type GroupRow = {
   key: SatelliteGroupKey
   label: string
@@ -36,7 +40,11 @@ function colorFromKey(key: string): string {
     hash = (hash * 31 + key.charCodeAt(index)) | 0
   }
 
-  return `hsl(${Math.abs(hash) % 360} 82% 63%)`
+  const unsignedHash = hash >>> 0
+  const red = (unsignedHash >>> 16) & 0xff
+  const green = (unsignedHash >>> 8) & 0xff
+  const blue = unsignedHash & 0xff
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
 }
 
 export function buildRuntimeSatelliteGroupSources(
