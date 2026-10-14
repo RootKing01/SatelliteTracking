@@ -704,7 +704,7 @@
 .visibility-overlay {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 100;
 }
 
 .visibility-overlay-backdrop {

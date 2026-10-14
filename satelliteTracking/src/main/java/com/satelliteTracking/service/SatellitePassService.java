@@ -921,10 +921,14 @@ public class SatellitePassService {
                     continue;
                 }
 
+                /*
+                Filtro di ricerca in base alla classificazione, per future implementazioni
+
                 if (SatelliteTypeNormalizer.isPendingClassification(sat)) {
                     continue;
                 }
-                
+                */
+
                 double inclination = latestParams.getInclination();
                 if (canBeVisibleAtLatitude(inclination, observerLat)) {
                     visibleSatellites.add(sat);
