@@ -1,20 +1,33 @@
 import { expect, type Page } from '@playwright/test'
 
-export async function loginAndAssertAuthenticated(page: Page, usernameOrEmail: string, password: string) {
-  const emailInput = page.locator('label:has-text("Username o email") input')
-  const passwordInput = page.locator('label:has-text("Password") input').first()
-  const authError = page.locator('.auth-error')
-  const logoutButton = page.locator('button:has-text("Logout")')
+// Utente creato all'avvio dal backend (profilo "test": app.auth.bootstrap.*).
+export const DEMO_USER = {
+  username: 'demo',
+  email: 'demo@satellitetracker.local',
+  password: 'Demo123!',
+} as const
 
-  await emailInput.fill(usernameOrEmail)
-  await passwordInput.fill(password)
+export const AUTH_COOKIE_NAME = 'st_auth'
+
+// --- Locator condivisi (label/ruoli esatti: "Password" non coincide con "Conferma password") ---
+export const loginUsernameOrEmail = (page: Page) => page.getByLabel('Username o email')
+export const passwordField = (page: Page) => page.getByLabel('Password', { exact: true })
+export const loginSubmitButton = (page: Page) => page.getByRole('button', { name: 'Accedi', exact: true })
+export const registerSubmitButton = (page: Page) => page.getByRole('button', { name: 'Registrati', exact: true })
+export const logoutButton = (page: Page) => page.getByRole('button', { name: /^Logout/ })
+
+export async function loginAndAssertAuthenticated(page: Page, usernameOrEmail: string, password: string) {
+  const authError = page.locator('.auth-error')
+
+  await loginUsernameOrEmail(page).fill(usernameOrEmail)
+  await passwordField(page).fill(password)
 
   const loginResponsePromise = page.waitForResponse(
     (response) =>
       response.url().includes('/api/auth/login') && response.request().method() === 'POST',
   )
 
-  await page.click('button:has-text("Accedi")')
+  await loginSubmitButton(page).click()
 
   const loginResponse = await loginResponsePromise
   if (!loginResponse.ok()) {
@@ -27,19 +40,19 @@ export async function loginAndAssertAuthenticated(page: Page, usernameOrEmail: s
     throw new Error(`Login did not produce authenticated UI state: ${errorText}`)
   }
 
-  await expect(logoutButton).toBeVisible({ timeout: 15000 })
+  await expect(logoutButton(page)).toBeVisible({ timeout: 15000 })
 }
 
 export async function performLogoutAndAssertLoginVisible(page: Page) {
-  const logoutButton = page.locator('button:has-text("Logout")')
-  const loginButton = page.locator('button:has-text("Accedi")')
+  const logout = logoutButton(page)
+  const loginButton = loginSubmitButton(page)
 
-  await expect(logoutButton).toBeVisible({ timeout: 15000 })
+  await expect(logout).toBeVisible({ timeout: 15000 })
 
   let logoutCompleted = false
   for (let attempt = 0; attempt < 2 && !logoutCompleted; attempt++) {
     try {
-      await logoutButton.click({ timeout: 5000 })
+      await logout.click({ timeout: 5000 })
       logoutCompleted = true
     } catch (error) {
       if (await loginButton.isVisible()) {
