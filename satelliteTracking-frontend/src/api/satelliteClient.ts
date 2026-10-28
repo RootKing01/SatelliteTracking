@@ -195,7 +195,7 @@ export async function fetchVisibleUpcomingPasses(query: UpcomingPassQuery): Prom
     : '/api/satellites/upcoming-passes/filtered'
 
   const response = await httpClient.get<UpcomingPass[]>(endpoint, {
-    timeout: 60000,
+    timeout: 240000,
     params: {
       hours: query.hours,
       minElevation: query.minElevation,
